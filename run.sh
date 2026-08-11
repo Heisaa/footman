@@ -1,0 +1,327 @@
+#!/usr/bin/env bash
+# Convenience wrapper for the headless entry point and the test suite.
+#
+# Godot wants a writable data directory and the container's default one is not,
+# so XDG_DATA_HOME is redirected here rather than in every command.
+set -euo pipefail
+
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.godot-data}"
+mkdir -p "$XDG_DATA_HOME"
+
+GODOT="${GODOT:-godot}"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$HERE"
+
+WORKERS_DEFAULT="$( (nproc 2>/dev/null || echo 4) )"
+
+usage() {
+	cat <<'EOF'
+usage: ./run.sh <command> [args]
+
+  test [--only NAME]        run the test suite
+  record-golden             re-baseline the golden replay hashes
+
+  smoke                     6 x 12 min, reduced fidelity  (~50 s)
+  gate                      6 x 90 min, full fidelity     (~3 min)
+  accept                    200 x 90 min, strict          (~50 min)
+  pbatch --matches N        an arbitrary parallel batch
+      [--workers K] [--minutes M] [--home Q] [--away Q] [--reduced]
+      [--strict] [--keep] [--small] [--clock-rate R] [--pitch-scale F]
+
+  match [--seed N]          simulate one match and print a summary
+  diagnose [--seed N]       simulate one match and break it down
+  batch [--matches N]       serial batch (use pbatch instead for anything large)
+  tactics [--matches N]     compare two contrasting plans, sharded across cores
+  perf [--profile]          time a full-fidelity match, optionally per stage
+  determinism [--seed N]    run one seed twice and compare the event logs
+  view                      open the 2D debug view (needs a display)
+  view3d [--seed N]         open the 3D match view (needs a display).
+      [--speed X] [--step-fps N]
+      [--small] [--clock-rate R] [--pitch-scale F]
+                            Defaults to the compressed match: eleven a side, a
+                            full ninety in about three minutes at 1x speed.
+                            --clock-rate 1 --pitch-scale 1 for real time.
+                            --step-fps quantises the animation, for the old
+                            stop-motion look; the default is smooth
+                            --clock-rate R runs the match clock R times faster
+                            than real time, so a full 90 takes 90/R minutes
+                            --pitch-scale F shrinks the pitch, 11 a side kept
+  demo                      the six-a-side comparison, compressed the same way
+  shot                      render one match frame to a PNG, from a virtual
+                            display (SHOT_AT, SHOT_SPEED, SHOT_PATH)
+  poses                     render every animation state side by side, labelled
+                            (POSE_U picks where in each arc to freeze)
+  check                     parse-check every script, presentation included
+  import                    refresh Godot's script class cache
+
+Batches are sharded across processes because matches are independent and each
+is reproducible from its seed. A gate nobody runs is not a gate, so the routine
+check is sized for the wall clock first: see PLAN.md §11.1.
+EOF
+}
+
+# Simulates `total` matches into the directory `out`, split across `workers`
+# processes. Does not judge them: `aggregate` and `compare` both read a shard
+# directory, so the same driver serves the gate and the tactics comparison.
+#
+# Shard w takes the seed block [base + w*chunk, base + (w+1)*chunk), so the set
+# of seeds is identical however many workers are used and a batch stays
+# reproducible when the worker count changes.
+simulate_into() {
+	local out="$1"; shift
+	local total="$1"; shift
+	local workers="$1"; shift
+	local quiet_progress="$1"; shift
+
+	local base=1
+	local args=()
+	while [ $# -gt 0 ]; do
+		case "$1" in
+			--seed) base="$2"; shift 2 ;;
+			*) args+=("$1"); shift ;;
+		esac
+	done
+
+	# More workers than matches just leaves processes idle while paying their
+	# start-up cost, which at a five-match gate is most of the run.
+	if (( workers > total )); then workers=$total; fi
+	local chunk=$(( (total + workers - 1) / workers ))
+	echo "Running $total matches over $workers workers ($chunk each), seeds $base..$((base + total - 1))"
+	local started=$SECONDS
+
+	local pids=()
+	local w
+	for (( w = 0; w < workers; w++ )); do
+		local seed=$(( base + w * chunk ))
+		local count=$chunk
+		# The last shard may be short if the total does not divide evenly.
+		if (( seed + count > base + total )); then
+			count=$(( base + total - seed ))
+		fi
+		(( count > 0 )) || continue
+		"$GODOT" --headless --script res://tools/headless_main.gd -- \
+			batch --matches "$count" --seed "$seed" --quiet \
+			--json "$out/shard-$(printf '%02d' "$w").json" \
+			--progress "$out/progress-$w" "${args[@]}" \
+			>"$out/shard-$w.log" 2>&1 &
+		pids+=($!)
+	done
+
+	local reporter=""
+	if [ "$quiet_progress" != 1 ]; then
+		report_progress "$out" "$total" "$started" &
+		reporter=$!
+	fi
+
+	local failed=0
+	for pid in "${pids[@]}"; do
+		wait "$pid" || failed=1
+	done
+	if [ -n "$reporter" ]; then
+		kill "$reporter" 2>/dev/null || true
+		wait "$reporter" 2>/dev/null || true
+	fi
+	if [ "$failed" = 1 ]; then
+		echo "at least one shard failed; logs are in $out" >&2
+		cat "$out"/shard-*.log >&2
+		return 1
+	fi
+
+	echo "Simulated in $((SECONDS - started)) s"
+}
+
+
+# Simulates and then judges against the §11 bands.
+parallel_batch() {
+	local total="$1"; shift
+	local workers="$1"; shift
+	local keep="$1"; shift
+	local out
+	out="$(mktemp -d "${TMPDIR:-/tmp}/footman-batch-XXXXXX")"
+
+	simulate_into "$out" "$total" "$workers" 0 "$@" || { rm -rf "$out"; return 1; }
+	echo
+	# The judging pass needs the same --minutes/--small/--strict flags the run
+	# had, and ignores the rest.
+	"$GODOT" --headless --script res://tools/headless_main.gd -- aggregate --dir "$out" "$@"
+	if [ "$keep" = 1 ]; then
+		echo
+		echo "shards kept in $out"
+	else
+		rm -rf "$out"
+	fi
+}
+
+
+# The Phase 5 distinguishability test: two contrasting plans, each an ordinary
+# sharded batch over the same seeds, judged against each other. Running the two
+# arms serially in one process was hours; this is minutes.
+parallel_tactics() {
+	local per_arm="$1"; shift
+	local workers="$1"; shift
+	local out
+	out="$(mktemp -d "${TMPDIR:-/tmp}/footman-tactics-XXXXXX")"
+	mkdir -p "$out/press" "$out/block"
+
+	# Half the workers each, so the two arms run at once rather than one after
+	# the other. Both arms use the same seeds, which pairs the noise.
+	local each=$(( workers / 2 ))
+	(( each > 0 )) || each=1
+	echo "Press arm and block arm, $per_arm matches each, $each workers per arm"
+	local started=$SECONDS
+	simulate_into "$out/press" "$per_arm" "$each" 1 --plan press --away-plan balanced "$@" &
+	local a=$!
+	simulate_into "$out/block" "$per_arm" "$each" 1 --plan block --away-plan balanced "$@" &
+	local b=$!
+	local failed=0
+	wait "$a" || failed=1
+	wait "$b" || failed=1
+	if [ "$failed" = 1 ]; then
+		echo "a tactics arm failed; logs are in $out" >&2
+		return 1
+	fi
+	echo "Simulated both arms in $((SECONDS - started)) s"
+	echo
+	"$GODOT" --headless --script res://tools/headless_main.gd -- \
+		compare --dir-a "$out/press" --dir-b "$out/block"
+	rm -rf "$out"
+}
+
+# Sums the shards' progress files and prints a combined line every few seconds.
+#
+# The running metrics matter as much as the count: a batch is ten minutes and
+# the whole point of watching it is to notice that goals per match is sitting at
+# seven, and stop, rather than finding out at the end.
+report_progress() {
+	local out="$1" total="$2" started="$3"
+	local interval="${PROGRESS_INTERVAL:-15}"
+	sleep 3
+	while true; do
+		local done=0 goals=0 shots=0 draws=0
+		local f
+		for f in "$out"/progress-*; do
+			[ -f "$f" ] || continue
+			# A shard may be mid-write; a short read just means this tick
+			# undercounts slightly and the next one corrects it. Note `read`
+			# reports failure on a line with no trailing newline even though it
+			# has assigned the variables, so judge on the data, not the status.
+			d=""; g=""; s=""; dr=""
+			read -r d _ g s dr < "$f" 2>/dev/null || true
+			[ -n "$dr" ] || continue
+			done=$(( done + d )); goals=$(( goals + g ))
+			shots=$(( shots + s )); draws=$(( draws + dr ))
+		done
+		if (( done > 0 )); then
+			local elapsed=$(( SECONDS - started ))
+			local eta=$(( elapsed * (total - done) / done ))
+			printf '  [%3d/%3d] %3d%%  %s elapsed, ~%s left   goals/match %.2f  shots/team %.1f  draws %.0f%%\n' \
+				"$done" "$total" $(( done * 100 / total )) \
+				"$(fmt_time $elapsed)" "$(fmt_time $eta)" \
+				"$(echo "$goals $done" | awk '{printf "%.2f", $1/$2}')" \
+				"$(echo "$shots $done" | awk '{printf "%.1f", $1/($2*2)}')" \
+				"$(echo "$draws $done" | awk '{printf "%.0f", 100*$1/$2}')"
+		fi
+		(( done < total )) || break
+		sleep "$interval"
+	done
+}
+
+fmt_time() {
+	local s="$1"
+	if (( s < 60 )); then printf '%ds' "$s"; else printf '%dm%02ds' $(( s / 60 )) $(( s % 60 )); fi
+}
+
+# Pulls --workers and --keep out of the argument list, leaving the rest for the
+# simulation itself.
+drive_parallel() {
+	local total="$1"; shift
+	local workers="$WORKERS_DEFAULT"
+	local keep=0
+	local rest=()
+	while [ $# -gt 0 ]; do
+		case "$1" in
+			--workers) workers="$2"; shift 2 ;;
+			--matches) total="$2"; shift 2 ;;
+			--keep) keep=1; shift ;;
+			*) rest+=("$1"); shift ;;
+		esac
+	done
+	parallel_batch "$total" "$workers" "$keep" ${rest+"${rest[@]}"}
+}
+
+cmd="${1:-}"
+shift || true
+
+case "$cmd" in
+	test)          exec "$GODOT" --headless --script res://tests/run_tests.gd -- "$@" ;;
+	record-golden) exec "$GODOT" --headless --script res://tests/record_golden.gd ;;
+	view)          exec "$GODOT" res://presentation/debug_match.tscn ;;
+	view3d)        exec "$GODOT" res://presentation/match_3d.tscn -- "$@" ;;
+	demo)
+		# Six a side, for comparison against the eleven-a-side compressed match
+		# the view now opens by default. Kept because it is the other answer to
+		# the same question and the two are worth seeing side by side; the owner
+		# chose eleven for the tactics it keeps.
+		exec "$GODOT" res://presentation/match_3d.tscn -- \
+			--small --clock-rate "${DEMO_CLOCK_RATE:-30}" "$@"
+		;;
+	shot)
+		# Renders a frame from a virtual display, so the look can be checked
+		# without anyone sitting and watching a match.
+		out="${SHOT_PATH:-/tmp/footman-frame.png}"
+		xvfb-run -a "$GODOT" res://presentation/match_3d.tscn --resolution 1280x720 \
+			-- --shot "${SHOT_AT:-40}" --speed "${SHOT_SPEED:-8}" --shot-path "$out" "$@"
+		echo "wrote $out"
+		;;
+	poses)
+		# The pose sheet. A dive lasts under a second and happens a handful of
+		# times a match, so this is the only practical way to look at one.
+		out="${SHOT_PATH:-/tmp/footman-poses.png}"
+		xvfb-run -a "$GODOT" res://presentation/match_3d.tscn --resolution 1920x1080 \
+			-- --poses --pose-u "${POSE_U:-0.55}" --shot 1 --shot-path "$out" "$@"
+		echo "wrote $out"
+		;;
+	check)
+		# Parse-checks every script in the project, presentation included.
+		#
+		# `test` cannot do this. It runs through the headless entry point and
+		# never loads a scene, so a parse error in a view is invisible to it
+		# while taking the whole scene down when anyone actually runs the game.
+		# The import pass reports such errors but exits 0 regardless, so the
+		# grep is what turns it into a gate.
+		out="$("$GODOT" --headless --import 2>&1)"
+		if printf '%s\n' "$out" | grep -qE "Parse Error|Failed to load script"; then
+			printf '%s\n' "$out" | grep -E "Parse Error|Failed to load script|GDScript::reload"
+			echo "FAIL"
+			exit 1
+		fi
+		echo "all scripts parse"
+		;;
+	import)        exec "$GODOT" --headless --import ;;
+	# The tight loop: short matches at reduced fidelity, judged on the sanity
+	# ranges only. Catches "I broke football" in the time it takes to read the
+	# diff, which is the only check frequent enough to be run every time.
+	smoke)         drive_parallel 6 --minutes 12 --reduced --home 0.62 --away 0.55 "$@" ;;
+	# The routine check: full-length, full-fidelity matches, small sample.
+	gate)          drive_parallel 6 --home 0.62 --away 0.55 "$@" ;;
+	# The tuning check. Only this one judges the §11 target table.
+	accept)        drive_parallel 200 --strict --home 0.62 --away 0.55 "$@" ;;
+	pbatch)        drive_parallel 8 "$@" ;;
+	tactics)
+		per_arm=12
+		workers="$WORKERS_DEFAULT"
+		rest=()
+		while [ $# -gt 0 ]; do
+			case "$1" in
+				--matches) per_arm="$2"; shift 2 ;;
+				--workers) workers="$2"; shift 2 ;;
+				*) rest+=("$1"); shift ;;
+			esac
+		done
+		parallel_tactics "$per_arm" "$workers" ${rest+"${rest[@]}"}
+		;;
+	match|diagnose|batch|perf|determinism|aggregate|compare)
+	               exec "$GODOT" --headless --script res://tools/headless_main.gd -- "$cmd" "$@" ;;
+	""|-h|--help)  usage ;;
+	*)             echo "unknown command: $cmd" >&2; usage; exit 2 ;;
+esac
