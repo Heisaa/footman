@@ -167,6 +167,7 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	root.set_meta("mouth_style", appearance.mouth_style)
 
 	_jaw(head, head_r, skin)
+	_crown(head, head_r, skin)
 	head.add_child(_nose(appearance, head_r))
 	_ears(head, head_r, skin)
 
@@ -342,6 +343,17 @@ static func _jaw(head: Node3D, head_r: float, skin: Material) -> void:
 	head.add_child(jaw)
 
 
+## The same trick as the jaw, mirrored: the stretch that makes a head taller than
+## wide also draws the crown to a point, and a skull is domed. This fills the top
+## back out without making the head any taller.
+static func _crown(head: Node3D, head_r: float, skin: Material) -> void:
+	var crown := _sphere(head_r, skin, true)
+	crown.name = "Crown"
+	crown.position = Vector3(0.0, head_r * 0.14, 0.0)
+	crown.scale = Vector3(1.02, 0.88, 0.98)
+	head.add_child(crown)
+
+
 ## Ears: two small tabs where the head is widest. They cost two spheres and they
 ## are most of why the reference heads read as heads from the side.
 static func _ears(head: Node3D, head_r: float, skin: Material) -> void:
@@ -379,25 +391,31 @@ static func _moustache(head: Node3D, head_r: float, appearance: SimAppearance) -
 # at the front, **tufts** standing up, **sideburns** at the temples, a **peak** at
 # the centre of the hairline, and a **mass** down the back.
 #
+# Every cut carries some volume -- a shell at least a tenth over the skull -- and
+# the push back is raised to match so the hairline stays put. Hair that merely
+# skims the head reads as paint on the scalp; the difference between a full cut
+# and an afro is the curls on top of it, not the shell.
+#
 # The limit on every row is the face. The drawn brows sit about a quarter of a
 # head-radius above the middle of the face and the face quad is at 0.96 of the
-# radius, so no row may reach past about 0.95 at that height.
+# radius, so no row may reach past about 0.95 at that height, which is
+# `back >= radius - 0.95`.
 
 const HAIR_LIBRARY := [
 	{"r": 0.0},  # bald
-	{"r": 1.04, "up": 0.08, "back": 0.22},  # cropped
-	{"r": 1.06, "up": 0.06, "back": 0.16, "burns": true},  # short back and sides
-	{"r": 1.09, "up": 0.05, "back": 0.13, "peak": true},  # a bowl cut with a point
-	{"r": 1.11, "up": 0.04, "back": 0.16, "burns": true},  # heavier, with sideburns
-	{"r": 1.06, "up": 0.12, "back": 0.16, "quiff": true},  # a quiff
-	{"r": 1.05, "up": 0.08, "back": 0.18, "curls": 9},  # curly
-	{"r": 1.04, "up": 0.10, "back": 0.20, "curls": 13, "curl_r": 0.34},  # a big curly head
-	{"r": 1.06, "up": 0.05, "back": 0.13, "side": 0.05, "quiff": true},  # swept over
-	{"r": 1.06, "up": 0.05, "back": 0.13, "mass": true},  # collar length
-	{"r": 1.07, "up": 0.04, "back": 0.12, "side": 0.04, "mass": true, "burns": true},  # long
-	{"r": 1.04, "up": 0.11, "back": 0.26, "burns": true},  # receding
-	{"r": 1.05, "up": 0.10, "back": 0.21, "sy": 0.92, "peak": true},  # thin on top
-	{"r": 1.05, "up": 0.08, "back": 0.18, "tufts": 4},  # tousled
+	{"r": 1.12, "up": 0.08, "back": 0.20},  # cropped
+	{"r": 1.14, "up": 0.07, "back": 0.21, "burns": true},  # short back and sides
+	{"r": 1.16, "up": 0.06, "back": 0.22, "peak": true},  # a bowl cut with a point
+	{"r": 1.18, "up": 0.05, "back": 0.24, "burns": true},  # heavier, with sideburns
+	{"r": 1.14, "up": 0.12, "back": 0.20, "quiff": true},  # a quiff
+	{"r": 1.10, "up": 0.08, "back": 0.18, "curls": 9},  # curly
+	{"r": 1.10, "up": 0.10, "back": 0.18, "curls": 13, "curl_r": 0.34},  # a big curly head
+	{"r": 1.14, "up": 0.06, "back": 0.21, "side": 0.05, "quiff": true},  # swept over
+	{"r": 1.14, "up": 0.06, "back": 0.20, "mass": true},  # collar length
+	{"r": 1.16, "up": 0.05, "back": 0.22, "side": 0.04, "mass": true, "burns": true},  # long
+	{"r": 1.10, "up": 0.11, "back": 0.28, "burns": true},  # receding
+	{"r": 1.11, "up": 0.10, "back": 0.24, "sy": 0.94, "peak": true},  # thin on top
+	{"r": 1.14, "up": 0.08, "back": 0.21, "tufts": 4},  # tousled
 ]
 
 
@@ -425,11 +443,11 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 		var curl_r: float = style.get("curl_r", 0.3)
 		for i in curls:
 			var a := TAU * float(i) / float(curls)
-			var ring: float = 0.74 if i % 2 == 0 else 0.62
-			var lift: float = 0.42 if i % 2 == 0 else 0.68
+			var ring: float = 0.82 if i % 2 == 0 else 0.68
+			var lift: float = 0.52 if i % 2 == 0 else 0.78
 			_add_lump(root, head_r, curl_r, mat,
 				Vector3(sin(a) * ring, lift, cos(a) * ring - back * 0.6))
-		_add_lump(root, head_r, curl_r * 1.05, mat, Vector3(0.0, 0.95, -back * 0.6))
+		_add_lump(root, head_r, curl_r * 1.05, mat, Vector3(0.0, 1.05, -back * 0.6))
 
 	# A quiff: one lobe swept up off the front of the hairline.
 	if style.get("quiff", false):

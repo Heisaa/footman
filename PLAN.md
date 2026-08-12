@@ -629,6 +629,9 @@ player the same size on screen wherever play is.
   `DECISIONS.md`). Stubby limbs, mitten hands, no separate fingers, no neck.
 - **The look is the toy** — Sokpop, Mii, Animal Crossing. Smooth primitives, flat colour, no line
   work, no texture beyond the face, no period dressing. §9.7's register does not reach the art.
+- **The head is three ellipsoids**: a skull longest top to bottom, a jaw filling out the cheeks and
+  chin, and a crown doming the top. One sphere stretched upright is an egg — pointed at both ends,
+  which a head is at neither.
 - **Variety comes from proportion and face**, not from detail: head size, head shape (the head is
   scaled on two axes, and the face stretches with it), height, build, skin, hair, and the brows,
   eyes, mouth and nose a player was born with.
@@ -639,8 +642,10 @@ player the same size on screen wherever play is.
   with a pupil in it is a grey smudge at match distance. At this size an inked nose is a smudge between the eyes, and a bump
   catches the light and does the whole job for one sphere.
 - **Hair colours are colours hair comes in** — black, browns, blonds, ginger, grey, white.
-- **Hair is a sphere slightly larger than the skull, pushed back, plus pieces.** Radius is how much
-  hair there is; the push back is where the hairline lands; and on top of that go curls, a quiff,
+- **Hair is a sphere a tenth or more larger than the skull, pushed back, plus pieces.** Every cut
+  carries volume: hair that merely skims the head is paint on the scalp, and the difference between
+  a full cut and an afro is the curls on top, not the shell. Radius is how much hair there is; the
+  push back is where the hairline lands; and on top of that go curls, a quiff,
   tufts, sideburns, a widow's peak or a mass down the back. Nothing is perched on the crown — a
   squashed ellipsoid sitting on top of a head is a hat, and reads as one every time.
 - **A soft sheen on the figure, and only the figure.** The reference is moulded vinyl; the highlight
