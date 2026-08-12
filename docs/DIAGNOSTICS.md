@@ -51,6 +51,50 @@ feet, how many teammates were inside a short pass, and how many were *actively* 
 something about it — coming to meet it, going into space, or beyond the last defender
 — at a speed a shape-holder's jog cannot reach.
 
+**`received` on its own cannot say why a run failed, and `offered` and `best w` are
+there to split it.** `offered` is the share of runs of that kind that were ever a
+scored pass candidate at all; `best w` is the largest share of the softmax the run's
+own ball ever held, averaged over every run of that kind. A run nobody ever had on
+his list and a run that was on every list and never chosen both come back as "not
+found", and the fixes for them are in different files — the first is `_shortlist` in
+`SimDecision`, which keeps six of ten teammates and ranks them by the expected threat
+of the grass each is *standing on*; the second is what the pass is worth once it is on
+the list. `cut short` is the third case and is neither: the team lost the ball
+mid-stride. Read the three together or `received` will send you to the wrong layer.
+
+`shot` is the possession ending in one while he was running, split out of `cut short`
+because it is the attack working rather than the run failing — and it was most of that
+number, which rose every time the engine got better at reaching the box. What is left
+in `cut short` is a real turnover mid-stride.
+
+**`Why an option lost`** — the other half of the same question, one layer down. For
+every decision, the best-scoring candidate of each kind is set against the option that
+was actually played, and the terms are averaged over the decisions where that kind
+lost. It names which term did it: a through ball at `success 0.05 v 0.45` is a pass
+model problem, and the same row at `gain 0.02 v 0.10` would have been a value problem
+instead. Read `success` first; it is the term that usually decides.
+
+The line above it reports what `turnover_exposure` came out at and where the defensive
+line was that produced it. It is there because the first version of that term was
+inert — its thresholds were guessed from a mental picture of a back line and this
+engine's sits at 28% up the pitch, so the multiplier averaged 1.16 and never varied.
+**A constant whose input range you have not measured is a constant that may be doing
+nothing**, and this line is how you tell within one run.
+
+Underneath it, **`what the pass model made of them`** breaks that `success` into the
+five factors it is a product of, for the pass kinds. This is the table to read when
+`success` is the answer, because a product of 0.05 is one number and could be one
+factor at 0.05 or four at 0.55 — unrelated faults in unrelated code. The row does not
+multiply out exactly to the printed `success`: what is left over is `off_balance`, the
+penalty for choosing while the ball is still moving, which is applied to the candidate
+rather than inside the model.
+
+**The `gain` column is not comparable across kinds.** A shot carries a gain of 1.0 by
+construction — the gain *is* the goal, and the scoring multiplies it by the chance of
+one — so any row whose winner was often a shot has an inflated right-hand side. The
+comparison that means something is within a column, between the two sides of the same
+row, on `success`.
+
 **When the two halves disagree, believe the trace.** An intent that is taken and never
 resolves into a body arriving somewhere useful is a run that exists only in the
 counter. The first version of the trace half had its speed threshold low enough to

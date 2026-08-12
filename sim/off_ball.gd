@@ -55,10 +55,19 @@ const KIND_NAMES := ["none", "show", "space", "behind"]
 ## a 5 Hz quantity (PLAN.md §2.5), so it is refreshed at the same rate.
 const ASSIGN_TICKS := 12
 
-## How many of each kind a team may have running at once. Five of the ten
+## How many of each kind a team may have running at once. Six of the ten
 ## outfielders at the very most, and in practice fewer, because a run has to
 ## beat standing still by a margin before it is taken at all.
-const QUOTA := [0, 1, 2, 2]
+##
+## Space was two, and two is not a team moving. With one man allowed to come
+## short and two to go past the last defender, a side in possession had at most
+## three of its ten offering anything and the other seven stood on their
+## stations -- which is what a carrier with nothing on is looking at, whatever
+## the scoring says. It is raised here and not in the quota for showing, because
+## moving into space is the one kind that cannot swarm: no intent in this file
+## ever targets the ball and the nearest of them stops ten metres off it, so the
+## guard in `SimMovement._assign_chasers` has nothing to say about it.
+const QUOTA := [0, 1, 3, 2]
 
 ## Nobody further than this from the ball is offering to receive it. He is
 ## holding shape, which at that distance is the right thing to be doing.
@@ -87,18 +96,38 @@ const SHOW_STEP := 3.2
 ## How close a marker has to be to that spot before it is worth stepping off him.
 const SHOW_MARKED := 5.0
 
-## Probe distance and directions for a move into space, in the canonical
-## attacking frame. Six, not eight: the two that run straight back down the
-## pitch are what the formation is already for.
+## Probe distances and directions for a move into space, in the canonical
+## attacking frame.
+##
+## Two rings, and the far one is the point. At one ring of six metres the most
+## ambitious thing this layer could express was a shuffle, and it measured as one:
+## 545 moves into space in ten minutes, averaging *plus one point eight metres up
+## the pitch*, found by the ball 3% of the time. That is not a man moving into
+## space to give somebody an option, it is a man adjusting his footing, and it is
+## the whole of why a side with the ball in its own half has nothing on but a
+## square pass.
+##
+## The far ring only goes forward. Sideways at fourteen metres is a man leaving
+## his station for no reason, and backwards at any distance is what the station
+## already is -- holding it is scored as `NONE` from the same function, so a
+## backward probe could only ever be a worse version of standing still. That is
+## also why the near ring lost the one it had.
 const SPACE_PROBE := 6.0
+const SPACE_PROBE_FAR := 14.0
 const SPACE_PROBES := [
 	Vector3(SPACE_PROBE, 0.0, 0.0),
 	Vector3(SPACE_PROBE * 0.7, 0.0, SPACE_PROBE * 0.7),
 	Vector3(SPACE_PROBE * 0.7, 0.0, -SPACE_PROBE * 0.7),
 	Vector3(0.0, 0.0, SPACE_PROBE),
 	Vector3(0.0, 0.0, -SPACE_PROBE),
-	Vector3(-SPACE_PROBE * 0.7, 0.0, 0.0),
+	Vector3(SPACE_PROBE_FAR, 0.0, 0.0),
+	Vector3(SPACE_PROBE_FAR * 0.75, 0.0, SPACE_PROBE_FAR * 0.66),
+	Vector3(SPACE_PROBE_FAR * 0.75, 0.0, -SPACE_PROBE_FAR * 0.66),
 ]
+
+## How fast the value of a point decays with how long it takes to get to it. See
+## `_value_of`.
+const PROMPTNESS_DECAY := 0.22
 
 ## How far past the last defender the run in behind is aimed.
 const BEHIND_DEPTH := 9.0
@@ -117,8 +146,11 @@ const BEHIND_PASS_SPEED := 16.0
 ## chasing a ball that went somewhere else two seconds ago.
 const BEHIND_MAX_RUN := 18.0
 
-## Commitment window per kind, in seconds. Long enough that a run is a run.
-const HOLD_SECONDS := [0.0, 3.0, 3.0, 4.0]
+## Commitment window per kind, in seconds. Long enough that a run is a run --
+## and for a move into space that now means long enough to finish the far probe,
+## which at the pace below is a little over three seconds. A window that expires
+## as he arrives is a man who never arrives.
+const HOLD_SECONDS := [0.0, 3.0, 4.5, 4.0]
 ## And the rest afterwards, before the same player will do it again. The sprint
 ## in behind is the expensive one and carries much the longest cooldown; without
 ## it a front three covers eighteen kilometres between them.
@@ -127,7 +159,16 @@ const REST_SECONDS := [0.0, 4.5, 4.0, 10.0]
 ## Pace of each kind as a fraction of the player's maximum, and how close counts
 ## as arrived. A run in behind has to be made to the metre; drifting into space
 ## does not.
-const PACE := [0.0, 0.62, 0.45, 0.97]
+##
+## Space was 0.45 of maximum, and that was the option scored one way and played
+## another. `promptness` prices the point off `time_to_arrive`, which knows only
+## the player's real acceleration and top speed -- so the layer scored a man
+## arriving in two seconds and then sent him at a stroll that took four and a
+## half. The far probe cannot survive that and neither could the near one: three
+## per cent of moves into space ever had the ball played to them. He goes at the
+## pace he was scored at, near enough, and what is left of the gap is the
+## difference between a footballer's cruise and his sprint.
+const PACE := [0.0, 0.62, 0.75, 0.97]
 const DEADBAND := [0.0, 1.5, 1.8, 1.0]
 
 ## How much better than standing still an idea has to look before it is worth
@@ -173,6 +214,31 @@ static var travel := PackedFloat32Array()
 ## make a team available that quietly walks it backwards would show up here and
 ## nowhere else.
 static var forward := PackedFloat32Array()
+
+## The receiver's half of the decision, which `received` cannot see.
+##
+## "Space: 374 taken, 2% received" is two completely different faults wearing the
+## same number, and they want opposite fixes. Either the man on the ball never had
+## this run on his list at all -- `_shortlist` keeps six of ten teammates and ranks
+## them by the expected threat of the grass each is standing on, which for a man
+## mid-run is the grass he is leaving -- or it was on the list every time and lost,
+## in which case the run is fine and what is wrong is what the pass is worth.
+##
+## `offered` counts the runs that were a scored pass candidate at least once
+## before they expired. `weight` sums the largest share of the softmax the run's
+## own ball ever held, so `weight / made` is what an average offer was actually
+## worth to the man who could have played it.
+static var offered := PackedInt32Array()
+static var weight := PackedFloat32Array()
+
+## Runs that ended because the possession ended in a shot. Split out of
+## `cut_short`, which was counting them as failures. See `_expire`.
+static var shot := PackedInt32Array()
+
+## The live half of those two, per player, reset at `_commit` and folded in at
+## `_expire`.
+static var _offered := PackedInt32Array()
+static var _best_weight := PackedFloat32Array()
 
 ## Scratch for one assignment pass, reused so the path allocates nothing.
 static var _pick_ids := PackedInt32Array()
@@ -397,6 +463,24 @@ static func _consider(ctx: SimContext, p: SimPlayer, team: int, carrier: int, ba
 		# than a carrier with time does. This is the whole reason the option
 		# exists, so it is the term that decides when it is taken.
 		var wanted: float = lerpf(0.85, 1.75, clampf(urgency / 1.5, 0.0, 1.0))
+		# `retain` is 1.0 here against 0.5 for space and for holding shape, and it
+		# has been tried at 0.5 twice. Through the middle third `possession_value`
+		# is 0.013 against an expected threat of about 0.002 -- four fifths of the
+		# whole score -- so equalising it very nearly halves this option, and the
+		# reasoning for doing it was that too many men come to meet the ball.
+		#
+		# They do, and this is not why. Seed 7, ten minutes, halving it on its own:
+		# shows fell from 225 to 128 and the men who stopped showing went back to
+		# *standing on their stations*, because at the time the only other thing on
+		# the list was a six-metre shuffle that already lost to holding shape. The
+		# carrier's list got shorter without getting better -- touches in the
+		# opposition box 30 to 8, passes backward 29% to 33%.
+		#
+		# Tried again with the far probes in and a move into space finally worth
+		# something, it still loses, and by more: 21% of passes backward at 1.0
+		# against 31% at 0.5, the final third 18% against 15%, the opposition box
+		# 27 touches against 21. Coming short is not what makes a side play
+		# backwards. Having nowhere else to be is.
 		_scores[SHOW] = _value_of(ctx, p, team, ball, show, 1.0) * retention * wanted
 		_points[SHOW] = show
 
@@ -465,9 +549,24 @@ static func _consider(ctx: SimContext, p: SimPlayer, team: int, carrier: int, ba
 	_pick_points.insert(at, _points[kind])
 
 
+## What the man on the ball made of this offer, written from `SimDecision` as it
+## weighs its candidates: `share` is this ball's share of the softmax.
+##
+## One-way, like the rest of the tallies. Nothing in `sim/` reads it back and it
+## never touches `ctx.rng`, so a match runs identically whether or not anyone is
+## looking at it.
+static func note_offer(mate_id: int, share: float) -> void:
+	if mate_id < 0 or mate_id >= _intent.size() or _intent[mate_id] == NONE:
+		return
+	_offered[mate_id] = 1
+	_best_weight[mate_id] = maxf(_best_weight[mate_id], share)
+
+
 static func _commit(ctx: SimContext, pid: int, kind: int, point: Vector3) -> void:
 	_intent[pid] = kind
 	_point[pid] = point
+	_offered[pid] = 0
+	_best_weight[pid] = 0.0
 	_until[pid] = ctx.tick_index + int(float(HOLD_SECONDS[kind]) * float(SimConsts.TICK_HZ))
 	_since[pid] = ctx.tick_index
 	made[kind] += 1
@@ -501,8 +600,24 @@ static func _expire(ctx: SimContext) -> void:
 		# fix for one is no use against the other.
 		if ctx.ball.last_touch_player == i and ctx.ball.last_touch_tick >= _since[i]:
 			received[kind] += 1
+		elif ctx.active_shot_tick >= _since[i]:
+			# The possession ended in a shot while he was running. Whoever has the
+			# ball now is a keeper who caught it or a defender who blocked it, and
+			# counting that as the run being cut short is counting the attack
+			# working as the attack failing.
+			#
+			# It is most of the number. `cut short` for a run past the last defender
+			# read 81% and rose every time the engine got better at getting into the
+			# box, which is the signature of an instrument measuring its own success.
+			shot[kind] += 1
 		elif ctx.possession_team != p.team:
 			cut_short[kind] += 1
+		# And what the man on the ball made of it while it lasted, which is the
+		# half of the judgement `received` cannot make: a run that was never on
+		# anybody's list and a run that was on every list and never chosen both
+		# come back as "not found".
+		offered[kind] += _offered[i]
+		weight[kind] += _best_weight[i]
 		_intent[i] = NONE
 		var rest: float = float(REST_SECONDS[kind]) * lerpf(1.3, 0.7, p.attrs.work_rate)
 		_ready[i] = ctx.tick_index + int(rest * float(SimConsts.TICK_HZ))
@@ -612,7 +727,25 @@ static func _behind_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector
 ## one's own half, so the only thing separating the pocket in front from the
 ## pocket behind was the open lane, and the lane behind the ball is always open.
 static func _value_of(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3, point: Vector3, retain: float, lane_power: float = 1.0) -> float:
-	var control := ctx.value.control_at_local(ctx, point, team)
+	# A man who has to turn and travel is a later option than one already there.
+	var arrival: float = SimValueField.time_to_arrive(p, point, 0.0)
+	# Asked at the moment he would be standing there, not at this one.
+	#
+	# This is the argument `_behind_point` already makes and the reason it is
+	# scored outside this function: pitch control asks who owns a patch of grass
+	# *now*, and the answer for any patch worth running into is the opposition,
+	# because space is the stuff nobody is standing in yet. Asked as a snapshot,
+	# every probe that goes anywhere came back worse than the station -- a pocket
+	# ten metres up the pitch is grass he does not own, and grass he does own is
+	# the grass he is standing on. Multiply that by a lane term that is always
+	# open behind the ball and a promptness term that always favours the nearer
+	# point, and the layer was choosing where a man is *safest* rather than where
+	# he is any use, three times over.
+	#
+	# Floored at his own arrival, everyone who can be there by then counts and so
+	# does he, which is the question a run actually asks. It is the same
+	# correction the carry and the knock past a man got in `SimDecision`.
+	var control := ctx.value.control_at_local(ctx, point, team, arrival)
 	var threat := ctx.value.xt_at(team, point, ctx.pitch) * ctx.tactics(team).focus_at(point.z, ctx.pitch)
 	# `lane_power` is what stops availability eating danger. A clear line to the
 	# ball is the whole point of coming short, so there it counts at full weight;
@@ -620,9 +753,15 @@ static func _value_of(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3, p
 	# full weight it walks him back into the safe empty grass behind the ball
 	# every time, because that is where the lanes are always open.
 	var lane := pow(_lane_open(ctx, ball, point, team), lane_power)
-	# A man who has to turn and travel is a later option than one already there.
-	var arrival: float = SimValueField.time_to_arrive(p, point, 0.0)
-	var promptness: float = 1.0 / (1.0 + arrival * 0.35)
+	# And a later option is still worth less to the man on the ball now.
+	#
+	# Softened from 0.35 once `control` started asking its question at `arrival`
+	# too. The two were saying the same thing twice: a distant pocket was charged
+	# for being distant in the control term -- where the defence had all that time
+	# to get across -- and charged again here. Between them a fourteen-metre run
+	# needed to be worth twice a two-metre shuffle before it was ever considered,
+	# which no patch of midfield grass is.
+	var promptness: float = 1.0 / (1.0 + arrival * PROMPTNESS_DECAY)
 	return control * lane * (threat + SimDecision.possession_value(ctx, team, point) * retain) * promptness
 
 
@@ -678,6 +817,8 @@ static func _resize(n: int) -> void:
 	_until.resize(n)
 	_ready.resize(n)
 	_since.resize(n)
+	_offered.resize(n)
+	_best_weight.resize(n)
 	_clear()
 
 
@@ -688,14 +829,22 @@ static func _clear() -> void:
 		_until[i] = 0
 		_ready[i] = 0
 		_since[i] = 0
+		_offered[i] = 0
+		_best_weight[i] = 0.0
 	made.resize(4)
 	received.resize(4)
 	cut_short.resize(4)
 	travel.resize(4)
 	forward.resize(4)
+	offered.resize(4)
+	weight.resize(4)
+	shot.resize(4)
 	for i in 4:
 		made[i] = 0
 		received[i] = 0
 		cut_short[i] = 0
 		travel[i] = 0.0
 		forward[i] = 0.0
+		offered[i] = 0
+		weight[i] = 0.0
+		shot[i] = 0

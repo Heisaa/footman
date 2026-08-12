@@ -702,24 +702,152 @@ const OFFER_RANGE := 35.0
 ## expected reading and not a fault. What would be a fault is a drift whose
 ## up-pitch column sits at or below zero — a layer meant to make a team available
 ## quietly walking it backwards.
+## Which term an option lost on, for every kind that was on the list and was not
+## the one played. Each pair is the losing candidate against the option that beat
+## it, averaged over the decisions where that kind was the best of its kind and
+## still lost. `gain` and `loss` are the raw positional terms, before the discount
+## and the possession value `score_of` adds to both.
+static func _why_it_lost() -> void:
+	var any := false
+	for kind in SimDecision.Action.size():
+		if SimDecision.lost_at(kind, SimDecision.LOST_N) > 0.0:
+			any = true
+	if not any:
+		return
+	print("\nWhy an option lost  (best of its kind when it was not the one played)")
+	if SimDecision.exposure_n > 0.0:
+		print("  a turnover was priced at %.2f x its threat, mean, with the defensive line %.0f%% up the pitch" % [
+			SimDecision.exposure_sum / SimDecision.exposure_n,
+			100.0 * SimDecision.exposure_line / SimDecision.exposure_n])
+	print("  %-13s %7s %15s %17s %17s %9s" % [
+		"", "times", "success", "gain", "loss", "score gap"])
+	for kind in SimDecision.Action.size():
+		var n := SimDecision.lost_at(kind, SimDecision.LOST_N)
+		if n < 1.0:
+			continue
+		print("  %-13s %7d %7.2f v %-5.2f %8.4f v %-6.4f %8.4f v %-6.4f %+9.4f" % [
+			SimDebug.ACTION_NAMES[kind], int(n),
+			SimDecision.lost_at(kind, SimDecision.LOST_SUCCESS) / n,
+			SimDecision.lost_at(kind, SimDecision.WON_SUCCESS) / n,
+			SimDecision.lost_at(kind, SimDecision.LOST_GAIN) / n,
+			SimDecision.lost_at(kind, SimDecision.WON_GAIN) / n,
+			SimDecision.lost_at(kind, SimDecision.LOST_LOSS) / n,
+			SimDecision.lost_at(kind, SimDecision.WON_LOSS) / n,
+			(SimDecision.lost_at(kind, SimDecision.LOST_SCORE)
+				- SimDecision.lost_at(kind, SimDecision.WON_SCORE)) / n,
+		])
+
+
+## And what the pass model made of the ones that lost: the five factors their
+## `success` is a product of. A success of 0.05 is one number and could be any of
+## a dozen faults; these five say which.
+## The touch kind each pass action is logged as, so the model can be set beside
+## what the ball actually did.
+const PASS_TOUCH_OF := {
+	SimDecision.Action.GROUND_PASS: SimTelemetry.Touch.GROUND_PASS,
+	SimDecision.Action.LOFTED_PASS: SimTelemetry.Touch.LOFTED_PASS,
+	SimDecision.Action.THROUGH_BALL: SimTelemetry.Touch.THROUGH_BALL,
+	SimDecision.Action.CROSS: SimTelemetry.Touch.CROSS,
+}
+
+
+static func _why_the_pass_lost(events: Array) -> void:
+	var any := false
+	for kind in SimDecision.Action.size():
+		if SimDecision.is_pass(kind) and SimDecision.lost_at(kind, SimDecision.LOST_N) > 0.0:
+			any = true
+	if not any:
+		return
+	# What each kind actually did, off the outcome events.
+	var resolved := {}
+	var ok := {}
+	for e in events:
+		if e["ev"] != SimTelemetry.Ev.PASS_OUTCOME:
+			continue
+		var k: int = e["kind"]
+		resolved[k] = int(resolved.get(k, 0)) + 1
+		if bool(e.get("ok", false)):
+			ok[k] = int(ok.get(k, 0)) + 1
+	print("\n  what the pass model made of them  (the factors of that success)")
+	print("    %-11s %8s %8s %8s %9s %8s %9s %11s" % [
+		"", "space", "in time", "lane", "control", "struck", "success", "completed"])
+	for kind in SimDecision.Action.size():
+		if not SimDecision.is_pass(kind):
+			continue
+		var n := SimDecision.lost_at(kind, SimDecision.LOST_N)
+		if n < 1.0:
+			continue
+		var touch: int = PASS_TOUCH_OF.get(kind, -1)
+		var res: int = int(resolved.get(touch, 0))
+		var rate := "  -" if res == 0 else "%9.0f%%" % (100.0 * float(ok.get(touch, 0)) / float(res))
+		print("    %-11s %8.2f %8.2f %8.2f %9.2f %8.2f %9.2f %10s" % [
+			SimDebug.ACTION_NAMES[kind],
+			SimDecision.lost_at(kind, SimDecision.LOST_SPACE) / n,
+			SimDecision.lost_at(kind, SimDecision.LOST_IN_TIME) / n,
+			SimDecision.lost_at(kind, SimDecision.LOST_LANE) / n,
+			SimDecision.lost_at(kind, SimDecision.LOST_CONTROL) / n,
+			SimDecision.lost_at(kind, SimDecision.LOST_STRUCK) / n,
+			SimDecision.lost_at(kind, SimDecision.LOST_SUCCESS) / n,
+			rate,
+		])
+	print("    a ball in the air has no `in time` and no `lane`; both read 1.00 for it")
+	# The last column is the calibration, and it is the only thing here that can
+	# say the model is wrong rather than merely strict.
+	#
+	# It is not like-for-like and must not be read as if it were. `success` is the
+	# best *rejected* candidate of its kind; `completed` is what the ones that got
+	# played actually did, and those are the top of the same distribution, so the
+	# right-hand column should sit above the left. What it should not do is sit an
+	# order of magnitude above it. A model saying 0.05 for a ball the engine
+	# completes two times in three is not being strict, it is disagreeing with its
+	# own physics -- and that is a defect, not a tuning preference.
+	print("    `completed` is what the ones that were played did: selection puts it above")
+	print("    `success`, and only a gap far larger than that is the model being wrong")
+
+
+static func _cut_short_parts() -> PackedStringArray:
+	var parts := PackedStringArray()
+	for kind in range(1, SimOffBall.made.size()):
+		var n: int = SimOffBall.made[kind]
+		if n == 0:
+			continue
+		parts.append("%s %.0f%%" % [
+			SimOffBall.KIND_NAMES[kind], 100.0 * float(SimOffBall.cut_short[kind]) / float(n)])
+	return parts
+
+
 static func _offering(ctx: SimContext) -> void:
 	var total: int = 0
 	for i in SimOffBall.made.size():
 		total += SimOffBall.made[i]
 	if total > 0:
 		print("\nOffering for the ball  (how players made themselves available)")
-		print("  %-10s %8s %10s %11s %10s %10s" % ["", "taken", "received", "cut short", "mean run", "up-pitch"])
+		print("  %-10s %8s %9s %8s %10s %7s %9s %9s" % [
+			"", "taken", "offered", "best w", "received", "shot", "mean run", "up-pitch"])
 		for kind in range(1, SimOffBall.made.size()):
 			var n: int = SimOffBall.made[kind]
 			if n == 0:
 				continue
-			print("  %-10s %8d %9.0f%% %10.0f%% %9.1f m %+9.1f m" % [
+			print("  %-10s %8d %8.0f%% %7.0f%% %9.0f%% %6.0f%% %8.1f m %+8.1f m" % [
 				SimOffBall.KIND_NAMES[kind], n,
+				100.0 * float(SimOffBall.offered[kind]) / float(n),
+				100.0 * SimOffBall.weight[kind] / float(n),
 				100.0 * float(SimOffBall.received[kind]) / float(n),
-				100.0 * float(SimOffBall.cut_short[kind]) / float(n),
+				100.0 * float(SimOffBall.shot[kind]) / float(n),
 				SimOffBall.travel[kind] / float(n),
 				SimOffBall.forward[kind] / float(n),
 			])
+		# `offered` is how many of these runs the man on the ball ever had on his
+		# list; `best w` is the largest share of the softmax the run's own ball
+		# ever held, averaged over every run. A run that is never offered and a run
+		# that is offered and never chosen are different faults.
+		#
+		# `shot` is the possession ending in one while he ran, which is the attack
+		# working, and `cut short` is what is left: an opponent took it off us
+		# mid-stride. The two used to be one number and it read 81% for a run past
+		# the last defender -- rising every time the engine got better at reaching
+		# the box, which is an instrument measuring its own success.
+		print("    cut short by a turnover: %s" % ", ".join(_cut_short_parts()))
 
 	var trace := ctx.telemetry.trace
 	if trace.size() < 2:
@@ -2166,6 +2294,8 @@ static func report(m: SimMatch) -> void:
 	_locomotion(ctx)
 	_chasing(ctx)
 	_offering(ctx)
+	_why_it_lost()
+	_why_the_pass_lost(events)
 	_safe_options(ctx)
 	_giving_up_ground(ctx)
 

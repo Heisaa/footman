@@ -58,6 +58,7 @@ func setup(config: SimMatchConfig) -> void:
 	# `determinism` — has to start from the same blank the first one did.
 	SimOffBall.reset()
 	SimMovement.reset()
+	SimDecision.reset()
 	ctx.config = config
 	ctx.rng = SimRng.new(config.seed_value)
 	ctx.env = config.env

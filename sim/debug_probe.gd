@@ -298,7 +298,7 @@ static func _option(ctx: SimContext, player: SimPlayer, c: Dictionary, weight: f
 	var catch := _catch_point(ctx, player, c)
 	return {
 		"action": action,
-		"label": _label(ctx, player, action, target, point, attack, catch),
+		"label": _label(ctx, player, action, target, point, attack, catch, c.has("push")),
 		"point": point,
 		"catch": catch,
 		"target": target,
@@ -361,8 +361,15 @@ static func _catch_point(ctx: SimContext, player: SimPlayer, c: Dictionary) -> V
 ## judged over. Labelled off the horizon, as it was, every carry on the panel
 ## read two to three times longer than the touch about to be played, and a
 ## four-metre knock under the sole was printed as a twelve-metre run.
+##
+## The burst says so. It is a different act from a carry -- one touch that runs
+## to completion, no re-touch, the carrier committed past the ball -- and it is
+## scored by different terms, so a panel that calls both of them "carry" hides
+## the distinction exactly where the owner is looking for it. Printed as a carry,
+## a 43 m burst reads as a preposterous dribble rather than as the knock into
+## space it is, and the question it invites is the wrong one.
 static func _label(ctx: SimContext, player: SimPlayer, action: int, target: int, point: Vector3,
-		attack: float, catch: Vector3 = Vector3.INF) -> String:
+		attack: float, catch: Vector3 = Vector3.INF, burst: bool = false) -> String:
 	var name: String = ACTION_NAMES[action] if action >= 0 and action < ACTION_NAMES.size() else "?"
 	var delta := point - player.pos
 	var distance := SimConsts.horizontal_length(delta)
@@ -376,7 +383,10 @@ static func _label(ctx: SimContext, player: SimPlayer, action: int, target: int,
 				ctx.pitch.target_goal(player.team) - player.pos)
 		A_DRIBBLE:
 			var run := delta if is_inf(catch.x) else catch - player.pos
-			return "carry %s %.1f m" % [compass(run, attack), SimConsts.horizontal_length(run)]
+			return "%s %s %.1f m" % [
+				"burst" if burst else "carry",
+				compass(run, attack), SimConsts.horizontal_length(run),
+			]
 		_:
 			var mate := "#%d" % ctx.players[target].shirt if target >= 0 and target < ctx.players.size() else "?"
 			return "%s -> %s %.0f m %s" % [name, mate, distance, compass(delta, attack)]

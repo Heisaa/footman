@@ -140,6 +140,32 @@ static func time_to_arrive(p: SimPlayer, point: Vector3, reaction: float = 0.0) 
 	return t + reaction + turn_cost
 
 
+## How far a player can travel along `dir` in `seconds`, from the pace he is
+## going now. The inverse of `time_to_arrive`, over the same two-stage model, and
+## it exists because "aim it as far ahead as he can get" was being answered with
+## `top speed x flight time`.
+##
+## Nobody is at top speed when a ball is struck to them. A man who has just turned
+## into his run is at two metres a second and needs the best part of a second to
+## reach seven, so the pass was aimed several metres past where he could be -- and
+## several metres past is the difference between running onto it and being just
+## short of it, which is what the ball in behind kept looking like.
+static func reach_in(p: SimPlayer, dir: Vector3, seconds: float) -> float:
+	if seconds <= 0.0:
+		return 0.0
+	var d := SimConsts.horizontal(dir)
+	if d.length_squared() < 1e-6:
+		return 0.0
+	d = d.normalized()
+	var a: float = maxf(p.max_accel(), 0.5)
+	var vmax: float = maxf(p.max_speed(), 1.0)
+	var v0: float = clampf(p.vel.x * d.x + p.vel.z * d.z, 0.0, vmax)
+	var t1 := (vmax - v0) / a
+	if seconds <= t1:
+		return v0 * seconds + 0.5 * a * seconds * seconds
+	return v0 * t1 + 0.5 * a * t1 * t1 + vmax * (seconds - t1)
+
+
 ## Reaction delay before a player can act on new information. Awareness buys
 ## sharpness here.
 static func reaction_of(p: SimPlayer) -> float:
@@ -312,7 +338,13 @@ func begin_local(ctx: SimContext, centre: Vector3, radius: float = 30.0) -> void
 ## Pitch control at a point, using only the local set gathered by begin_local.
 ## Counts the crowd the same way `_control` does, or an off-ball player would
 ## judge space by a different rule from the one the passer judges it by.
-func control_at_local(ctx: SimContext, point: Vector3, team: int) -> float:
+##
+## `at_time` is the same floor `control_at_time` applies, and it is what makes
+## this answerable about a place nobody is yet: at or above zero every arrival is
+## charged at least that long, so the question becomes who owns the grass *then*
+## rather than who is standing nearest to it now. Below zero it is the plain
+## snapshot.
+func control_at_local(ctx: SimContext, point: Vector3, team: int, at_time: float = -1.0) -> float:
 	if _local_count == 0:
 		return 0.5
 	if _local_time.size() < _local_count:
@@ -323,6 +355,8 @@ func control_at_local(ctx: SimContext, point: Vector3, team: int) -> float:
 	for i in _local_count:
 		var p := ctx.players[_local[i]]
 		var t := time_to_arrive(p, point, reaction_of(p))
+		if at_time >= 0.0:
+			t = maxf(t, at_time)
 		_local_time[i] = t
 		best = minf(best, t)
 		if p.team == team:

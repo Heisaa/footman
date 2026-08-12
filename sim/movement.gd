@@ -14,6 +14,37 @@ extends RefCounted
 ## How far the shape slides with the ball, longitudinally and laterally.
 const BALL_PULL_X := 0.36
 const BALL_PULL_Z := 0.30
+
+## What the front line drops back by when the ball goes behind it. The one
+## direction the pull is not symmetric in, and the difference between a team that
+## stretches and a team that follows the ball about.
+##
+## Applied flat, as it was at 0.36 both ways, all ten outfielders slide back
+## twelve metres when the ball goes twelve metres back: the side is a blob of
+## constant length centred on wherever the ball is, and a man in his own third
+## has nobody thirty metres up the pitch to find. Measured, that is what it looked
+## like -- 65% of touches in the middle third, 29% of passes backwards, and an
+## off-ball layer probing six metres around a station that had already dropped.
+##
+## Only the drop is cut. A front line pushes up with play as hard as anyone --
+## that is how a team gets into the final third at all, and slowing it there costs
+## exactly what it sounds like: cut both ways at 0.12, final-third touches fell
+## from 19% to 16% and shots halved, because the striker no longer advanced when
+## the ball did. What a front line does *not* do is trail back to the halfway line
+## every time a centre-half plays it square. It holds against the opponent's last
+## man and waits, which is what makes the side long when the ball is deep and is
+## the whole point of the change.
+const BALL_PULL_X_HOLD := 0.12
+
+
+## How far the station slides for a ball at `ball_x`, in the canonical attacking
+## frame. Piecewise and continuous at the halfway line, where the two slopes
+## meet: a striker pushes on once the ball is over it and holds his height while
+## the side builds behind it.
+static func ball_pull_shift(role: int, ball_x: float) -> float:
+	if ball_x >= 0.0 or not SimRole.is_attacking(role):
+		return BALL_PULL_X * ball_x
+	return BALL_PULL_X_HOLD * ball_x
 ## Speed a player uses to hold shape, as a fraction of their maximum.
 const SHAPE_SPEED := 0.25
 const RECOVER_SPEED := 0.72
@@ -432,8 +463,9 @@ static func shape_position(ctx: SimContext, p: SimPlayer, ball_at: Vector3 = SHA
 	var home := pitch.scale_point(team.formation.homes[slot])
 	var ball_c := pitch.orient(p.team, ctx.ball.ground_pos() if ball_at.y < 0.0 else ball_at)
 
-	# The shape slides with play rather than being pinned to the formation.
-	var x := home.x + ball_c.x * BALL_PULL_X
+	# The shape slides with play rather than being pinned to the formation, and
+	# the front of it does not trail back with a ball played behind it.
+	var x := home.x + ball_pull_shift(p.role, ball_c.x)
 	var z := home.z * tactics.width_scale() + ball_c.z * BALL_PULL_Z
 
 	# Defensive line height. Only the back line and the pivot are anchored to
