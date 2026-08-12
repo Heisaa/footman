@@ -378,7 +378,10 @@ static func _add_shot(ctx: SimContext, player: SimPlayer, first_time: bool) -> v
 		# worth about 0.12 once `expected_goals` has counted them -- so carrying
 		# the ball in the six-yard box scored better than striking it, every time,
 		# and the carry is what got played.
-		"bias": lerpf(0.75, 1.25, tactics.directness) * (0.6 if first_time else 1.0),
+		# `shot_appetite` is 1.0 at real time and only leaves it under compression:
+		# see `SimMatchConfig`, "the compressed match's scoring fit".
+		"bias": lerpf(0.75, 1.25, tactics.directness) * (0.6 if first_time else 1.0)
+			* ctx.config.shot_appetite(),
 		"power": clampf(0.5 + distance / 40.0, 0.45, 1.0),
 	})
 
@@ -1726,12 +1729,33 @@ const POSSESSION_VALUE := 0.013
 ## completion, possessions of 1.4 passes, 34 shots. One seed, ten minutes.
 const TERRITORY := 0.4
 
+## The same term for a match compressed to three minutes. See `SimMatchConfig`,
+## "the compressed match's scoring fit" — this is a fourth knob in that fit and
+## belongs to it, kept here only because it reads `POSSESSION_VALUE` beside it.
+##
+## 0.75 is the other column of the measurement above, and the objection recorded
+## there — that it stops the engine being a passing side, possessions of 1.4
+## passes, a third of every ball long and forward at 47% completion — is the
+## right objection to a ninety-minute match and beside the point in one holding
+## fifty possessions. Measured on its own it moved goals not at all (0.39 to
+## 0.32 over forty compressed matches) while raising touches in the box by a
+## quarter, which is the whole reason it is here: it delivers the ball to the
+## area, and the three knobs beside it are what make arriving there worth
+## something.
+const TERRITORY_URGENT := 0.75
+
+
+## How far up the pitch a possession is worth more than at the back, for the
+## match being played. See `TERRITORY` and `SimMatchConfig.urgency`.
+static func territory(ctx: SimContext) -> float:
+	return lerpf(TERRITORY, TERRITORY_URGENT, ctx.config.urgency())
+
 
 ## What having the ball at a point is worth to a team, in goal probability.
 static func possession_value(ctx: SimContext, team: int, point: Vector3) -> float:
 	var progress: float = clampf(
 		point.x * ctx.pitch.attack_dir(team) / ctx.pitch.half_length, -1.0, 1.0)
-	return POSSESSION_VALUE * (1.0 + TERRITORY * progress)
+	return POSSESSION_VALUE * (1.0 + territory(ctx) * progress)
 
 
 ## What a turnover costs beyond the ball, as a multiplier on every `loss`.

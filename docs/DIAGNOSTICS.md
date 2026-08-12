@@ -445,3 +445,19 @@ is how the `tactics` arms are compared. Neither is in `--help`.
 **Do not edit `run.sh` while a batch is running.** Bash reads a script incrementally, so an
 edit shifts the byte offsets under the running instance and it dies with a syntax error
 partway through, after the simulation time has been spent.
+
+## Measuring the compressed match
+
+`--urgency U` forces the compressed match's scoring fit on at any clock rate — 0 is the
+real-time engine, 1 is the three-minute one, and without it the fit only appears above
+`clock_rate` 1. It exists because the fit cannot otherwise be looked at: a whole compressed
+match holds about five shots, so `Shots by distance` has no population and the question the
+block answers — which stage of a chance is losing the goal — has no data behind it.
+`./run.sh diagnose --seed 7 --minutes 10 --urgency 1` is ten minutes of the compressed
+match's football at the length every instrument here was built for.
+
+Two cautions. It does not reproduce a compressed match exactly, because fatigue scales with
+`clock_rate` and this does not touch the clock — a `--urgency 1` run has fresh players
+throughout and reads a little high on shots. And a figure measured through it is a figure
+about the format: `docs/STATUS.md`, "the compressed match's scoring fit", has what that
+costs. Anything asking what the *football* does wants the default.

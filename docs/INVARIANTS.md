@@ -71,12 +71,28 @@ at the same metres per second and the tick is still a sixtieth. A compressed
 match is a *shorter* match wearing a ninety-minute clock, and it holds
 proportionally fewer events.
 
-Three things scale with it and nothing else may: **fatigue**, because "nothing
+Four things scale with it and nothing else may: **fatigue**, because "nothing
 left after eighty minutes" is a fact about a match rather than about a body; the
 **deliberate part of a restart**, because dead time is priced in real seconds
-while the match budget is not; and the **repositioning pace** at a restart, which
-is what pays for the shorter window. Acceleration, turn rate, ball drag and the
-tick must never know. The 3D view opens at `clock_rate = 30` because it exists to
+while the match budget is not; the **repositioning pace** at a restart, which
+is what pays for the shorter window; and **the scoring fit**, which is the
+subject of the paragraph below and reaches the sim only through
+`SimMatchConfig.urgency`. Acceleration, turn rate, ball drag and the tick must
+never know.
+
+**The scoring fit is that fourth thing, and it is deliberately one object.**
+`SimMatchConfig.urgency` is a single scalar, 0 at real time and 1 at 30x, and
+exactly five constants read it: `SHOT_APPETITE_URGENT`, `SHOT_SIGMA_URGENT`,
+`KEEPER_SAVE_URGENT`, `KEEPER_REACH_URGENT` and `SimDecision.TERRITORY_URGENT`.
+Adding a sixth means adding it to that list and to `SimMatchConfig`'s own block,
+never beside the mechanic it scales. **Every one of them must be a no-op at
+`clock_rate` 1**, and that is the property the whole arrangement rests on: it is
+what keeps the goldens, the §11 bands and `docs/STATUS.md` describing the engine
+they were measured against. The check is cheap and worth running after any
+change to them — `./run.sh diagnose --seed 7 --minutes 10` must return what it
+returned before. `--urgency U` forces the fit on at any clock rate so it can be
+measured; it is a measurement affordance and nothing in the sim should read it
+other than `urgency()` itself. The 3D view opens at `clock_rate = 30` because it exists to
 be watched; the sim, the runner, every batch and the suite default to 1.0, so the
 bands and the goldens measure the engine they always measured.
 

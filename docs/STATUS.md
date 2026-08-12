@@ -1044,3 +1044,71 @@ drags whoever it passes out of shape. He must be able to meet it inside
 for the side a pass is already travelling to, whose man is on his way to meet it.
 One extra man per side: two players going for a loose ball is football, three is
 the swarm.
+
+## The compressed match's scoring fit
+
+The owner's decision, and the first thing in this file that is not a football
+finding. It is recorded here anyway, because a number this large moving needs an
+account.
+
+**The arithmetic first, because it governs everything else.** A three-minute
+match holds 180 seconds of football. 2.7 goals in 180 seconds is 81 goals per
+ninety minutes of play. The engine was at 11.6 and football is at 2.7 — so the
+compressed match was not short of chances, it was short of *football*, and the
+ask was 7x on an engine already four times football's density. `PLAN.md` §11.1.1
+defers this to the tuning freeze and `docs/INVARIANTS.md` names the tractable
+version: one scalar derived from `clock_rate`. Match length and pitch size were
+both ruled out by the owner, so the scoring knobs are what is left.
+
+`SimMatchConfig.urgency` is that scalar: 0 at real time, 1 at the 30x match the
+3D view opens with, logarithmic in between. Four constants read it and nothing
+else may — shot appetite, shot aim, the keeper's save roll and the keeper's
+reach, with `SimDecision.TERRITORY_URGENT` as the fourth. **Every one is a no-op
+at `clock_rate` 1**, which is the property that makes it survivable: seed 7 at
+ten minutes returns 14 shots, 1 goal, 21/60/19 thirds and 21 box touches both
+before and after, so the goldens, the §11 bands and every measurement above
+still describe the engine they always did. The goldens did not move and were not
+re-recorded.
+
+**Forty compressed matches per row, the same forty seeds throughout.**
+
+| | goals | shots/team | conversion | box touches/team |
+|---|---|---|---|---|
+| baseline | 0.39 | 2.29 | 0.086 | 2.1 |
+| territory alone (0.75) | 0.32 | 2.40 | 0.067 | 2.6 |
+| + appetite 3, aim 0.6, keeper 0.8 | 0.61 | 2.66 | 0.116 | 2.3 |
+| + appetite 8, aim 0.35, keeper 0.5 | 0.64 | 2.40 | 0.133 | 2.2 |
+| **+ keeper reach 0.35, aim 0.15, save 0.15** | **1.22** | **2.39** | **0.256** | **2.0** |
+| + aim 0.08, reach 0.20, save 0.05 | 1.12 | 2.36 | 0.240 | 2.1 |
+
+**Three times the goals, and it stops there.** The fifth row is what shipped.
+The sixth is why: a keeper with a fifth of his reach and a twentieth of his save
+roll produces *fewer* goals than one with a third and a seventh, which is noise
+around a ceiling rather than a reversal.
+
+Two things hold that ceiling, and both are findings rather than tuning.
+
+**Shot volume is positional and no scoring knob touches it.** Appetite went from
+1 to 8 — a shot priced at eight times what it is worth over the goal — and shots
+per team moved 2.29 to 2.40. A compressed match holds about fifty possessions
+and the engine reaches a shooting position in roughly a tenth of them, so the
+count is set by where the ball gets to, not by willingness to strike it. This is
+the same wall `TERRITORY` hit from the other side: at 0.75 it delivered a
+quarter more touches into the box and *no* extra goals, because the chances it
+delivered were not worth more.
+
+**And three quarters of goal-bound shots are stopped by something that is not
+the keeper.** Measured on seed 7 at the urgent fit: 23 shots, about 18 on
+target, 5 saves, 3 goals. Ten shots the forecast had crossing the line arrived
+as neither a save nor a goal. Some of that is `on_target` being latched by
+`SimReferee._track_shot` the first tick the forecast crosses the frame, so a
+ball that curls or drops away afterwards still counts; the rest is bodies in a
+crowded area. **That gap is worth a look on its own** — it is either an
+instrument that overstates on-target or a mechanic quietly eating chances, and
+which one it is decides whether the remaining 2.2x is reachable at all.
+
+`--urgency U` forces the fit on at any clock rate, because none of the above
+could be seen otherwise: a whole compressed match has about five shots in it and
+`diagnose`'s shot table needs a population. `./run.sh diagnose --minutes 10
+--urgency 1` is ten minutes of the compressed match's football at the length the
+instruments were built for.

@@ -590,7 +590,10 @@ static func shot(ctx: SimContext, player: SimPlayer, aim_point: Vector3, power: 
 	var spin := Vector3.UP * curl
 	var vel := ctx.ballistics.solve_direct(ctx.ball.pos, aim_point, speed, ctx.env, spin)
 
-	var sigma := aim_sigma(ctx, player, player.attrs.finishing, distance, SHOT_AIM_BASE, line)
+	# The scale is 1.0 at real time: `SimMatchConfig`, "the compressed match's
+	# scoring fit".
+	var sigma := aim_sigma(ctx, player, player.attrs.finishing, distance,
+		SHOT_AIM_BASE * ctx.config.shot_sigma_scale(), line)
 	if first_time:
 		sigma *= 1.45
 	# Elevation is the harder axis: the goal is 7.32 m wide and 2.44 m high, and

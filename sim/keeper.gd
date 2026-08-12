@@ -451,6 +451,8 @@ static func _shot_response(ctx: SimContext, k: SimPlayer) -> void:
 	var extension: float = clampf(dive_time / DIVE_TIME, 0.0, 1.0)
 	var reach: float = lerpf(REACH_STANDING, REACH_DIVING, extension)
 	reach *= lerpf(0.85, 1.15, k.attrs.agility)
+	# 1.0 at real time: `SimMatchConfig`, "the compressed match's scoring fit".
+	reach *= ctx.config.keeper_reach_scale()
 
 	state["resolved"] = true
 	if margin > reach:
@@ -465,6 +467,8 @@ static func _shot_response(ctx: SimContext, k: SimPlayer) -> void:
 	var save_chance: float = clampf(0.78 + closeness * 0.20, 0.0, 0.97)
 	save_chance *= lerpf(0.75, 1.12, k.attrs.handling)
 	save_chance *= clampf(1.2 - ball_speed / 85.0, 0.75, 1.12)
+	# 1.0 at real time: `SimMatchConfig`, "the compressed match's scoring fit".
+	save_chance *= ctx.config.keeper_save_scale()
 	k.play_anim(SimConsts.Anim.DIVE_LEFT if point.z < k.pos.z else SimConsts.Anim.DIVE_RIGHT, 0.8)
 	if not ctx.rng.chance(save_chance):
 		return

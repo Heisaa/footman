@@ -350,3 +350,29 @@ writing them twice. The *validation* order was kept: the Phase 1 and 2 criteria 
 tested independently of them (`TestBall`, `TestTouch`,
 `TestMatch._no_ball_swarming`), and the §11 statistical bands remain the Phase 4
 gate.
+
+**The compressed match is fitted to a scoreline, the real-time match is not.**
+Owner's call, taken with the arithmetic in front of them and against the default
+ordering in `CLAUDE.md` ("make it look like football, ignore the numbers until it
+does") and the tuning freeze in `PLAN.md` §11.1.1.
+
+The conflict is not resolvable by a mechanic. A three-minute match holds 180
+seconds of football; 2.7 goals in 180 seconds is 81 goals per ninety minutes of
+play, against football's 2.7 and this engine's 11.6. Nothing that reads as
+football produces it. Match length and pitch size are the two levers that would
+have, and both were ruled out: the match stays at three minutes on a regulation
+pitch, eleven a side.
+
+So the compression carries the fit. `SimMatchConfig.urgency` and the five
+constants that read it are a tuning of the *format*, not of the football, and
+they are no-ops at `clock_rate` 1 so that the engine every band and golden
+measures is untouched. Delivered 0.39 to 1.22 goals per three-minute match;
+`docs/STATUS.md` has the table and the two walls that stopped it at 3x rather
+than 7x.
+
+What this costs, stated plainly so nobody has to rediscover it: the compressed
+match converts a quarter of its shots and puts four fifths of them on target,
+against football's tenth and third. Anything measured through `clock_rate 30` is
+now a measurement of the format. **The honest way to ask what the football is
+doing is still `clock_rate` 1**, and that is what `./run.sh diagnose`, `test`,
+`gate` and `accept` all default to.

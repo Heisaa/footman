@@ -29,6 +29,11 @@ usage: ./run.sh <command> [args]
       [--strict] [--keep] [--small] [--clock-rate R] [--pitch-scale F]
 
   match [--seed N]          simulate one match and print a summary
+      [--urgency U]         --urgency forces the compressed match's scoring fit
+                            on at any clock rate, for measurement: 0 is the
+                            real-time engine, 1 is the three-minute one. Works on
+                            match, diagnose, batch and pbatch. See
+                            SimMatchConfig, "the compressed match's scoring fit"
   diagnose [--seed N]       simulate one match and break it down
   replay --tick T           every decision around one tick of one seed, in
       [--seed N] [--around S]

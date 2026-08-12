@@ -18,6 +18,9 @@ class Options extends RefCounted:
 	var clock_rate := 1.0
 	## Shrinks a regulation pitch, eleven a side kept. See SimPitch.scaled.
 	var pitch_scale := 1.0
+	## Forces the compressed match's scoring fit on at any clock rate, for
+	## measurement. See SimMatchConfig.urgency_override.
+	var urgency := -1.0
 	var trace := false
 	var events := true
 	var small_sided := false
@@ -58,6 +61,7 @@ static func build(opts: Options) -> SimMatch:
 	config.seed_value = opts.seed_value
 	config.minutes = opts.minutes
 	config.clock_rate = opts.clock_rate
+	config.urgency_override = opts.urgency
 	config.trace_enabled = opts.trace
 	config.events_enabled = opts.events
 	config.env = env_for(opts.seed_value, opts.wet)
@@ -107,6 +111,7 @@ static func _clone(o: Options) -> Options:
 	c.away_tactics = o.away_tactics.clone() if o.away_tactics != null else null
 	c.minutes = o.minutes
 	c.clock_rate = o.clock_rate
+	c.urgency = o.urgency
 	c.pitch_scale = o.pitch_scale
 	c.trace = o.trace
 	c.events = o.events

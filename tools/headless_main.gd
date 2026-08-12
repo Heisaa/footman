@@ -88,6 +88,7 @@ func _options(flags: Dictionary) -> SimRunner.Options:
 	o.minutes = float(flags.get("minutes", "90"))
 	o.clock_rate = float(flags.get("clock-rate", "1"))
 	o.pitch_scale = float(flags.get("pitch-scale", "1"))
+	o.urgency = float(flags.get("urgency", "-1"))
 	o.small_sided = flags.has("small")
 	o.wet = flags.has("wet")
 	o.trace = flags.has("trace")
