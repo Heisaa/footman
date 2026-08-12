@@ -577,20 +577,36 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 	# the front, tallest and furthest forward in the middle and falling away to
 	# either side, is a front with a shape to it.
 	if style.get("quiff", false):
-		for i in 3:
-			var across := float(i) - 1.0
-			var off := absf(across)
-			var lobe := _sphere(head_r * (0.36 - off * 0.06), mat, true)
-			# Out on the shell, not inside it. Set back at 0.32 the two side lobes
-			# sat under the surface and never showed, which left the middle one
-			# standing alone -- one sphere on top of a head again, and the whole
-			# reason this stopped being one sphere.
-			lobe.position = Vector3(
-				across * head_r * 0.36,
-				head_r * (0.86 - off * 0.08),
-				head_r * (0.42 + off * 0.02))
-			lobe.scale = Vector3(1.0, 0.92, 0.75)
-			root.add_child(lobe)
+		# The whole top of the head, filled with lobes that get taller and bigger
+		# towards the front, so the hair swells forward and breaks over the brow.
+		#
+		# Anything less than the whole top fails the same way twice over. A single
+		# lobe at the hairline is a ball resting on a head. A row of three is a
+		# ball resting on a head as well, because the two outer ones sit under the
+		# surface of the shell and only the middle one ever shows. What makes a
+		# quiff read is not the lump at the front, it is that the hair behind the
+		# lump rises to meet it.
+		#
+		# Each lobe is placed by where its top should come, not by where its middle
+		# goes: the back row is set flush with the shell so the fill starts
+		# invisibly, and every row after it stands that much prouder.
+		for row in 3:
+			var along := float(row) * 0.5
+			var z := lerpf(-0.46, 0.42, along)
+			var radius := lerpf(0.26, 0.36, along)
+			var top := lerpf(1.16, 1.26, along)
+			for i in 3:
+				var across := float(i) - 1.0
+				var off := absf(across)
+				var lobe := _sphere(head_r * radius * (1.0 - off * 0.12), mat, true)
+				lobe.position = Vector3(
+					across * head_r * lerpf(0.40, 0.34, along),
+					head_r * (top - radius * 0.9 - off * 0.06),
+					head_r * z)
+				# Wide and deep enough to run into their neighbours. Left round they
+				# are nine separate balls, which is the curly head two rows up.
+				lobe.scale = Vector3(1.25, 0.9, 1.05)
+				root.add_child(lobe)
 
 	# Swept back instead: a low wide dome over the crown, running to the back of
 	# the head. With the hairline pushed well up the forehead it reads as hair
