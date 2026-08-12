@@ -41,19 +41,24 @@ const SCALE := SIZE / GRID
 const INK := Color(0.13, 0.11, 0.15, 1.0)
 const WHITE := Color(1.0, 1.0, 1.0, 1.0)
 
-## Eyes. `rx`/`ry` are the half-axes, `gap` half the distance between them, `y`
-## how far down the face they sit, and `white` whether the eye is a bead with a
-## pupil in it or a plain dot. Both belong: the reference art has plain dots, the
-## Mii has a pupil, and a squad wants some of each.
+## Eyes, and they are black shapes: `rx`/`ry` are the half-axes, `gap` half the
+## distance between them, `y` how far down the face they sit. No whites, no
+## pupils -- the reference art draws an eye as one dark mark and it carries
+## further than a bead does, because at match distance a white with a pupil in it
+## is a grey smudge.
+##
+## Spacing is the whole of this table. Eyes a fifth of a head-width apart huddle
+## in the middle of the face and the man looks pinched; the reference sets them
+## about a quarter to a third of the head apart and draws them big.
 const EYE_STYLES := [
-	{"rx": 2.6, "ry": 3.4, "gap": 6.0, "y": 14.0, "white": true},
-	{"rx": 3.2, "ry": 3.6, "gap": 6.0, "y": 14.0, "white": true},
-	{"rx": 1.8, "ry": 1.8, "gap": 5.0, "y": 14.0, "white": false},
-	{"rx": 1.6, "ry": 2.6, "gap": 7.0, "y": 15.0, "white": false},
-	{"rx": 3.4, "ry": 2.8, "gap": 7.0, "y": 14.0, "white": true},
-	{"rx": 2.4, "ry": 3.0, "gap": 7.0, "y": 14.0, "white": true},
-	{"rx": 2.4, "ry": 2.4, "gap": 4.5, "y": 15.0, "white": false},
-	{"rx": 1.2, "ry": 2.2, "gap": 6.0, "y": 14.0, "white": false},
+	{"rx": 2.4, "ry": 3.0, "gap": 6.0, "y": 14.0},
+	{"rx": 2.9, "ry": 2.9, "gap": 6.2, "y": 13.8},
+	{"rx": 2.0, "ry": 2.0, "gap": 5.6, "y": 14.0},
+	{"rx": 1.8, "ry": 3.2, "gap": 6.6, "y": 14.2},
+	{"rx": 3.2, "ry": 2.4, "gap": 6.4, "y": 13.8},
+	{"rx": 2.2, "ry": 3.6, "gap": 5.8, "y": 14.0},
+	{"rx": 3.0, "ry": 3.4, "gap": 6.8, "y": 14.2},
+	{"rx": 1.6, "ry": 2.4, "gap": 5.6, "y": 14.0},
 ]
 
 ## Brows. `lift` is how far above the eye they sit, `tilt` how much the inner end
@@ -62,24 +67,26 @@ const EYE_STYLES := [
 const BROW_STYLES := [
 	{"lift": 0.0, "tilt": 0.0, "half": 0.0, "thick": 0.0},
 	{"lift": 5.0, "tilt": 0.0, "half": 3.0, "thick": 1.0},
-	{"lift": 5.0, "tilt": 0.0, "half": 3.6, "thick": 1.6},
-	{"lift": 6.0, "tilt": -0.8, "half": 3.4, "thick": 1.0},
-	{"lift": 5.0, "tilt": 0.8, "half": 3.6, "thick": 1.6},
-	{"lift": 6.5, "tilt": -1.6, "half": 3.0, "thick": 0.9},
-	{"lift": 4.4, "tilt": 1.0, "half": 3.0, "thick": 1.8},
-	{"lift": 6.0, "tilt": 0.0, "half": 4.4, "thick": 0.9},
+	{"lift": 5.0, "tilt": 0.0, "half": 3.4, "thick": 1.5},
+	{"lift": 5.6, "tilt": -0.7, "half": 3.2, "thick": 1.0},
+	{"lift": 5.0, "tilt": 0.7, "half": 3.4, "thick": 1.5},
+	{"lift": 6.0, "tilt": -1.4, "half": 3.0, "thick": 0.9},
+	{"lift": 4.6, "tilt": 0.9, "half": 3.0, "thick": 1.7},
+	{"lift": 5.6, "tilt": 0.0, "half": 4.0, "thick": 0.9},
 ]
 
-## Mouths, for the face a player wears when nothing is happening.
+## Mouths, for the face a player wears when nothing is happening. They sit
+## closer under the nose than they did: the features were spread over the whole
+## face and read as a long jaw with a mouth lost at the bottom of it.
 const MOUTH_STYLES := [
-	{"kind": "line", "w": 5.0, "y": 23.0},
-	{"kind": "smile", "w": 4.0, "y": 22.0},
-	{"kind": "frown", "w": 3.6, "y": 24.0},
-	{"kind": "open", "w": 2.2, "y": 23.0},
-	{"kind": "line", "w": 8.0, "y": 23.0},
-	{"kind": "smile", "w": 6.0, "y": 21.5},
-	{"kind": "line", "w": 3.0, "y": 23.0},
-	{"kind": "open", "w": 1.6, "y": 23.0},
+	{"kind": "line", "w": 5.0, "y": 22.4},
+	{"kind": "smile", "w": 4.0, "y": 21.8},
+	{"kind": "frown", "w": 3.4, "y": 23.0},
+	{"kind": "open", "w": 2.1, "y": 22.4},
+	{"kind": "line", "w": 7.4, "y": 22.4},
+	{"kind": "smile", "w": 5.6, "y": 21.4},
+	{"kind": "line", "w": 3.0, "y": 22.4},
+	{"kind": "open", "w": 1.5, "y": 22.6},
 ]
 
 static var _cache := {}
@@ -153,43 +160,26 @@ static func _draw_face(
 			_arc(image, right, y, rx + 0.8, false, 1.3)
 		SimAppearance.Face.DESPAIR:
 			# Wide open: the eyes grow rather than change shape.
-			_eye(image, left, y, rx + 0.6, ry + 0.6, eye["white"], 0.6)
-			_eye(image, right, y, rx + 0.6, ry + 0.6, eye["white"], 0.6)
+			_ellipse(image, left, y, rx + 0.5, ry + 0.7, INK)
+			_ellipse(image, right, y, rx + 0.5, ry + 0.7, INK)
 		SimAppearance.Face.ANGER:
-			_eye(image, left, y + 0.5, rx, ry * 0.75, eye["white"], 0.0)
-			_eye(image, right, y + 0.5, rx, ry * 0.75, eye["white"], 0.0)
+			_ellipse(image, left, y + 0.4, rx, ry * 0.7, INK)
+			_ellipse(image, right, y + 0.4, rx, ry * 0.7, INK)
 		_:
-			_eye(image, left, y, rx, ry, eye["white"], 0.0)
-			_eye(image, right, y, rx, ry, eye["white"], 0.0)
+			_ellipse(image, left, y, rx, ry, INK)
+			_ellipse(image, right, y, rx, ry, INK)
 
 	match face:
 		SimAppearance.Face.EFFORT:
-			_ellipse(image, 16.0, 23.0, 3.0, 3.4, INK)
+			_ellipse(image, 16.0, 22.6, 2.8, 3.2, INK)
 		SimAppearance.Face.DELIGHT:
-			_arc(image, 16.0, 22.0, 5.0, true, 1.6)
+			_arc(image, 16.0, 21.8, 4.6, true, 1.5)
 		SimAppearance.Face.DESPAIR:
-			_arc(image, 16.0, 24.5, 4.0, false, 1.5)
+			_arc(image, 16.0, 23.6, 3.6, false, 1.4)
 		SimAppearance.Face.ANGER:
-			_line(image, 12.5, 24.0, 19.5, 24.0, 1.5)
+			_line(image, 12.8, 22.8, 19.2, 22.8, 1.4)
 		_:
 			_mouth(image, mouth)
-
-
-## An eye: a plain ink dot, or a bead with a pupil and a catchlight in it. `look`
-## drops the pupil down the white, which is what makes a wide-open eye read as
-## alarmed rather than merely large.
-static func _eye(
-	image: Image, cx: float, cy: float, rx: float, ry: float, white: bool, look: float
-) -> void:
-	_ellipse(image, cx, cy, rx, ry, INK)
-	if not white:
-		return
-	_ellipse(image, cx, cy, rx - 0.5, ry - 0.5, WHITE)
-	var pr: float = maxf(minf(rx, ry) - 1.0, 0.6)
-	_ellipse(image, cx, cy + look, pr, pr, INK)
-	# The catchlight: one pale spot, and it is the difference between an eye and
-	# a hole.
-	_ellipse(image, cx - pr * 0.35, cy + look - pr * 0.35, pr * 0.32, pr * 0.32, WHITE)
 
 
 ## One brow. `inner` is +1 for the left eye and -1 for the right, so a positive

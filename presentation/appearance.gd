@@ -14,15 +14,18 @@ extends RefCounted
 ## (see `DECISIONS.md`). It lengthens the body, which is what carries a stride,
 ## and it is still far above the three-heads-plus-a-bit of a real man, so the
 ## face stays legible at match distance.
-const HEAD_FRACTION_MIN := 0.30
-const HEAD_FRACTION_MAX := 0.35
+const HEAD_FRACTION_MIN := 0.28
+const HEAD_FRACTION_MAX := 0.33
 ## How far the head departs from a ball: 1.0 is round, and the two axes are drawn
 ## apart so a squad has long faces and wide ones. The face quad hangs off the
 ## head, so it stretches with it -- which is the Mii trick, and free.
-const HEAD_WIDTH_MIN := 0.90
-const HEAD_WIDTH_MAX := 1.12
-const HEAD_HEIGHT_MIN := 0.88
-const HEAD_HEIGHT_MAX := 1.14
+## Narrower than they were on both axes. At the extremes a head was an egg or a
+## melon rather than a long face or a wide one, and the shape of a head is
+## supposed to be noticed second, after the man.
+const HEAD_WIDTH_MIN := 0.93
+const HEAD_WIDTH_MAX := 1.09
+const HEAD_HEIGHT_MIN := 0.92
+const HEAD_HEIGHT_MAX := 1.08
 ## Heights. A squad wants a giant and a small one in it, so the range reaches
 ## further out than a squad list would and the draw below spends most of its mass
 ## in the middle anyway.

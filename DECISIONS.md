@@ -277,6 +277,21 @@ A second round on the same note, again at the owner's direction:
   head is the thing being looked at, and at the new face resolution a
   twelve-sided sphere was the roughest edge in the frame.
 
+A third round, again the owner's: the nose became an upright **capsule** rather
+than a ball, the eyes went to **solid black shapes** -- whites and pupils were
+tried and are gone, because one dark mark carries further and a bead is a grey
+smudge at match distance -- and the face and head proportions were worked over.
+Heads are 28-33% of height rather than 30-35, and the shape range on both axes
+was narrowed so the extremes are a long face and a wide one rather than an egg
+and a melon.
+
+The spacing of the features is the part that took two goes. Pulling the eyes in
+to a fifth of a head-width apart made every man look pinched, and it is recorded
+here because it looks like the obvious fix for a face that reads as too spread
+out: the answer was the opposite, roughly a quarter to a third of the head
+between the pupils and the eyes drawn large, with the mouth brought up under the
+nose rather than down at the jaw.
+
 ## Design calls made during the build
 
 **Goals and draws are entertainment targets, not simulation targets.** The owner

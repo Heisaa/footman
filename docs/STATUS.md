@@ -62,8 +62,9 @@ A look pass over the figures (`DECISIONS.md`, eighth and ninth amendments) cut
 the head to 30-35% of height and widened what a seed can produce: height and
 build reach the tails, the head is scaled on two axes so a squad has long faces
 and wide ones, hair is fourteen styles built from a shell pushed back off the
-skull in colours hair comes in, the nose is a bump on the head from a library of six, in a ruddy
-version of the man's own skin, and the brows, eyes and mouth are per-player and independent of the
+skull in colours hair comes in, the nose is an upright capsule on the front of the head from a
+library of six, in a ruddy version of the man's own skin, the eyes are solid
+black shapes, and the brows, eyes and mouth are per-player and independent of the
 expression — with the brows carrying the expression, which is where a Mii gets
 its range. The face texture is drawn at four times the old resolution and
 anti-aliased, and the head is built at twice the body's polygon count. An ink outline, a set of eighties kit details and the beards were

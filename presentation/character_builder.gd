@@ -220,12 +220,17 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 # --- Primitives -------------------------------------------------------------
 
 
-static func _capsule(radius: float, height: float, material: Material) -> MeshInstance3D:
+static func _capsule(
+	radius: float, height: float, material: Material, smooth := false
+) -> MeshInstance3D:
 	var mesh := CapsuleMesh.new()
 	mesh.radius = radius
 	mesh.height = maxf(height, radius * 2.05)
 	mesh.radial_segments = SEGMENTS
 	mesh.rings = RINGS
+	if smooth:
+		mesh.radial_segments = HEAD_SEGMENTS
+		mesh.rings = HEAD_RINGS
 	var node := MeshInstance3D.new()
 	node.mesh = mesh
 	node.material_override = material
@@ -303,23 +308,29 @@ static func _face_quad(head_r: float, appearance: SimAppearance) -> MeshInstance
 ## inked nose is a smudge between the eyes, while a bump catches the light and
 ## does the whole job for one sphere.
 ##
-## Each row is [radius, height on the face, how far out, y scale, z scale].
+## A capsule rather than a ball: a nose has a length to it, and a sphere on the
+## front of a head is a clown's. Standing upright it gives the bridge and the tip
+## in one primitive.
+##
+## Each row is [radius, length, height on the face, how far out, z scale].
 const NOSE_LIBRARY := [
-	[0.14, -0.06, 0.96, 0.90, 1.15],  # a button
-	[0.17, -0.08, 0.94, 0.75, 1.00],  # broad and flat
-	[0.12, -0.05, 0.98, 1.15, 1.45],  # small and pointed
-	[0.16, -0.10, 0.95, 0.85, 1.20],  # heavy, and low on the face
-	[0.13, -0.03, 0.97, 1.00, 1.05],  # neat, and high
-	[0.19, -0.07, 0.93, 0.80, 1.10],  # a big one
+	[0.085, 0.18, -0.03, 0.95, 1.15],  # a small straight one
+	[0.100, 0.15, -0.04, 0.94, 1.00],  # broader and shorter
+	[0.075, 0.22, -0.02, 0.96, 1.30],  # long and fine
+	[0.098, 0.24, -0.05, 0.94, 1.10],  # a big one
+	[0.080, 0.13, -0.01, 0.96, 1.05],  # a neat button, high on the face
+	[0.112, 0.18, -0.03, 0.93, 1.00],  # broad
 ]
 
 
 static func _nose(appearance: SimAppearance, head_r: float) -> MeshInstance3D:
 	var row: Array = NOSE_LIBRARY[posmod(appearance.nose_style, NOSE_LIBRARY.size())]
-	var nose := _sphere(head_r * float(row[0]), flat_material(appearance.nose_colour), true)
+	var nose := _capsule(
+		head_r * float(row[0]), head_r * float(row[1]),
+		flat_material(appearance.nose_colour), true)
 	nose.name = "Nose"
-	nose.position = Vector3(0.0, head_r * float(row[1]), head_r * float(row[2]))
-	nose.scale = Vector3(1.0, float(row[3]), float(row[4]))
+	nose.position = Vector3(0.0, head_r * float(row[2]), head_r * float(row[3]))
+	nose.scale = Vector3(1.0, 1.0, float(row[4]))
 	return nose
 
 
@@ -395,11 +406,11 @@ static func _accessory(
 		"headband":
 			# A band round the forehead. It was a capsule turned on its side, which
 			# is a disc across the face rather than a band round the head.
-			# Above the brows, which sit at about four tenths of a radius, and only
-			# just wider than the head is at that height -- a band cut to the
+			# Clear above the brows, which sit at about four tenths of a radius, and
+			# only just wider than the head is at that height -- a band cut to the
 			# equator and raised to the forehead is a brim.
-			var band := _band(head_r * 0.98, head_r * 0.13, flat_material(kit[0]))
-			band.position = Vector3(0.0, head_r * 0.5, 0.0)
+			var band := _band(head_r * 0.92, head_r * 0.11, flat_material(kit[0]))
+			band.position = Vector3(0.0, head_r * 0.6, 0.0)
 			head.add_child(band)
 		"cap":
 			var cap := _sphere(head_r * 1.05, flat_material(kit[0]))
