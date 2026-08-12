@@ -19,13 +19,13 @@ const HEAD_FRACTION_MAX := 0.31
 ## How far the head departs from a ball: 1.0 is round, and the two axes are drawn
 ## apart so a squad has long faces and wide ones. The face quad hangs off the
 ## head, so it stretches with it -- which is the Mii trick, and free.
-## Narrower than they were on both axes. At the extremes a head was an egg or a
-## melon rather than a long face or a wide one, and the shape of a head is
-## supposed to be noticed second, after the man.
-const HEAD_WIDTH_MIN := 0.93
-const HEAD_WIDTH_MAX := 1.09
-const HEAD_HEIGHT_MIN := 0.92
-const HEAD_HEIGHT_MAX := 1.08
+## Wider than tall, always: the reference heads are broad and slightly squashed,
+## never egg-shaped. The variation inside that is small on purpose -- the shape of
+## a head is supposed to be noticed second, after the man.
+const HEAD_WIDTH_MIN := 1.02
+const HEAD_WIDTH_MAX := 1.14
+const HEAD_HEIGHT_MIN := 0.90
+const HEAD_HEIGHT_MAX := 1.00
 ## Heights. A squad wants a giant and a small one in it, so the range reaches
 ## further out than a squad list would and the draw below spends most of its mass
 ## in the middle anyway.
@@ -86,6 +86,9 @@ var brow_style := 0
 var eye_style := 0
 var mouth_style := 0
 var nose_style := 0
+## Two of the six figures in the reference wear a moustache, so a fair number of
+## a squad should.
+var moustache := false
 ## The nose is a warmer, redder version of the man's own skin -- the reference
 ## art gives every figure a pink one. Derived rather than drawn from a table so
 ## it holds up across the skin tones: a pale pink button on a dark face reads as
@@ -123,16 +126,17 @@ static func from_seed(seed_value: int) -> SimAppearance:
 	a.mouth_style = rng.range_int(0, SimFaceAtlas.MOUTH_STYLES.size() - 1)
 	a.nose_style = rng.range_int(0, SimCharacterBuilder.NOSE_LIBRARY.size() - 1)
 	a.nose_colour = _nose_colour(a.skin, rng)
+	a.moustache = rng.chance(0.22)
 	a.sleeves_long = rng.chance(0.75)
 	a.socks_high = rng.chance(0.8)
 	a.face = Face.NEUTRAL
 	return a
 
 
-## A ruddy version of a skin tone: hue pulled round to pink or warm red,
-## saturation lifted, value left roughly where it was, then mixed back into the
-## skin by an amount that varies per player. Some men get a faint warmth and some
-## get a proper red nose.
+## The nose, a shade off the skin rather than a different colour from it. The
+## owner's toy reference has plain skin-coloured noses and the red one it had
+## before was from the other reference; what is left is enough warmth to catch
+## the eye and no more. Raise the mix in the last line for a redder nose.
 static func _nose_colour(skin: Color, rng: SimRng) -> Color:
 	# The hue runs from just short of a full turn (pink) to a warm orange-red.
 	# Written as a signed offset and wrapped, because lerping 0.99 to 0.045 the
@@ -140,11 +144,9 @@ static func _nose_colour(skin: Color, rng: SimRng) -> Color:
 	var hue: float = fposmod(lerpf(-0.015, 0.045, rng.unit_float()), 1.0)
 	var target := Color.from_hsv(
 		hue,
-		clampf(skin.s * 1.2 + 0.3, 0.38, 0.78),
-		clampf(skin.v * 0.9, 0.0, 1.0))
-	# Enough of the target to read as a different colour from the face. Held just
-	# short of a circus nose: this is a man who has been out in the cold.
-	return skin.lerp(target, rng.range_float(0.5, 0.8))
+		clampf(skin.s * 1.1 + 0.12, 0.2, 0.6),
+		clampf(skin.v * 0.97, 0.0, 1.0))
+	return skin.lerp(target, rng.range_float(0.15, 0.35))
 
 
 ## Height: mostly the middle of a squad list, sometimes a tail. The middle is the

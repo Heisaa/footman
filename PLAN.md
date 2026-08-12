@@ -639,9 +639,12 @@ player the same size on screen wherever play is.
   with a pupil in it is a grey smudge at match distance. At this size an inked nose is a smudge between the eyes, and a bump
   catches the light and does the whole job for one sphere.
 - **Hair colours are colours hair comes in** — black, browns, blonds, ginger, grey, white.
-- **Hair is a sphere slightly larger than the skull, pushed back.** Radius is how much hair there
-  is; the push back is where the hairline lands. Nothing is perched on the crown — a squashed
-  ellipsoid sitting on top of a head is a hat, and reads as one every time.
+- **Hair is a sphere slightly larger than the skull, pushed back, plus pieces.** Radius is how much
+  hair there is; the push back is where the hairline lands; and on top of that go curls, a quiff,
+  tufts, sideburns, a widow's peak or a mass down the back. Nothing is perched on the crown — a
+  squashed ellipsoid sitting on top of a head is a hat, and reads as one every time.
+- **A soft sheen on the figure, and only the figure.** The reference is moulded vinyl; the highlight
+  is most of what makes it read as an object rather than a flat shape. Scenery stays dead flat.
 - **Generation reaches the tails.** Height clusters in the middle of a squad list and occasionally
   draws a giant or a small one, and build follows height.
 - **No facial rig.** The face is drawn on a texture and swapped

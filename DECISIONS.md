@@ -332,9 +332,35 @@ trim is not period dressing, it is *how a football kit is drawn*, in blocks of
 two colours. What the eighth amendment was right about is unchanged: no ink
 outline, and the register stays out of the art.
 
-Not taken from the reference: the moustaches on two of its figures, and its
-plain skin-coloured noses. Both are open for the owner to call, and the nose in
-particular was a deliberate instruction two rounds earlier.
+A second pass on the same reference took the rest of it, at the owner's
+direction to work hard on likeness:
+
+- **Hair is a shell plus pieces**, which is what the reference actually varies:
+  a cluster of nine or thirteen spheres for curls, a lobe swept up for a quiff,
+  small tufts for a tousled head, tabs at the temples for sideburns, a point at
+  the centre of the hairline for a widow's peak, and a mass down the back. One
+  sphere cannot be shaped into a curly head; nine of them are a curly head.
+- **A V-neck**, two bars laid on the chest and a band round the back. A ring is a
+  crew neck, and every figure in the reference wears a V. The first version
+  leaned the bars inward and the man wore a bow tie.
+- **Moustaches are back** -- two of the six reference figures wear one -- and the
+  **nose is skin-coloured again**, a shade off rather than red. The red came from
+  the other reference; this one has plain noses.
+- **Ears**, two small tabs where the head is widest.
+- **A soft sheen** on the figure only. The reference is moulded vinyl and the
+  highlight is most of what makes it read as an object. Scenery keeps the flat
+  material.
+- Everyone wears socks. `socks_high` used to leave a man bare-legged to the
+  ankle, which is not a thing.
+
+One process note, because it cost two rounds of the owner's time. The face-quad
+position was edited by string replacement three times and matched nothing all
+three times -- a comment had been inserted between the two lines the patch was
+anchored on, and the replace failed silently. The renders still changed, because
+other edits in the same batch did apply, so it looked like it had worked and was
+reported as working. The eyes-on-the-equator change in particular was reported
+done and was not. **Verify a targeted edit landed before reporting it**, and
+prefer rewriting a whole function to patching around a comment.
 
 ## Design calls made during the build
 

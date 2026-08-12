@@ -92,16 +92,16 @@ func _build_world() -> void:
 	env.background_color = SimPalette.PAPER
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(1, 1, 1)
-	# Lit softly and not much. Sun plus ambient over one blows a bright kit out to
-	# white, and the point of this view is that a colour is the colour it is.
-	env.ambient_light_energy = 0.72
+	# Enough sun to put a highlight on a moulded figure, enough ambient that the
+	# shadow side still reads as its own colour.
+	env.ambient_light_energy = 0.62
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
 	add_child(world_env)
 
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-52.0, -30.0, 0.0)
-	sun.light_energy = 0.42
+	sun.light_energy = 0.75
 	sun.shadow_enabled = true
 	add_child(sun)
 
