@@ -44,9 +44,13 @@ const TAIL_CHANCE := 0.14
 ## character for almost no cost, so they are used constantly.
 enum Face { NEUTRAL, EFFORT, DELIGHT, DESPAIR, ANGER }
 
+## Skin, on a ladder from very pale to very deep. Less saturated and a touch
+## pinker than the set this replaces, which ran orange -- the mid tones read as
+## terracotta under a bright sun.
 const SKIN_TONES := [
-	Color("f6d7ba"), Color("edbf98"), Color("dda173"), Color("c07f52"),
-	Color("9c5f38"), Color("6f4227"), Color("4a2c1b"), Color("fae3cd"),
+	Color("f0d2bd"), Color("e8c6ab"), Color("e3bb99"), Color("d4a179"),
+	Color("bf885d"), Color("a26e46"), Color("845736"), Color("684427"),
+	Color("4d321d"),
 ]
 
 ## Hair a person could have: black, browns, dark and light blond, ginger, grey

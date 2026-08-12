@@ -52,18 +52,22 @@ const WHITE := Color(1.0, 1.0, 1.0, 1.0)
 ## further than a bead does, because at match distance a white with a pupil in it
 ## is a grey smudge.
 ##
-## Spacing is the whole of this table. Eyes a fifth of a head-width apart huddle
-## in the middle of the face and the man looks pinched; the reference sets them
-## about a quarter to a third of the head apart and draws them big.
+## Every eye is a circle or a gentle oval -- nothing narrower than about three to
+## four, either way round. Slits and lozenges were in here and they read as a
+## squint on a face this size, which is an expression, not a feature.
+##
+## Spacing is the other half of the table. Eyes a fifth of a head-width apart
+## huddle in the middle of the face and the man looks pinched; the reference sets
+## them about a quarter to a third of the head apart and draws them big.
 const EYE_STYLES := [
-	{"rx": 2.4, "ry": 3.0, "gap": 6.6, "y": 14.6},
-	{"rx": 2.9, "ry": 2.9, "gap": 6.8, "y": 14.4},
+	{"rx": 2.4, "ry": 2.9, "gap": 6.6, "y": 14.6},
+	{"rx": 2.8, "ry": 2.8, "gap": 6.8, "y": 14.4},
 	{"rx": 2.0, "ry": 2.0, "gap": 6.2, "y": 14.6},
-	{"rx": 1.8, "ry": 3.2, "gap": 7.2, "y": 14.8},
-	{"rx": 3.2, "ry": 2.4, "gap": 7.0, "y": 14.4},
-	{"rx": 2.2, "ry": 3.6, "gap": 6.4, "y": 14.6},
-	{"rx": 3.0, "ry": 3.4, "gap": 7.4, "y": 14.8},
-	{"rx": 1.6, "ry": 2.4, "gap": 6.2, "y": 14.6},
+	{"rx": 2.1, "ry": 2.7, "gap": 7.2, "y": 14.8},
+	{"rx": 3.0, "ry": 2.6, "gap": 7.0, "y": 14.4},
+	{"rx": 2.3, "ry": 3.0, "gap": 6.4, "y": 14.6},
+	{"rx": 2.5, "ry": 2.5, "gap": 7.4, "y": 14.8},
+	{"rx": 1.9, "ry": 2.3, "gap": 6.2, "y": 14.6},
 ]
 
 ## Brows. `lift` is how far above the eye they sit, `tilt` how much the inner end
@@ -168,8 +172,9 @@ static func _draw_face(
 			_ellipse(image, left, y, rx + 0.5, ry + 0.7, INK)
 			_ellipse(image, right, y, rx + 0.5, ry + 0.7, INK)
 		SimAppearance.Face.ANGER:
-			_ellipse(image, left, y + 0.4, rx, ry * 0.7, INK)
-			_ellipse(image, right, y + 0.4, rx, ry * 0.7, INK)
+			# Narrowed, not shut: squashed to seven tenths they stop being ovals.
+			_ellipse(image, left, y + 0.4, rx, ry * 0.85, INK)
+			_ellipse(image, right, y + 0.4, rx, ry * 0.85, INK)
 		_:
 			_ellipse(image, left, y, rx, ry, INK)
 			_ellipse(image, right, y, rx, ry, INK)
