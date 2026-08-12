@@ -83,6 +83,11 @@ var brow_style := 0
 var eye_style := 0
 var mouth_style := 0
 var nose_style := 0
+## The nose is a warmer, redder version of the man's own skin -- the reference
+## art gives every figure a pink one. Derived rather than drawn from a table so
+## it holds up across the skin tones: a pale pink button on a dark face reads as
+## a mistake.
+var nose_colour: Color = SKIN_TONES[0]
 ## Sleeve length, socks pulled up, and so on: tiny variations that make a squad
 ## look like a group of individuals rather than a clone army.
 var sleeves_long := false
@@ -114,10 +119,29 @@ static func from_seed(seed_value: int) -> SimAppearance:
 	a.eye_style = rng.range_int(0, SimFaceAtlas.EYE_STYLES.size() - 1)
 	a.mouth_style = rng.range_int(0, SimFaceAtlas.MOUTH_STYLES.size() - 1)
 	a.nose_style = rng.range_int(0, SimCharacterBuilder.NOSE_LIBRARY.size() - 1)
+	a.nose_colour = _nose_colour(a.skin, rng)
 	a.sleeves_long = rng.chance(0.75)
 	a.socks_high = rng.chance(0.8)
 	a.face = Face.NEUTRAL
 	return a
+
+
+## A ruddy version of a skin tone: hue pulled round to pink or warm red,
+## saturation lifted, value left roughly where it was, then mixed back into the
+## skin by an amount that varies per player. Some men get a faint warmth and some
+## get a proper red nose.
+static func _nose_colour(skin: Color, rng: SimRng) -> Color:
+	# The hue runs from just short of a full turn (pink) to a warm orange-red.
+	# Written as a signed offset and wrapped, because lerping 0.99 to 0.045 the
+	# long way round passes through green.
+	var hue: float = fposmod(lerpf(-0.015, 0.045, rng.unit_float()), 1.0)
+	var target := Color.from_hsv(
+		hue,
+		clampf(skin.s * 1.15 + 0.2, 0.0, 0.62),
+		clampf(skin.v * 1.03, 0.0, 1.0))
+	# The top of this range was 0.85 and it produced a circus nose. A red nose is
+	# a man who has been out in the cold, not a clown.
+	return skin.lerp(target, rng.range_float(0.3, 0.62))
 
 
 ## Height: mostly the middle of a squad list, sometimes a tail. The middle is the

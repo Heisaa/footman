@@ -261,8 +261,11 @@ belongs to the two styles that want it, and the hairline does the rest.
 A second round on the same note, again at the owner's direction:
 
 - **The nose is a bump on the head**, as in the reference art, not a mark on the
-  texture. Six shapes. A drawn nose at this size is a smudge; a bump catches the
-  light.
+  texture. Six shapes, and a ruddy version of the man's own skin -- pink on a
+  pale face, warm red on a dark one, by an amount that varies per player. A
+  drawn nose at this size is a smudge; a bump catches the light. The colour is
+  derived from the skin rather than drawn from a table, because a pale pink
+  button on a dark face reads as a mistake.
 - **The face texture is drawn at four times the resolution and anti-aliased**
   from each shape's own distance function. The style tables are unchanged: they
   are written in a 32-square unit grid and scaled, so the resolution is one

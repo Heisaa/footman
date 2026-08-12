@@ -632,8 +632,9 @@ player the same size on screen wherever play is.
 - **Variety comes from proportion and face**, not from detail: head size, head shape (the head is
   scaled on two axes, and the face stretches with it), height, build, skin, hair, and the brows,
   eyes, mouth and nose a player was born with.
-- **The nose is geometry, not a drawn mark**: a small skin-coloured bump on the front of the head,
-  from a library of shapes. At this size an inked nose is a smudge between the eyes, and a bump
+- **The nose is geometry, not a drawn mark**: a small bump on the front of the head, from a library
+  of shapes, in a ruddy version of the man's own skin — pink on a pale face, warm red on a dark
+  one, and how far it goes varies per player. At this size an inked nose is a smudge between the eyes, and a bump
   catches the light and does the whole job for one sphere.
 - **Hair colours are colours hair comes in** — black, browns, blonds, ginger, grey, white.
 - **Hair is a sphere slightly larger than the skull, pushed back.** Radius is how much hair there

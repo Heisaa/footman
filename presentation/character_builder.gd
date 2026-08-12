@@ -316,9 +316,7 @@ const NOSE_LIBRARY := [
 
 static func _nose(appearance: SimAppearance, head_r: float) -> MeshInstance3D:
 	var row: Array = NOSE_LIBRARY[posmod(appearance.nose_style, NOSE_LIBRARY.size())]
-	# Skin, not a shade of it: the form comes from the light, the way every other
-	# part of the figure works.
-	var nose := _sphere(head_r * float(row[0]), flat_material(appearance.skin), true)
+	var nose := _sphere(head_r * float(row[0]), flat_material(appearance.nose_colour), true)
 	nose.name = "Nose"
 	nose.position = Vector3(0.0, head_r * float(row[1]), head_r * float(row[2]))
 	nose.scale = Vector3(1.0, float(row[3]), float(row[4]))
