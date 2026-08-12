@@ -24,7 +24,7 @@ afterwards instead of investigated.
 | 3 | Parry versus hold — the rebound cascade | `SimKeeper` | - |
 | 4 | The in-box pass backwards the owner watched happen | `SimDecision._add_passes` | + |
 | 5 | Blocks that cost the shooter, a keeper who narrows the angle | `SimKeeper`, `SimDuel` | - |
-| 16 | Where do the goal-bound shots go? | `SimReferee._track_shot` | + |
+| 16 | ~~Where do the goal-bound shots go?~~ answered — `docs/STATUS.md` | `SimKeeper._try_gather` | + |
 
 **(2) is the subtle one, and double-counting is the trap.** `aim_sigma` prices
 skill, pressure, running speed, distance, composure, body facing and fatigue.
@@ -43,20 +43,17 @@ goal over his shoulder cannot get power through the ball, and `SimTouch.shot`
 scales the strike by the same number. `speed_ratio` and fatigue are still
 unpriced.
 
-**(16) is a hole in the accounting, and it caps the compressed match.** Measured
-on seed 7 at `--urgency 1`: 23 shots, about 18 of them on target, 5 saves, 3
-goals. Ten shots the forecast had crossing the frame ended as neither. Two
-candidate causes and they want opposite work. `SimReferee._track_shot` latches
-`on_target` the first tick the shared forecast crosses the plane, so a ball that
-curls or drops away afterwards is still counted — in which case the instrument
-overstates and the real accuracy is lower. Or bodies in a crowded area are
-eating them, in which case it is `blocked` that is undercounted, since that flag
-is only set when a non-keeper touches a shot that was *not* on target. The
-cheapest first move is to record the shot's actual fate at the moment it dies
-rather than inferring it. `docs/STATUS.md`, "the compressed match's scoring
-fit", is why it matters: with the keeper cranked to a fifth of his reach, three
-quarters of goal-bound shots still do not go in, so whatever this is, it is now
-the largest single thing between the engine and a goal.
+**(16) is answered and it was neither guess.** The shot's fate is now recorded
+where it dies (`SimReferee.close_shot`) and `diagnose` prints the table. Across
+three seeds, three quarters of every shot ends with the keeper touching the ball
+and more than a third of those had already missed the target; nothing goes out
+of play and nothing curls away. The cause is `_try_gather` asking a fresh catch
+roll every tick the ball is within 1.45 m of him, which makes its real rate a
+function of dwell time rather than of the probability written down — see
+`docs/PITFALLS.md`. **What is left of the item is the fix**, and it is a
+behaviour change with consequences worth sequencing deliberately: a keeper who
+stops collecting shots that missed gives back the goal kicks and, with (5), the
+corners that feed every set piece.
 
 **(3) surfaced as a consequence of the `SHOT_AIM_BASE` fix.** With shots reaching
 the target, about a third of them are second attempts within four seconds of the

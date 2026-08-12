@@ -1185,3 +1185,58 @@ What is left is the flat finding above: at this sample size the counter's shot
 and goal effect is not distinguishable from noise in either configuration, and
 the mechanic is justified by the box touches and by being correct football
 rather than by a scoreline.
+
+## Where the goal-bound shots go: the keeper picks them up
+
+`docs/BACKLOG.md` 16, answered, and it is neither of the two things the item
+proposed. Both guesses were wrong and the instrument that settled it is worth
+more than either.
+
+`SimReferee` now records what became of every shot at the moment it dies, rather
+than leaving it to be inferred from a latched flag afterwards. Two defects made
+that necessary. `on_target` is set the first tick the shared forecast crosses
+the frame and is never cleared, so it cannot tell a ball that was kept out from
+one that curled away; and `blocked` was only set when a non-keeper touched a
+shot that was *not* on target, which is the opposite of a block — a defender who
+gets a foot to a ball heading for the net was recorded as nothing at all. The
+fate is decided on `bound`, a live version of the same test, because by the time
+a touch is noticed the ball already carries the deflection.
+
+One trap in the instrument itself, found by disbelieving it: the touch that
+follows a shot gone wide is the goal kick, taken by the keeper, so waiting for a
+touch credited him with saving a ball that had already missed. The shot is now
+closed when play stops. It changed the numbers by almost nothing, which is the
+answer to that worry rather than a reason not to have had it.
+
+**Three seeds, ten minutes, the real engine.** 61 shots.
+
+| fate | share |
+|---|---|
+| keeper, ball was goal-bound | 39% |
+| keeper, ball had already missed | 36% |
+| goal | 11% |
+| blocked by a defender | 5% |
+| out of play | **0%** |
+| curled away after being goal-bound | **0%** |
+
+**Three quarters of every shot in a match ends with the keeper touching the
+ball, and more than a third of those had missed the target before he reached
+it.** Not one shot in three seeds went out of play, against a real quarter to a
+third of them, and not one was briefly goal-bound and then missed — so the
+latched-flag worry was unfounded and the defence eating them was worth 5%.
+
+The cause is in `docs/PITFALLS.md`, "a per-tick probability is a roll until it
+succeeds". `_try_gather` asks a fresh catch roll every tick the ball is within
+1.45 m, so its effective rate is set by how long the ball dwells in that radius
+rather than by the probability in the expression — and `_position` stands the
+keeper on the line between the ball and his goal, which is what puts every shot
+through the radius. The carefully modelled save beside it is mostly bypassed:
+seed 7 at `--urgency 1` had fifteen shots end at the keeper and **zero logged
+saves**.
+
+**This is also why there are no corners.** The audit found set pieces starved —
+1.8 corners per team per ninety against football's five — and blamed the absent
+block. It is the same root: a corner is a shot or a cross that a defender or the
+keeper puts *behind*, and in this engine nothing goes behind, because the keeper
+catches it in front. The capped conversion and the missing set-piece goals are
+one bug.

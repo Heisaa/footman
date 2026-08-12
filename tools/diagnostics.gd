@@ -2411,6 +2411,7 @@ static func _shooting(ctx: SimContext, events: Array) -> void:
 	for i in n:
 		scored += goals[i]
 	print("  goals %d, from %s" % [scored, _goal_bands(goals, n)])
+	_shot_fates(events)
 	# A shot total is two quite different things added together: chances created,
 	# and second balls hammered back at the goal after the first was parried or
 	# blocked. Only the first is a measure of the attack, and only the split says
@@ -2420,6 +2421,38 @@ static func _shooting(ctx: SimContext, events: Array) -> void:
 			follow_ups, REBOUND_SECONDS,
 		])
 	_in_the_box(ctx, events)
+
+
+## What actually became of every shot, counted where it died.
+##
+## The block above cannot answer this and never could. `on_target` is a latch --
+## true from the first tick the forecast crosses the frame and never cleared --
+## so it counts a ball that curled away as one that was kept out, and the old
+## `blocked` flag was only set for shots that were *not* on target, which is the
+## opposite of a block. Between them, ten of seed 7's twenty-three shots were
+## accounted for by nothing at all.
+##
+## The rows are exclusive and they sum to the shot count. `blocked` is now a
+## defender getting something to a ball that was going in; `curled away` is the
+## engine's own aim, and a large number there means the on-target share above is
+## overstating rather than the defence being good.
+static func _shot_fates(events: Array) -> void:
+	var fates := {}
+	var total := 0
+	for e in events:
+		if e["ev"] != SimTelemetry.Ev.SHOT:
+			continue
+		total += 1
+		var f: String = str(e.get("fate", "still live at the whistle"))
+		fates[f] = int(fates.get(f, 0)) + 1
+	if total == 0:
+		return
+	var keys := fates.keys()
+	keys.sort_custom(func(a, b): return int(fates[a]) > int(fates[b]))
+	print("  what became of them")
+	for k in keys:
+		var c: int = fates[k]
+		print("    %-18s %4d   %3.0f%%" % [k, c, 100.0 * float(c) / float(total)])
 
 
 static func _goal_bands(goals: PackedInt32Array, n: int) -> String:

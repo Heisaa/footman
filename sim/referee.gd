@@ -49,19 +49,68 @@ static func _track_shot(ctx: SimContext) -> void:
 		return
 	var age := ctx.tick_index - ctx.active_shot_tick
 	var ball := ctx.ball
+	if not ctx.in_play:
+		# It has left the field, and nobody on the pitch ended it. Closing here
+		# rather than on the next touch matters: the touch that follows a shot
+		# gone wide is the goal kick, taken by the keeper, and waiting for it
+		# credited him with saving a ball that had already missed.
+		close_shot(ctx, false)
+		return
 	if age > 0 and (ball.last_touch_tick > ctx.active_shot_tick or age > SimConsts.TICK_HZ * 4):
 		# Somebody else has touched it, or it is long since dead.
-		# A keeper getting a hand to it is a save, not a block.
-		var toucher := ball.last_touch_player
-		var by_keeper := toucher >= 0 and toucher < ctx.players.size() and ctx.players[toucher].is_keeper
-		if ball.last_touch_tick > ctx.active_shot_tick and not by_keeper and not bool(ctx.active_shot["on_target"]):
-			ctx.active_shot["blocked"] = true
-		ctx.active_shot = {}
+		close_shot(ctx, ball.last_touch_tick > ctx.active_shot_tick)
 		return
-	if bool(ctx.active_shot["on_target"]):
-		return
-	if _crosses_goal(ctx, int(ctx.active_shot["team"])):
+	# Whether the ball is goal-bound *now*, live rather than latched. `on_target`
+	# is a latch built on top of this, and the difference between the two was the
+	# whole of what this block could not see: a shot briefly goal-bound that then
+	# curls or drops away keeps the flag for ever, so the engine's accuracy read
+	# high and the shots that quietly died were invisible.
+	var bound := _crosses_goal(ctx, int(ctx.active_shot["team"]))
+	ctx.active_shot["bound"] = bound
+	if bound:
 		ctx.active_shot["on_target"] = true
+
+
+## What became of a shot, recorded where it dies rather than inferred afterwards
+## from a latched flag.
+##
+## The old rule set `blocked` only when a non-keeper touched a shot that was *not*
+## on target, which is the wrong way round: a defender who gets a foot to a ball
+## heading for the net is the definition of a block and was recorded as nothing at
+## all. Measured on seed 7 that was most of the gap in the accounting -- 23 shots,
+## about 18 on target, 5 saves and 3 goals, with ten unaccounted for.
+##
+## `bound` rather than `on_target` decides it, because by the time a touch is
+## noticed the ball's velocity already carries the deflection: the live flag holds
+## what the forecast said on the last tick before anybody reached it.
+static func close_shot(ctx: SimContext, touched: bool) -> void:
+	var shot := ctx.active_shot
+	if shot.is_empty():
+		return
+	var bound := bool(shot.get("bound", false))
+	var fate := "wide"
+	if touched:
+		var toucher := ctx.ball.last_touch_player
+		var p: SimPlayer = ctx.players[toucher] if toucher >= 0 and toucher < ctx.players.size() else null
+		if p == null:
+			fate = "touched"
+		elif p.team == int(shot["team"]):
+			# His own side got to it first. Not a save and not a block: the shot
+			# stopped being this shot.
+			fate = "own player"
+		elif p.is_keeper:
+			fate = "keeper" if bound else "keeper, wide"
+		elif bound:
+			fate = "blocked"
+			shot["blocked"] = true
+		else:
+			fate = "defender, wide"
+	elif bool(shot["on_target"]):
+		# It was goal-bound at some point, nobody touched it, and it did not go
+		# in. The latch and the flight disagree, which is the curl or the drop.
+		fate = "curled away"
+	shot["fate"] = fate
+	ctx.active_shot = {}
 
 
 ## True if the forecast has the ball crossing the goal `team` is attacking,

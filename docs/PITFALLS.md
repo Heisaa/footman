@@ -273,3 +273,29 @@ by the layer it bit.
 - **A pose has to read in the plane the camera watches from.** Play is seen roughly in
   profile, so a celebration spread sideways foreshortens to a stub at the chest. It also
   has to clear the head, which at §9.3's proportions is wider than the arms are long.
+
+## A per-tick probability is a roll until it succeeds
+
+`SimKeeper._try_gather` catches the ball with probability `handled` — about 0.14
+for a shot at 25 m/s — and it is asked **every tick the ball is within 1.45 m of
+the keeper**. That is not a 14% chance of gathering. A ball crossing a 1.45 m
+radius at 25 m/s spends about seven ticks inside it, and `1 - 0.86^7` is about
+65%.
+
+The number in the expression is not the number the mechanic produces, and which
+one you get depends on the ball's speed and the tick rate rather than on
+anything anybody modelled. It is the same shape as the swarm guard and the
+challenge commit roll: any per-tick chance applied to a passing object is
+governed by the dwell time, and the dwell time is usually an accident.
+
+What made it hard to see is that the *modelled* keeper sits right beside it.
+`_shot_response` has a reaction time, a reach envelope that grows with the dive,
+an ellipsoid margin and a `save_chance` calibrated against real save
+percentages. All of that is careful and most of it is bypassed, because
+`_try_gather` runs on the same tick and only needs him to be near the ball —
+which he is, by construction, since `_position` stands him on the line between
+the ball and his goal.
+
+The tell was in the accounting, not in the code: seed 7 at `--urgency 1`
+reported **fifteen of twenty-seven shots ending at the keeper and `saves 0`**.
+Zero logged saves in a match the keeper dominated.

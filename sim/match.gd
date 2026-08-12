@@ -454,6 +454,7 @@ func _score_goal(team: int) -> void:
 	if not ctx.active_shot.is_empty() and int(ctx.active_shot["team"]) == team:
 		ctx.active_shot["on_target"] = true
 		ctx.active_shot["goal"] = true
+		ctx.active_shot["fate"] = "goal"
 	ctx.active_shot = {}
 	SimReferee.add_stoppage(ctx, SimReferee.STOPPAGE_GOAL)
 	var scorer := ctx.ball.last_touch_player
