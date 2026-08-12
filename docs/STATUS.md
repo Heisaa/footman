@@ -1162,12 +1162,26 @@ and those are the two figures a three-seed sample can actually carry. Goals went
 its own.
 
 **The compressed match saw almost none of it: 1.22 to 1.30 goals, with shots
-per team flat at 2.24.** The football got a quarter more shots and the
-three-minute format got none of them, and the likeliest reason is worth writing
-down because it affects everything else aimed at this format. **Fatigue is one
-of the three things that scales with `clock_rate`**, so a player at the end of a
-compressed match carries ninety minutes of tiredness having played three — and a
-break in behind is the most pace-hungry thing in the game. The mechanics that
-create chances are exactly the ones a tired squad cannot execute. That is a
-guess with an obvious test behind it and it is the first thing to look at before
-any further work on the compressed scoreline.
+per team flat at 2.24 — and that is the larger sample, so it is the one to
+believe.** Forty compressed matches is 121 minutes of football against the three
+seeds' thirty. Re-read against it, the three-seed shot rise is 48 to 61, which
+is about 1.2 standard errors and says nothing on its own; the box-touch rise, 54
+to 85, is about 2.6 and is the part that holds. **The honest statement is that
+the counter puts the ball in the area more often and that its effect on shots
+and goals is not established by anything measured so far.** The football got a quarter more shots and the
+three-minute format got none of them, and the obvious suspect was fatigue, which is
+one of the things that scales with `clock_rate`: a player at the end of a
+compressed match carries ninety minutes of tiredness having played three, and a
+break in behind is the most pace-hungry act in the game.
+
+**It was tested and it is not the answer.** Forty compressed matches with the
+drain forced to the real-time rate, so nobody tires at all: shots per team 2.24
+to 2.64, goals 1.30 to 1.34, distance per player unchanged. Fatigue is worth
+about a fifth of the compressed match's shots and nothing at all of its goals.
+Recorded because it is the sort of plausible cause that gets asserted twice if
+nobody writes down that it was measured.
+
+What is left is the flat finding above: at this sample size the counter's shot
+and goal effect is not distinguishable from noise in either configuration, and
+the mechanic is justified by the box touches and by being correct football
+rather than by a scoreline.
