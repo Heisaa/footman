@@ -68,6 +68,9 @@ const HAIR_STYLES := 14
 ## How far apart in brightness a man's hair and his skin have to be. Below this
 ## the head reads as one shape and the haircut is only a silhouette.
 const HAIR_SKIN_SEPARATION := 0.16
+## How often a man's hair is lighter than his face. About one in twelve: enough
+## that a squad has one, not so much that it stops being worth noticing.
+const LIGHT_HAIR_CHANCE := 0.08
 ## Beards were here and came out: a sphere on the jaw is a blob whatever size it
 ## is, and it swallowed the mouth, which is half the expression. Facial hair
 ## belongs on the drawn face if it comes back at all.
@@ -127,8 +130,7 @@ static func from_seed(seed_value: int) -> SimAppearance:
 	a.head_height = lerpf(HEAD_HEIGHT_MIN, HEAD_HEIGHT_MAX, rng.unit_float())
 	a.skin = SKIN_TONES[rng.range_int(0, SKIN_TONES.size() - 1)]
 	a.hair_style = rng.range_int(0, HAIR_STYLES - 1)
-	a.hair_colour = _separate_hair(
-		HAIR_COLOURS[rng.range_int(0, HAIR_COLOURS.size() - 1)], a.skin)
+	a.hair_colour = _hair_colour(rng, a.skin)
 	a.accessory = ACCESSORIES[rng.range_int(0, ACCESSORIES.size() - 1)]
 	a.brow_style = rng.range_int(0, SimFaceAtlas.BROW_STYLES.size() - 1)
 	a.eye_style = rng.range_int(0, SimFaceAtlas.EYE_STYLES.size() - 1)
@@ -140,6 +142,33 @@ static func from_seed(seed_value: int) -> SimAppearance:
 	a.socks_high = rng.chance(0.8)
 	a.face = Face.NEUTRAL
 	return a
+
+
+## A man's hair: drawn from the table, then held darker than his face unless he
+## is one of the few it is not.
+##
+## Hair lighter than skin is a real thing and a striking one -- a blond or a
+## white-haired man with a deep skin is a face you remember. It is also rare, and
+## a squad where a third of the men have it looks like fancy dress. The draw is
+## kept, so a pale man still gets the full table; it is only overruled when the
+## hair came out lighter than the face, and then only most of the time.
+static func _hair_colour(rng: SimRng, skin: Color) -> Color:
+	var hair: Color = HAIR_COLOURS[rng.range_int(0, HAIR_COLOURS.size() - 1)]
+	if hair.get_luminance() > skin.get_luminance() and not rng.chance(LIGHT_HAIR_CHANCE):
+		hair = _darker_than(skin, rng)
+	return _separate_hair(hair, skin)
+
+
+## A hair colour darker than the given skin. The deepest skins have only the
+## blacks under them, which is the right answer for them anyway.
+static func _darker_than(skin: Color, rng: SimRng) -> Color:
+	var below := []
+	for candidate in HAIR_COLOURS:
+		if (candidate as Color).get_luminance() < skin.get_luminance():
+			below.append(candidate)
+	if below.is_empty():
+		return HAIR_COLOURS[0]
+	return below[rng.range_int(0, below.size() - 1)]
 
 
 ## Hair, moved clear of the skin it sits on.

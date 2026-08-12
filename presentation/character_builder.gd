@@ -50,8 +50,12 @@ const RINGS := 6
 ## The head, the hair and the shoes are rounder than the rest of the figure. A
 ## twelve-sided sphere is a chunky limb and a boxy skull, and the skull is the
 ## thing being looked at.
-const HEAD_SEGMENTS := 24
-const HEAD_RINGS := 12
+##
+## Thirty-two rather than twenty-four because of the hairline. It is the seam
+## between two of these spheres, and a seam is only as smooth as the coarser of
+## the two: at twenty-four it stepped visibly across the temple close up.
+const HEAD_SEGMENTS := 32
+const HEAD_RINGS := 16
 ## The drawn face, as a fraction of the head radius, how far out from the middle
 ## of the head it is bent, and how many columns the bend is made of.
 const FACE_QUAD := 1.5
