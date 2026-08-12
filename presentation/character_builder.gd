@@ -109,7 +109,14 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	torso.position = Vector3(0.0, torso_h * 0.5, 0.0)
 	spine.add_child(torso)
 	# The shorts, in the kit's second colour, so the kit reads in two blocks.
-	var hips := _capsule(shoulder * 0.7, torso_h * 0.22, shorts)
+	#
+	# A flattened sphere rather than a capsule. `_capsule` floors the height at
+	# twice the radius, so a garment this wide and this short was silently turned
+	# back into a ball -- one hanging a fifth of a leg below the hip, bridging both
+	# thighs, with a curved hem straight across. That is a nappy, and in a white
+	# kit it is unmistakably one.
+	var hips := _sphere(shoulder * 0.62, shorts, true)
+	hips.scale = Vector3(1.0, 0.55, 0.95)
 	hips.position = Vector3(0.0, torso_h * 0.02, 0.0)
 	spine.add_child(hips)
 
@@ -233,8 +240,11 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		thigh.position = Vector3(0.0, -leg_h * 0.23, 0.0)
 		hip.add_child(thigh)
 
-		var short_leg := _capsule(limb * 1.18, leg_h * 0.15, shorts)
-		short_leg.position = Vector3(0.0, -leg_h * 0.05, 0.0)
+		# The leg of the shorts hangs lower than the seat does. That is what puts a
+		# notch between the legs; a seat that reaches further down than these fills
+		# the notch in and the shorts are one block again.
+		var short_leg := _capsule(limb * 1.3, leg_h * 0.19, shorts)
+		short_leg.position = Vector3(0.0, -leg_h * 0.07, 0.0)
 		hip.add_child(short_leg)
 
 		var knee := Node3D.new()
@@ -356,11 +366,16 @@ static func _crown(head: Node3D, head_r: float, skin: Material) -> void:
 
 ## Ears: two small tabs where the head is widest. They cost two spheres and they
 ## are most of why the reference heads read as heads from the side.
+##
+## They have to stand clear of the jaw, which is wider than the skull at this
+## height, and clear of the hair shell. Set at 0.94 they reached 1.03 and the jaw
+## reached 1.01, so they were flush with the head and inside every cut but the
+## bald one: thirteen men in fourteen had no ears at all.
 static func _ears(head: Node3D, head_r: float, skin: Material) -> void:
 	for side in [-1.0, 1.0]:
 		var ear := _sphere(head_r * 0.17, skin, true)
-		ear.position = Vector3(side * head_r * 0.94, -head_r * 0.06, -head_r * 0.05)
-		ear.scale = Vector3(0.55, 1.0, 0.85)
+		ear.position = Vector3(side * head_r * 0.96, -head_r * 0.1, -head_r * 0.05)
+		ear.scale = Vector3(0.6, 1.0, 0.85)
 		head.add_child(ear)
 
 
@@ -396,10 +411,28 @@ static func _moustache(head: Node3D, head_r: float, appearance: SimAppearance) -
 # skims the head reads as paint on the scalp; the difference between a full cut
 # and an afro is the curls on top of it, not the shell.
 #
+# The shell is also **flattened and lifted**, which is what gives it a bottom
+# edge. A ball centred on the skull has one: a sphere pushed back to open the
+# face still reaches down past the jaw everywhere behind the ears, so from behind
+# there is no hairline at all -- the head is one solid ball of hair colour, and
+# the ears are inside it. Squashed to `HAIR_SQUASH` and raised by `HAIR_LIFT`,
+# the same sphere clears the skull below the nape and beside the ears, and its
+# underside becomes the back hairline exactly the way its front already makes the
+# front one. Long styles put their length back with `mass`, which is now a piece
+# hanging below a hairline rather than more helmet.
+#
 # The limit on every row is the face. The drawn brows sit about a quarter of a
 # head-radius above the middle of the face and the face quad is at 0.96 of the
-# radius, so no row may reach past about 0.95 at that height, which is
-# `back >= radius - 0.95`.
+# radius, so no row may reach past about 0.95 at that height. Lifting the shell
+# puts its widest ring at about brow height, so that reach is now `radius - back
+# - HAIR_BACK_EXTRA`, and the rule is `back >= radius - 1.00`.
+
+## How flat the shell is, how far up it sits, and how much further back it goes
+## to pay for the lift. The three move together: flattening alone bares the
+## crown, lifting alone drags the front hairline down over the brows.
+const HAIR_SQUASH := 0.72
+const HAIR_LIFT := 0.24
+const HAIR_BACK_EXTRA := 0.05
 
 const HAIR_LIBRARY := [
 	{"r": 0.0},  # bald
@@ -432,8 +465,10 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 	var back: float = style.get("back", 0.18)
 	var shell := _sphere(head_r * shell_r, mat, true)
 	shell.position = Vector3(
-		head_r * float(style.get("side", 0.0)), head_r * up, -head_r * back)
-	shell.scale = Vector3(1.0, style.get("sy", 1.0), 1.0)
+		head_r * float(style.get("side", 0.0)),
+		head_r * (up + HAIR_LIFT),
+		-head_r * (back + HAIR_BACK_EXTRA))
+	shell.scale = Vector3(1.0, float(style.get("sy", 1.0)) * HAIR_SQUASH, 1.0)
 	root.add_child(shell)
 
 	# Curls: a ring of them round the crown and a couple on top. Nine spheres and
