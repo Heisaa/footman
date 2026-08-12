@@ -498,22 +498,26 @@ static func _moustache(head: Node3D, head_r: float, appearance: SimAppearance) -
 ## crown, lifting alone drags the front hairline down over the brows.
 const HAIR_SQUASH := 0.72
 const HAIR_LIFT := 0.24
-const HAIR_BACK_EXTRA := 0.05
+## Raising the shell drags the hairline down the forehead, and this is what pays
+## for it. It is a tax on every row, so it is the one number to reach for when the
+## whole squad looks like it is receding: 0.05 put every hairline a tenth of a
+## radius too high.
+const HAIR_BACK_EXTRA := 0.03
 
 const HAIR_LIBRARY := [
 	{"r": 0.0},  # bald
 	{"r": 1.12, "up": 0.08, "back": 0.20},  # cropped
 	{"r": 1.14, "up": 0.07, "back": 0.21, "burns": true},  # short back and sides
 	{"r": 1.16, "up": 0.06, "back": 0.22, "peak": true},  # a bowl cut with a point
-	{"r": 1.18, "up": 0.05, "back": 0.24, "burns": true},  # heavier, with sideburns
+	{"r": 1.18, "up": 0.05, "back": 0.22, "burns": true},  # heavier, with sideburns
 	{"r": 1.14, "up": 0.12, "back": 0.20, "quiff": true},  # a quiff
 	{"r": 1.10, "up": 0.08, "back": 0.18, "curls": 9},  # curly
 	{"r": 1.10, "up": 0.10, "back": 0.18, "curls": 13, "curl_r": 0.34},  # a big curly head
 	{"r": 1.14, "up": 0.06, "back": 0.21, "quiff": true, "burns": true},  # swept over
 	{"r": 1.14, "up": 0.06, "back": 0.20, "mass": 1.0},  # collar length
 	{"r": 1.16, "up": 0.05, "back": 0.22, "mass": 1.0, "burns": true},  # long
-	{"r": 1.10, "up": 0.11, "back": 0.28, "burns": true},  # receding
-	{"r": 1.11, "up": 0.10, "back": 0.24, "sy": 0.94, "peak": true},  # thin on top
+	{"r": 1.10, "up": 0.11, "back": 0.25, "burns": true},  # receding
+	{"r": 1.11, "up": 0.10, "back": 0.22, "sy": 0.94, "peak": true},  # thin on top
 	{"r": 1.14, "up": 0.08, "back": 0.21, "tufts": 4},  # tousled
 	# Short on top, long at the back, and sideburns to finish it.
 	{"r": 1.10, "up": 0.07, "back": 0.22, "mass": 1.45, "burns": true},  # a mullet
@@ -523,11 +527,13 @@ const HAIR_LIBRARY := [
 	# which takes the hairline up to the crown and leaves the same man.
 	{"r": 1.12, "up": 0.06, "back": 0.21, "slick": true},  # slicked back
 	{"r": 1.13, "up": 0.05, "back": 0.22, "slick": true, "burns": true},  # slicked, with burns
-	# Going, and going faster. Dropping the shell below its usual lift lets the
-	# crown come up through it, which is a bald patch with hair all round it --
-	# a thinning man rather than a bald one, and the difference is the patch.
-	{"r": 1.13, "up": -0.05, "back": 0.24, "burns": true},  # thinning
-	{"r": 1.13, "up": -0.13, "back": 0.27},  # thin to the bone
+	# Going. Dropping the shell below its usual lift takes it off the front and the
+	# top and leaves the hair round the sides and the back.
+	#
+	# One row of this, not two. A squad already has a bald man, a receding one and
+	# a thin-on-top one, and four men in nineteen losing their hair is a squad of
+	# veterans.
+	{"r": 1.13, "up": -0.05, "back": 0.22, "burns": true},  # thinning
 ]
 
 
@@ -574,12 +580,16 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 		for i in 3:
 			var across := float(i) - 1.0
 			var off := absf(across)
-			var lobe := _sphere(head_r * (0.36 - off * 0.08), mat, true)
+			var lobe := _sphere(head_r * (0.36 - off * 0.06), mat, true)
+			# Out on the shell, not inside it. Set back at 0.32 the two side lobes
+			# sat under the surface and never showed, which left the middle one
+			# standing alone -- one sphere on top of a head again, and the whole
+			# reason this stopped being one sphere.
 			lobe.position = Vector3(
-				across * head_r * 0.33,
-				head_r * (0.82 - off * 0.12),
-				head_r * (0.32 - off * 0.14))
-			lobe.scale = Vector3(1.0, 0.9, 0.72)
+				across * head_r * 0.36,
+				head_r * (0.86 - off * 0.08),
+				head_r * (0.42 + off * 0.02))
+			lobe.scale = Vector3(1.0, 0.92, 0.75)
 			root.add_child(lobe)
 
 	# Swept back instead: a low wide dome over the crown, running to the back of
