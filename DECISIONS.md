@@ -192,30 +192,41 @@ coming back:
   file has since been folded into `docs/INVARIANTS.md` and the sixth amendment
   above.
 
-### Eighth: smaller heads, and the figure drawn rather than moulded
+### Eighth: smaller heads, and the register does not touch the art
 
-Made at the owner's direction after a look pass over the players.
+Made at the owner's direction over two passes. The first pass read §9.7 as an
+instruction about the *look* and put an ink outline, an eighties collar, cuffs, a
+sock turnover, a moustache and comic spectacles on the figure. The owner took all
+of it off again. That correction is the important half of this amendment.
 
 | Section | Was | Now | Why |
 |---|---|---|---|
-| §9.3 | Head roughly 35–40 % of total height | 30–35 % | The owner asked for it smaller. Four heads to a figure is a toy; five is a strip panel, and it lengthens the body, which is what carries a stride. Still far above a real footballer's three-and-a-bit, so the five drawn expressions stay legible at match distance. |
+| §9.3 | Head roughly 35–40 % of total height | 30–35 % | The owner asked for it smaller. It lengthens the body, which is what carries a stride, and it is still far above a real man's three-and-a-bit, so the drawn expressions stay legible at match distance. |
+| §9.7 | "The register governs presentation, naming, copy and character generation" | The register governs the writing and the feel — naming, copy, the event log, what the game reports — and the generation behind them. **It does not govern the art.** | "Presentation" was read as "the models". The look is §9.3's flat-coloured toy — Sokpop, Mii, Animal Crossing — and a drawn line on it is the register leaking into the art. The comic is in the tone of voice. |
 
-Everything else in the pass is §9.7's register applied to the existing spec
-rather than a change to it, and none of it touches `sim/`:
+What the pass left in place, none of it touching `sim/`:
 
-- **The figure is inked.** Every body mesh carries a second pass — the hull grown
-  by 1.1 % of the figure's height with its front faces culled — so a player has a
-  drawn line round him. `presentation/parade_view.gd` toggles it with `O`, which
-  is the honest way to look at the decision.
 - **Generation reaches the tails.** Height was a flat 1.62–1.95; it is now a bell
   through 1.70–1.88 with a one-in-seven draw into 1.56–2.04, and build follows
-  height so the giant is built like one. §9.7 asks for archetypes, and a flat
-  draw is exactly how you get eleven similar men.
-- **Kit detail from the era**: collar, cuffs on a long sleeve, a sock turnover, a
-  sleeve on a short-sleeved shirt (it read as a vest without one), and the shirt
-  number on the back.
-- **Two accessories the register names.** The moustache, twice-weighted; and
-  glasses, which were in the table and had never been drawn.
+  height so the giant is built like one. A flat draw is how you get eleven
+  similar men.
+- **The head is not a ball.** Two scale axes off the seed, so a squad has long
+  faces and wide ones. Everything hanging off the head — face, hair, beard — is a
+  child of it and stretches with it, which is the Mii trick and free.
+- **Eyes and mouth are per-player.** Seven drawn eye shapes and seven mouths,
+  independent of the five expressions, so the neutral face a man wears for almost
+  the whole match is his own. Twenty-two identical pairs of dots was a clone army
+  with different hair.
+- **Fourteen hair styles** from a cap, a back mass, a fringe and a tuft, built
+  from a hairline rather than a scale — a cap whose lower edge crosses the drawn
+  eyes reads as a blindfold.
+- **The shirt number on the back**, and a sleeve on a short-sleeved shirt, which
+  read as a vest without one.
+
+Two drawing bugs were found by looking at the parade and fixed in passing:
+delight and despair were drawn upside down (arched-down eyes and a frowning
+"grin" on the delighted face, a smile on the despairing one), and the headband
+accessory was a disc across the face rather than a band round the head.
 
 ## Design calls made during the build
 

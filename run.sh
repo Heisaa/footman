@@ -86,12 +86,12 @@ usage: ./run.sh <command> [args]
                             (POSE_U picks where in each arc to freeze)
   parade [--seed N]         a rank of that seed's players, close up, turning,
       [--page N] [--still]  each captioned with number, name, height and
-      [--no-outline]        appearance seed. The squad is the match squad, so a
+      [--turn DEG]          appearance seed. The squad is the match squad, so a
       [--face 0-4]          note taken here holds in view3d at the same seed.
-      [--shot PATH]         Keys: < > page, N / P seed, SPACE turn, O the ink
-                            outline on and off, 1-5 expression, Q quit.
-                            --shot renders one frame from a virtual display and
-                            quits, for a look without a screen.
+      [--shot PATH]         Keys: < > page, N / P seed, SPACE turn, 1-5
+                            expression, Q quit. --shot renders one frame from a
+                            virtual display and quits, for a look without a
+                            screen; --turn 180 --still shows the backs.
   check                     parse-check every script, presentation included
   import                    refresh Godot's script class cache
 

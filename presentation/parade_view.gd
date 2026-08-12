@@ -43,7 +43,6 @@ var _seed := 7
 var _page := 0
 var _spin := true
 var _turn := 0.0
-var _outline := true
 var _face := SimAppearance.Face.NEUTRAL
 var _shot_path := ""
 var _elapsed := 0.0
@@ -63,8 +62,6 @@ func _ready() -> void:
 			_seed = int(args[i + 1])
 		elif args[i] == "--page" and i + 1 < args.size():
 			_page = int(args[i + 1])
-		elif args[i] == "--no-outline":
-			_outline = false
 		elif args[i] == "--still":
 			_spin = false
 		elif args[i] == "--turn" and i + 1 < args.size():
@@ -95,14 +92,16 @@ func _build_world() -> void:
 	env.background_color = SimPalette.PAPER
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(1, 1, 1)
-	env.ambient_light_energy = 0.6
+	# Lit softly and not much. Sun plus ambient over one blows a bright kit out to
+	# white, and the point of this view is that a colour is the colour it is.
+	env.ambient_light_energy = 0.72
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
 	add_child(world_env)
 
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-52.0, -30.0, 0.0)
-	sun.light_energy = 0.9
+	sun.light_energy = 0.42
 	sun.shadow_enabled = true
 	add_child(sun)
 
@@ -165,8 +164,7 @@ func _build_row() -> void:
 		var p = _pool[first + i]
 		var appearance := SimAppearance.from_seed(p.appearance_seed)
 		var at := Vector3((float(i) - float(count - 1) * 0.5) * SPACING, 0.0, 0.0)
-		var node := SimCharacterBuilder.build(
-			appearance, _kits[p.team], p.shirt, _outline)
+		var node := SimCharacterBuilder.build(appearance, _kits[p.team], p.shirt)
 		node.position = at
 		node.rotation.y = deg_to_rad(_turn)
 		add_child(node)
@@ -235,10 +233,8 @@ func _write_caption() -> void:
 		"PARADE   match seed %d   men %d-%d of %d   page %d/%d" % [
 			_seed, first, last, _pool.size(), _page + 1, _pages(),
 		],
-		"outline %s   %s" % [
-			"on" if _outline else "off", "turning" if _spin else "still",
-		],
-		"< >  page    N / P  seed    SPACE  turn    O  outline    1-5  face    Q  quit",
+		"%s" % ["turning" if _spin else "still"],
+		"< >  page    N / P  seed    SPACE  turn    1-5  face    Q  quit",
 	])
 
 
@@ -297,12 +293,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_SPACE:
 			_spin = not _spin
 			_write_caption()
-		KEY_O:
-			# Rebuilt rather than toggled on the material: the ink is a second pass
-			# hung off every material in the figure, and the honest comparison is
-			# the figure built both ways.
-			_outline = not _outline
-			_build_row()
 		KEY_1, KEY_2, KEY_3, KEY_4, KEY_5:
 			_face = key - KEY_1
 			for node in _nodes:

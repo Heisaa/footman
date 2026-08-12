@@ -627,14 +627,18 @@ player the same size on screen wherever play is.
 
 - Six hundred to twelve hundred triangles. Head roughly 30–35 % of total height (amended — see
   `DECISIONS.md`). Stubby limbs, mitten hands, no separate fingers, no neck.
-- **The figure is drawn, not moulded.** Every body mesh carries an ink outline: the same hull grown
-  a little with its front faces culled. It is the cheapest thing that puts a strip panel's line
-  round a flat-coloured toy, and it costs one pass per mesh.
-- **Generation reaches the tails** (§9.7). Height clusters in the middle of a squad list and
-  occasionally draws a giant or a small one, and build follows height.
+- **The look is the toy** — Sokpop, Mii, Animal Crossing. Smooth primitives, flat colour, no line
+  work, no texture beyond the face, no period dressing. §9.7's register does not reach the art.
+- **Variety comes from proportion and face**, not from detail: head size, head shape (the head is
+  scaled on two axes, and the face stretches with it), height, build, skin, hair assembled from a
+  cap, a back mass, a fringe and a tuft — and the eyes and mouth a player was born with.
+- **Generation reaches the tails.** Height clusters in the middle of a squad list and occasionally
+  draws a giant or a small one, and build follows height.
 - **No facial rig.** The face is two dots and a simple mouth on a small texture atlas, swapped
   wholesale for expression — neutral, effort, delight, despair, anger. Expression swaps deliver an
-  enormous amount of character for almost no cost; use them constantly.
+  enormous amount of character for almost no cost; use them constantly. The *shape* of the eyes and
+  the mouth is per-player and independent of the expression: the neutral face a man wears for almost
+  the whole match is his own.
 - Hair, hats and beards are single-piece meshes drawn from a small library.
 - **Procedural appearance from a seed**, Mii-style: body type, skin tone, hair mesh and colour, face
   atlas index, accessory. A five-hundred-player database therefore has visual identity essentially
@@ -704,8 +708,12 @@ That is a specification, not a mood board. What it asks for:
   the unfashionable club, the run of fixtures that has to be survived, the directors' box. Name and
   present it that way.
 
-The boundary, stated once: the register governs presentation, naming, copy and character generation.
-It governs nothing in `sim/`. A proposal that reads "and Hamish's shots should ignore the keeper" is
+The boundary, stated once: the register governs the **writing and the feel** — naming, copy, the
+event log, dialogue, what the game reports and how it reports it — and the character generation
+behind them. It governs nothing in `sim/`, **and it does not govern the art**. The look is §9.3's
+and only §9.3's: the flat-coloured toy. An ink outline, an eighties collar and a pair of comic
+spectacles were built here and taken straight back out, because a drawn line is the register
+leaking into the art. The comic is in the tone of voice, not on the models. A proposal that reads "and Hamish's shots should ignore the keeper" is
 a proposal to break §11 and is refused; a proposal that reads "a shot above some power, scored,
 plays the keeper-carried-into-the-net celebration and the log says so" is the same idea, correctly
 placed.

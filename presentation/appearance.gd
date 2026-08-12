@@ -11,15 +11,21 @@ extends RefCounted
 ## looks at anything in this file.
 
 ## Head as a fraction of total height. §9.3 asked for 35-40%; the owner cut it
-## (see `DECISIONS.md`). Four heads to a figure is a toy, five is a comic strip:
-## it lengthens the body, which is what carries a stride and a shoulder charge,
-## and it is still far above the three-heads-plus-a-bit of a real footballer, so
-## the face stays legible at match distance.
+## (see `DECISIONS.md`). It lengthens the body, which is what carries a stride,
+## and it is still far above the three-heads-plus-a-bit of a real man, so the
+## face stays legible at match distance.
 const HEAD_FRACTION_MIN := 0.30
 const HEAD_FRACTION_MAX := 0.35
-## Heights. §9.7 wants archetypes rather than averages -- Hamish is enormous,
-## Mouse is tiny -- so the range reaches further out than a squad list would and
-## the draw below spends most of its mass in the middle anyway.
+## How far the head departs from a ball: 1.0 is round, and the two axes are drawn
+## apart so a squad has long faces and wide ones. The face quad hangs off the
+## head, so it stretches with it -- which is the Mii trick, and free.
+const HEAD_WIDTH_MIN := 0.90
+const HEAD_WIDTH_MAX := 1.12
+const HEAD_HEIGHT_MIN := 0.88
+const HEAD_HEIGHT_MAX := 1.14
+## Heights. A squad wants a giant and a small one in it, so the range reaches
+## further out than a squad list would and the draw below spends most of its mass
+## in the middle anyway.
 const HEIGHT_MIN := 1.56
 const HEIGHT_MAX := 2.04
 const HEIGHT_TYPICAL_MIN := 1.70
@@ -45,15 +51,9 @@ const HAIR_COLOURS := [
 	Color("5b4a8a"), Color("3fa88a"),
 ]
 
-## Single-piece meshes drawn from a small library, chosen by index.
-const HAIR_STYLES := 8
-## The moustache is in twice because it is the era's own face, and glasses are
-## in because Mighty Mouse wore them: the accessory table is where a squad gets
-## its four-word men, so it is weighted for the register rather than evenly.
-const ACCESSORIES := [
-	"none", "none", "none", "headband", "cap", "beard", "beard_full",
-	"glasses", "moustache", "moustache",
-]
+## Hair, assembled from a cap, a back mass, a fringe and a tuft. Style 0 is bald.
+const HAIR_STYLES := 14
+const ACCESSORIES := ["none", "none", "none", "headband", "cap", "beard", "beard_full"]
 
 var height := 1.78
 var head_fraction := 0.37
@@ -64,6 +64,14 @@ var hair_style := 0
 var hair_colour: Color = HAIR_COLOURS[0]
 var accessory := "none"
 var face := Face.NEUTRAL
+## Head shape, as scales on the head sphere. Round is 1, 1.
+var head_width := 1.0
+var head_height := 1.0
+## Which drawn eyes and which drawn mouth this player wears. The expression
+## swaps on top of them: a delighted man has the grin whoever he is, and the
+## neutral face he spends the match in is his own.
+var eye_style := 0
+var mouth_style := 0
 ## Sleeve length, socks pulled up, and so on: tiny variations that make a squad
 ## look like a group of individuals rather than a clone army.
 var sleeves_long := false
@@ -82,10 +90,17 @@ static func from_seed(seed_value: int) -> SimAppearance:
 	# like one and the small one is not a wide man who happens to be short.
 	a.build = clampf(
 		(rng.unit_float() + rng.unit_float()) * 0.5 + (a.height - 1.78) * 0.9, 0.0, 1.0)
+	# A heavy man gets a wider head, but not by much -- the draw does most of it.
+	a.head_width = clampf(
+		lerpf(HEAD_WIDTH_MIN, HEAD_WIDTH_MAX, rng.unit_float()) + (a.build - 0.5) * 0.08,
+		HEAD_WIDTH_MIN, HEAD_WIDTH_MAX)
+	a.head_height = lerpf(HEAD_HEIGHT_MIN, HEAD_HEIGHT_MAX, rng.unit_float())
 	a.skin = SKIN_TONES[rng.range_int(0, SKIN_TONES.size() - 1)]
 	a.hair_style = rng.range_int(0, HAIR_STYLES - 1)
 	a.hair_colour = HAIR_COLOURS[rng.range_int(0, HAIR_COLOURS.size() - 1)]
 	a.accessory = ACCESSORIES[rng.range_int(0, ACCESSORIES.size() - 1)]
+	a.eye_style = rng.range_int(0, SimFaceAtlas.EYE_STYLES.size() - 1)
+	a.mouth_style = rng.range_int(0, SimFaceAtlas.MOUTH_STYLES.size() - 1)
 	a.sleeves_long = rng.chance(0.75)
 	a.socks_high = rng.chance(0.8)
 	a.face = Face.NEUTRAL

@@ -1,20 +1,22 @@
 class_name SimCharacterBuilder
 extends RefCounted
-## Builds a player (PLAN.md §9.3 and §9.7, and the Sokpop reference the owner
-## supplied).
+## Builds a player (PLAN.md §9.3, and the Sokpop reference the owner supplied).
 ##
 ## Slender and smoothly formed rather than blocky: a small rounded head, a
 ## narrow torso, thin capsule limbs, dark shorts and boots. Still a toy, still
 ## flat-coloured and textureless apart from the small face, but the silhouette
 ## is a person rather than a brick.
 ##
-## §9.7 asks for the football comic, and a comic is drawn: every body part is
-## therefore inked, with a hull grown a few millimetres and its front faces culled, so
-## a figure carries a dark line round it exactly the way a strip panel does. It
-## costs one extra pass per mesh and no extra nodes. Trim follows the same idea
-## from the other direction -- collar, cuffs and a sock turnover in the kit's
-## second colour -- because eighties kits were drawn in blocks of two colours and
-## the trim is where the second one lives.
+## **The look is the toy, and only the toy** -- Sokpop, Mii, Animal Crossing:
+## smooth primitives, flat colour, no line work, no texture, no period dressing.
+## §9.7's comic register governs the writing, the naming and the feel of the
+## game; it does not reach the art. An ink outline and an eighties collar were
+## tried here and taken out again for exactly that reason.
+##
+## Variety is carried by proportion and by the face instead: head size, head
+## shape, height, build, skin, and which drawn eyes and mouth a man was born
+## with. That is what keeps twenty-two flat-coloured figures from being one
+## figure in different kits.
 ##
 ## The hierarchy is built around joints -- hips, knees, ankles, shoulders,
 ## elbows, a torso pivot and a neck -- because a figure this simple only reads as
@@ -42,11 +44,6 @@ const LIMB_RADIUS := 0.052
 const SEGMENTS := 12
 const RINGS := 6
 
-## The drawn line, as a fraction of the figure's height, so a giant and a small
-## one carry the same weight of ink rather than the small one looking dipped.
-const OUTLINE_FRACTION := 0.011
-## Trim depth: how far the collar and the cuffs stand off the part they ring.
-const TRIM_STANDOFF := 0.006
 
 
 static func flat_material(colour: Color) -> StandardMaterial3D:
@@ -59,14 +56,8 @@ static func flat_material(colour: Color) -> StandardMaterial3D:
 	return m
 
 
-## `shirt_number` under 1 leaves the back blank; `outline` off drops the ink, for
-## a side-by-side comparison in the parade view.
-static func build(
-	appearance: SimAppearance,
-	kit: PackedColorArray,
-	shirt_number := 0,
-	outline := true
-) -> Node3D:
+## `shirt_number` under 1 leaves the back blank.
+static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number := 0) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Player"
 
@@ -79,15 +70,11 @@ static func build(
 	# small one stumpy, which is the wrong way round for both.
 	var limb := LIMB_RADIUS * (h / 1.78) * lerpf(0.9, 1.2, appearance.build)
 
-	var ink: Material = _outline_material(h) if outline else null
-	var trim_colour: Color = SimPalette.INK if kit.size() < 2 else kit[1]
-	var shirt := _inked(kit[0], ink)
-	var shorts := _inked(trim_colour, ink)
-	# Trim is not inked. The line is a fixed width in metres, which is right for a
-	# torso and swallows a band a centimetre thick whole.
-	var trim := flat_material(trim_colour)
-	var skin := _inked(appearance.skin, ink)
-	var boot := _inked(SimPalette.INK, ink)
+	var second_colour: Color = SimPalette.INK if kit.size() < 2 else kit[1]
+	var shirt := flat_material(kit[0])
+	var shorts := flat_material(second_colour)
+	var skin := flat_material(appearance.skin)
+	var boot := flat_material(SimPalette.INK)
 
 	# --- Torso, on a pivot so the whole upper body can lean ------------------
 	var spine := Node3D.new()
@@ -111,7 +98,7 @@ static func build(
 		digits.text = str(shirt_number)
 		digits.font_size = 128
 		digits.pixel_size = torso_h * 0.0034
-		digits.modulate = trim_colour
+		digits.modulate = second_colour
 		digits.outline_size = 24
 		digits.outline_modulate = SimPalette.INK
 		digits.rotation_degrees = Vector3(0.0, 180.0, 0.0)
@@ -121,11 +108,6 @@ static func build(
 		digits.position = Vector3(0.0, torso_h * 0.68, -shoulder * 0.78 - 0.01)
 		spine.add_child(digits)
 
-	# Collar: the one detail that dates a kit to the era at a glance.
-	var collar := _ring(shoulder * 0.5, torso_h * 0.05, trim)
-	collar.position = Vector3(0.0, torso_h * 0.95, 0.0)
-	spine.add_child(collar)
-
 	# --- Head, on a neck pivot ----------------------------------------------
 	var neck := Node3D.new()
 	neck.name = "Neck"
@@ -134,18 +116,26 @@ static func build(
 
 	var head := _sphere(head_r, skin)
 	head.position = Vector3(0.0, head_r * 0.86, 0.0)
+	# Not a ball. Everything hanging off the head -- face, hair, beard -- is a
+	# child of it, so one scale gives a long face or a wide one and the drawn
+	# features stretch with it.
+	head.scale = Vector3(appearance.head_width, appearance.head_height, appearance.head_width)
 	head.name = "Head"
 	neck.add_child(head)
 
-	var face := _face_quad(head_r)
+	var face := _face_quad(head_r, appearance)
 	face.position = Vector3(0.0, 0.02, head_r * 0.94)
 	face.name = "Face"
 	head.add_child(face)
+	# The expression swaps at run time and has to keep the man's own eyes and
+	# mouth, so the two style indices ride on the figure.
+	root.set_meta("eye_style", appearance.eye_style)
+	root.set_meta("mouth_style", appearance.mouth_style)
 
-	var hair := _hair(appearance, head_r, ink)
+	var hair := _hair(appearance, head_r)
 	if hair != null:
 		head.add_child(hair)
-	_accessory(appearance, head_r, head, kit, ink)
+	_accessory(appearance, head_r, head, kit)
 
 	# --- Arms: shoulder pivot, upper arm, elbow pivot, forearm, mitten ------
 	for side in [-1.0, 1.0]:
@@ -161,7 +151,7 @@ static func build(
 		sh.add_child(upper)
 
 		# A short sleeve is still a sleeve. Without this the arm is bare to the
-		# shoulder and the shirt reads as a vest, which no eighties kit was.
+		# shoulder and the shirt reads as a vest.
 		if not appearance.sleeves_long:
 			var sleeve := _capsule(limb * 1.12, torso_h * 0.16, shirt)
 			sleeve.position = Vector3(0.0, -torso_h * 0.07, 0.0)
@@ -171,12 +161,6 @@ static func build(
 		elbow.name = "Elbow" + tag
 		elbow.position = Vector3(0.0, -torso_h * 0.42, 0.0)
 		sh.add_child(elbow)
-
-		# The cuff, where a long sleeve ends. Nothing to ring on a bare arm.
-		if appearance.sleeves_long:
-			var cuff := _ring(limb, torso_h * 0.05, trim)
-			cuff.position = Vector3(0.0, -torso_h * 0.4, 0.0)
-			sh.add_child(cuff)
 
 		var fore := _capsule(limb * 0.92, torso_h * 0.38, skin)
 		fore.position = Vector3(0.0, -torso_h * 0.19, 0.0)
@@ -205,16 +189,9 @@ static func build(
 		hip.add_child(knee)
 
 		var sock_colour: Color = kit[0] if appearance.socks_high else appearance.skin
-		var shin := _capsule(limb, leg_h * 0.44, _inked(sock_colour, ink))
+		var shin := _capsule(limb, leg_h * 0.44, flat_material(sock_colour))
 		shin.position = Vector3(0.0, -leg_h * 0.22, 0.0)
 		knee.add_child(shin)
-
-		# The turnover at the top of a sock, in the trim colour. Socks pulled down
-		# skip it: there is nothing up there to turn over.
-		if appearance.socks_high:
-			var turnover := _ring(limb, leg_h * 0.05, trim)
-			turnover.position = Vector3(0.0, -leg_h * 0.03, 0.0)
-			knee.add_child(turnover)
 
 		var ankle := Node3D.new()
 		ankle.name = "Ankle" + tag2
@@ -233,61 +210,12 @@ static func build(
 # --- Primitives -------------------------------------------------------------
 
 
-## A flat material with the drawn line hung off it. `ink` null is the plain fill,
-## which is what the parade view's outline toggle hands in.
-static func _inked(colour: Color, ink: Material) -> StandardMaterial3D:
-	var m := flat_material(colour)
-	m.next_pass = ink
-	return m
-
-
-## The line itself: the same mesh grown a little and drawn inside out, so all
-## that survives is a rim of ink round the silhouette. Shared by every part of
-## one figure -- it depends on nothing but the figure's height.
-static func _outline_material(height: float) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = SimPalette.INK
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.cull_mode = BaseMaterial3D.CULL_FRONT
-	m.grow = true
-	m.grow_amount = height * OUTLINE_FRACTION
-	m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
-	return m
-
-
 static func _capsule(radius: float, height: float, material: Material) -> MeshInstance3D:
 	var mesh := CapsuleMesh.new()
 	mesh.radius = radius
 	mesh.height = maxf(height, radius * 2.05)
 	mesh.radial_segments = SEGMENTS
 	mesh.rings = RINGS
-	var node := MeshInstance3D.new()
-	node.mesh = mesh
-	node.material_override = material
-	return node
-
-
-## A rim: used for a spectacle lens, where a solid disc would blank the face.
-static func _torus(inner: float, outer: float, material: Material) -> MeshInstance3D:
-	var mesh := TorusMesh.new()
-	mesh.inner_radius = inner
-	mesh.outer_radius = outer
-	mesh.rings = SEGMENTS
-	mesh.ring_segments = 6
-	var node := MeshInstance3D.new()
-	node.mesh = mesh
-	node.material_override = material
-	return node
-
-
-## A band of trim: a short cylinder standing just proud of whatever it rings.
-static func _ring(radius: float, height: float, material: Material) -> MeshInstance3D:
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = radius + TRIM_STANDOFF
-	mesh.bottom_radius = radius + TRIM_STANDOFF
-	mesh.height = height
-	mesh.radial_segments = SEGMENTS
-	mesh.rings = 1
 	var node := MeshInstance3D.new()
 	node.mesh = mesh
 	node.material_override = material
@@ -306,6 +234,20 @@ static func _sphere(radius: float, material: Material) -> MeshInstance3D:
 	return node
 
 
+## A band round something: a short upright cylinder.
+static func _band(radius: float, height: float, material: Material) -> MeshInstance3D:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = radius
+	mesh.bottom_radius = radius
+	mesh.height = height
+	mesh.radial_segments = SEGMENTS
+	mesh.rings = 1
+	var node := MeshInstance3D.new()
+	node.mesh = mesh
+	node.material_override = material
+	return node
+
+
 static func _box(size: Vector3, material: Material) -> MeshInstance3D:
 	var mesh := BoxMesh.new()
 	mesh.size = size
@@ -315,37 +257,91 @@ static func _box(size: Vector3, material: Material) -> MeshInstance3D:
 	return node
 
 
-static func _face_quad(head_r: float) -> MeshInstance3D:
+static func _face_quad(head_r: float, appearance: SimAppearance) -> MeshInstance3D:
 	var mesh := QuadMesh.new()
 	mesh.size = Vector2(head_r * 1.5, head_r * 1.5)
 	var node := MeshInstance3D.new()
 	node.mesh = mesh
 	var m := flat_material(Color.WHITE)
-	m.albedo_texture = SimFaceAtlas.texture_for(SimAppearance.Face.NEUTRAL)
+	m.albedo_texture = SimFaceAtlas.texture_for(
+		SimAppearance.Face.NEUTRAL, appearance.eye_style, appearance.mouth_style)
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	node.material_override = m
 	return node
 
 
-## A smooth cap of hair rather than a block. Style 0 is bald.
-static func _hair(appearance: SimAppearance, head_r: float, ink: Material) -> Node3D:
-	if appearance.hair_style == 0:
+## Hair, from four smooth pieces: a cap over the crown, a mass down the back, a
+## fringe over the forehead and a tuft on top. Fourteen recognisably different
+## heads out of one small function, and every piece is a squashed sphere -- the
+## look is the toy, so nothing here is line work or texture.
+##
+## The cap is built from a **hairline** rather than a scale, because the number
+## that matters is where the hair stops on the forehead. The drawn eyes sit at
+## about a tenth of a head-radius above the middle of the face, and a cap whose
+## lower edge crosses them reads as a blindfold. Deriving the ellipsoid from the
+## hairline puts that edge exactly where the row asks for it.
+##
+## Each row is [hairline, back, fringe, tuft].
+const HAIR_CROWN := 1.12
+const HAIR_LIBRARY := [
+	[0.00, 0, 0, 0],  # bald
+	[0.44, 0, 0, 0],  # receding
+	[0.30, 0, 0, 0],  # cropped
+	[0.30, 0, 1, 0],  # cropped with a fringe
+	[0.20, 0, 0, 0],  # thick on top
+	[0.20, 0, 1, 0],  # thick with a fringe
+	[0.26, 0, 0, 1],  # a tuft
+	[0.20, 0, 1, 1],  # fringe and tuft
+	[0.26, 1, 0, 0],  # collar length
+	[0.22, 1, 1, 0],  # collar length with a fringe
+	[0.16, 1, 0, 0],  # long
+	[0.16, 1, 1, 0],  # long with a fringe
+	[0.24, 1, 0, 1],  # long with a tuft
+	[0.34, 0, 1, 0],  # a fringe and not much else
+]
+
+
+static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
+	var style: int = posmod(appearance.hair_style, HAIR_LIBRARY.size())
+	if style == 0:
 		return null
-	var mat := _inked(appearance.hair_colour, ink)
-	var style := appearance.hair_style
-	var cap := _sphere(head_r * 1.02, mat)
-	cap.position = Vector3(0.0, head_r * (0.14 + 0.04 * float(style % 3)), -head_r * 0.06)
-	cap.scale = Vector3(1.0, 0.66 + 0.06 * float(style % 3), 1.02)
-	if style <= 4:
-		return cap
+	var row: Array = HAIR_LIBRARY[style]
+	var hairline: float = row[0]
+	var mat := flat_material(appearance.hair_colour)
 	var root := Node3D.new()
+	root.name = "Hair"
+
+	# An ellipsoid whose bottom lands on the hairline and whose top clears the
+	# crown, gripping the skull a little wider than the skull itself.
+	var half := (HAIR_CROWN - hairline) * 0.5
+	var cap := _sphere(head_r * 1.04, mat)
+	cap.position = Vector3(0.0, head_r * (HAIR_CROWN - half), -head_r * 0.05)
+	cap.scale = Vector3(1.0, half / 1.04, 1.0)
 	root.add_child(cap)
-	# Longer styles get a smooth back, which reads from the high camera.
-	var back := _sphere(head_r * 0.82, mat)
-	back.position = Vector3(0.0, -head_r * 0.28, -head_r * 0.62)
-	back.scale = Vector3(1.1, 1.0 + 0.2 * float(style - 5), 0.7)
-	root.add_child(back)
+
+	if int(row[1]) == 1:
+		# The mass down the back, which is what the high match camera actually
+		# sees of a long style.
+		var back := _sphere(head_r * 0.8, mat)
+		back.position = Vector3(0.0, -head_r * 0.16, -head_r * 0.56)
+		back.scale = Vector3(1.05, 1.05, 0.62)
+		root.add_child(back)
+
+	if int(row[2]) == 1:
+		# A patch on the forehead, standing proud of it. Narrower than the head so
+		# it cannot close into a band round the whole skull.
+		var fringe := _sphere(head_r * 0.62, mat)
+		fringe.position = Vector3(0.0, head_r * (hairline + 0.12), head_r * 0.5)
+		fringe.scale = Vector3(0.95, 0.34, 0.5)
+		root.add_child(fringe)
+
+	if int(row[3]) == 1:
+		var tuft := _sphere(head_r * 0.3, mat)
+		tuft.position = Vector3(0.0, head_r * 1.02, -head_r * 0.08)
+		tuft.scale = Vector3(0.8, 1.2, 0.8)
+		root.add_child(tuft)
+
 	return root
 
 
@@ -353,50 +349,24 @@ static func _accessory(
 	appearance: SimAppearance,
 	head_r: float,
 	head: Node3D,
-	kit: PackedColorArray,
-	ink: Material
+	kit: PackedColorArray
 ) -> void:
 	match appearance.accessory:
 		"beard", "beard_full":
-			var beard := _sphere(head_r * 0.82, _inked(appearance.hair_colour, ink))
-			beard.position = Vector3(0.0, -head_r * 0.42, head_r * 0.22)
-			beard.scale = Vector3(1.0, 0.75 if appearance.accessory == "beard" else 1.05, 0.85)
+			# Under the drawn mouth, not over it. The mouth is half the expression
+			# and a beard centred on the jaw swallowed it.
+			var beard := _sphere(head_r * 0.82, flat_material(appearance.hair_colour))
+			beard.position = Vector3(0.0, -head_r * 0.48, head_r * 0.2)
+			beard.scale = Vector3(0.92, 0.62 if appearance.accessory == "beard" else 0.82, 0.82)
 			head.add_child(beard)
-		"moustache":
-			# Wide, flat and level with the mouth. The one accessory that puts a
-			# figure in 1987 on its own.
-			var tache := _box(
-				Vector3(head_r * 0.54, head_r * 0.13, head_r * 0.14),
-				flat_material(appearance.hair_colour))
-			# Above the drawn mouth, not across it: the atlas puts the mouth at
-			# about a quarter of a head-radius below centre, and a moustache
-			# sitting on it reads as the mouth.
-			tache.position = Vector3(0.0, -head_r * 0.13, head_r * 0.96)
-			head.add_child(tache)
-		"glasses":
-			# Two rims and a bridge, sat on the face quad. Mouse wore them, and a
-			# bespectacled man in a tackle is half the joke.
-			var frame := flat_material(SimPalette.INK)
-			for side in [-1.0, 1.0]:
-				# A rim, not a disc: the face has to show through a lens or the
-				# man is wearing sunglasses.
-				var lens := _torus(head_r * 0.12, head_r * 0.18, frame)
-				lens.rotation_degrees = Vector3(90.0, 0.0, 0.0)
-				# Level with the atlas's eyes, which sit a little above the middle
-				# of the face quad. Lower than that and they read as goggles.
-				lens.position = Vector3(side * head_r * 0.38, head_r * 0.15, head_r * 1.0)
-				head.add_child(lens)
-			var bridge := _box(
-				Vector3(head_r * 0.42, head_r * 0.04, head_r * 0.04), frame)
-			bridge.position = Vector3(0.0, head_r * 0.15, head_r * 1.0)
-			head.add_child(bridge)
 		"headband":
-			var band := _capsule(head_r * 1.03, head_r * 0.16, _inked(kit[0], ink))
-			band.rotation_degrees = Vector3(90.0, 0.0, 0.0)
+			# A band round the forehead. It was a capsule turned on its side, which
+			# is a disc across the face rather than a band round the head.
+			var band := _band(head_r * 1.02, head_r * 0.15, flat_material(kit[0]))
 			band.position = Vector3(0.0, head_r * 0.3, 0.0)
 			head.add_child(band)
 		"cap":
-			var cap := _sphere(head_r * 1.05, _inked(kit[0], ink))
+			var cap := _sphere(head_r * 1.05, flat_material(kit[0]))
 			cap.position = Vector3(0.0, head_r * 0.24, 0.0)
 			cap.scale = Vector3(1.0, 0.5, 1.0)
 			head.add_child(cap)
@@ -404,10 +374,16 @@ static func _accessory(
 			pass
 
 
+## Swaps the expression and keeps the man's own eyes and mouth under it. The two
+## style indices were written onto the figure when it was built, because the sim
+## side of this call knows an animation state and nothing else.
 static func set_expression(player_root: Node3D, face: int) -> void:
 	var quad := player_root.find_child("Face", true, false) as MeshInstance3D
 	if quad == null:
 		return
 	var mat := quad.material_override as StandardMaterial3D
-	if mat != null:
-		mat.albedo_texture = SimFaceAtlas.texture_for(face)
+	if mat == null:
+		return
+	var eyes: int = player_root.get_meta("eye_style", 0)
+	var mouth: int = player_root.get_meta("mouth_style", 0)
+	mat.albedo_texture = SimFaceAtlas.texture_for(face, eyes, mouth)
