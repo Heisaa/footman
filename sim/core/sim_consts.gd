@@ -251,7 +251,7 @@ enum Phase { KICKOFF, BUILD_UP, ATTACK, TRANSITION_TO_DEFEND, TRANSITION_TO_ATTA
 ## reads these back.
 ## Appended to, never reordered: the snapshot carries the anim as its integer,
 ## and the pose sheet indexes the same list.
-enum Anim { IDLE, JOG, RUN, SPRINT, TURN, KICK_LIGHT, KICK_HARD, HEADER, SLIDE, FALL, GET_UP, CELEBRATE, DEJECTED, EXHAUSTED, DIVE_LEFT, DIVE_RIGHT, KEEPER_CATCH, THROW, KEEPER_HOLD }
+enum Anim { IDLE, JOG, RUN, SPRINT, TURN, KICK_LIGHT, KICK_HARD, HEADER, SLIDE, FALL, GET_UP, CELEBRATE, DEJECTED, EXHAUSTED, DIVE_LEFT, DIVE_RIGHT, KEEPER_CATCH, THROW, KEEPER_HOLD, HOLD }
 
 
 static func other_team(team: int) -> int:

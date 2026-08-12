@@ -49,7 +49,9 @@ reading HALF TIME and FULL TIME at the breaks, and a swell and a lemon flash on 
 scoring side when a goal goes in. Nothing in it is a texture, so it re-skins with
 the palette.
 
-Two anim states, `THROW` and `KEEPER_HOLD`, are driven from the sim. `SimConsts.Anim`
+Three anim states, `THROW`, `KEEPER_HOLD` and `HOLD` — the foot laid on the ball,
+named by `SimTouch.settle` because a hold shares the carry's touch kind and could
+not be told from it by `_anim_for` — are driven from the sim. `SimConsts.Anim`
 is appended to and never reordered — the snapshot carries the integer and the pose
 sheet indexes the same list. The pose sheet lays itself out in two rows whatever the
 count, and takes its camera distance from the aspect actually being rendered rather

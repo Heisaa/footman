@@ -404,14 +404,30 @@ static func dribble(ctx: SimContext, player: SimPlayer, dir: Vector3, space: flo
 	apply(ctx, player, SimTelemetry.Touch.DRIBBLE, vel, spin, -1, {"ahead": ahead, "away": away})
 
 
+## How long the foot stays on the ball. A touch cooldown is 0.17 to 0.27 s, so a
+## man holding it repeatedly renews this before it lapses and the shape reads as
+## one continuous act rather than a stutter of them.
+const HOLD_ANIM_SECONDS := 0.35
+
+
 ## A settling touch: the ball comes to rest `ahead` metres away *on the pitch*,
 ## whatever pace the man playing it is going. `dribble`'s `settle` says why that
 ## is a different act from a carry rather than a smaller one.
 ##
 ## It is still a `dribble` touch in the log, which `docs/GLOSSARY.md` warns about
 ## and nothing here changes: a hold is an action, not a touch kind.
+##
+## The anim is named here rather than in `_anim_for`, and for the same reason:
+## `apply` picks a pose from the touch *kind*, and a settling touch and a carry
+## share one. A carry is struck, so `apply` gives it a kick; a hold is a foot
+## laid on the ball, and looks nothing like one. Naming it after the touch
+## overwrites the kick `apply` just played, which is a tick old and has not been
+## drawn. Longer on the clock than a kick because the pose is a held shape rather
+## than a follow-through -- see `ANIM_SECONDS` in `presentation/match_view_3d.gd`,
+## which times the arc itself.
 static func settle(ctx: SimContext, player: SimPlayer, dir: Vector3, ahead: float) -> void:
 	dribble(ctx, player, dir, 0.0, 0.0, 0.0, ahead, true)
+	player.play_anim(SimConsts.Anim.HOLD, HOLD_ANIM_SECONDS)
 
 
 ## Ground pass toward a point, arriving at roughly `arrive_pace` m/s.

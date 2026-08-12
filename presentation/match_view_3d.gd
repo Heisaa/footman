@@ -2100,6 +2100,8 @@ func _pose(node: Node3D, index: int, clock: float) -> void:
 		SimConsts.Anim.THROW:
 			_pose_throw(node, u)
 		SimConsts.Anim.KEEPER_HOLD:
+			_pose_keeper_hold(node, t)
+		SimConsts.Anim.HOLD:
 			_pose_hold(node, t)
 		_:
 			pass
@@ -2497,7 +2499,7 @@ func _pose_dive(node: Node3D, index: int, u: float, dir_z: float) -> void:
 ## front of the chest. The previous pair (-1.35 / -1.15) reached a hand about
 ## 0.24 m too high, which with the ball on his own centre line meant hands
 ## cupping nothing above a ball inside his chest.
-func _pose_hold(node: Node3D, t: float) -> void:
+func _pose_keeper_hold(node: Node3D, t: float) -> void:
 	_rotate(node, "ShoulderL", -0.63, 0.34)
 	_rotate(node, "ShoulderR", -0.63, -0.34)
 	_rotate(node, "ElbowL", -1.3)
@@ -2506,6 +2508,60 @@ func _pose_hold(node: Node3D, t: float) -> void:
 	# only moving part, and it is what says he is thinking rather than frozen.
 	_rotate(node, "Neck", -0.12, sin(t * 1.6) * 0.35)
 	_lean(node, 0.1)
+
+
+## Seconds the foot takes to come down on the ball. Short: the sim plays this
+## after the touch, so the shape wants to be there almost at once, and anything
+## slower reads as him lifting his foot for no reason and finding the ball later.
+const HOLD_PLANT_SECONDS := 0.12
+## Where the sole ends up, and the angles are solved for it rather than picked.
+## The rig's leg is two 0.41 m segments from a hip at `_leg_length`, and the
+## joint chain sums: the shin's angle off vertical is hip + knee, the boot's is
+## hip + knee + ankle. Putting the ankle 0.5 m in front of the standing foot and
+## 0.22 m up — a ball's height, an easy stride ahead — needs a 0.55 rad knee and
+## a thigh 0.96 rad forward. The ankle then takes 0.32: 0.41 lays the sole flat,
+## and a little under that rides the toe up over the ball instead of into it.
+const HOLD_HIP := -0.96
+const HOLD_KNEE := 0.55
+const HOLD_ANKLE := 0.32
+
+
+## The foot on the ball. He has it, he is not going anywhere with it, and he is
+## looking for someone to give it to.
+##
+## Driven by the clock rather than an arc, like the keeper's hold and unlike
+## every other outfield pose. A hold is a shape held for as long as the sim says
+## so, not a strike with a follow-through: `SimTouch.settle` renews the anim on
+## every touch, so back-to-back holds keep one continuous pose rather than
+## restarting an arc that would never finish. The only wind-up is the foot coming
+## down.
+##
+## The standing leg does the work — knee bent, weight on it, hips back over it,
+## chest up. Both arms come out to balance against a foot that is off the ground.
+## The one thing that keeps moving is the head: he is scanning, and a figure
+## standing on a ball with nothing moving reads as the match having paused.
+func _pose_hold(node: Node3D, t: float) -> void:
+	var plant: float = smoothstep(0.0, HOLD_PLANT_SECONDS, t)
+	# The ball rolls a little back and forth under the sole. Small, slow, and the
+	# reason the foot does not look welded to it.
+	var roll: float = sin(t * 2.2) * 0.05 * plant
+
+	_rotate(node, "HipR", (HOLD_HIP - roll) * plant)
+	_rotate(node, "KneeR", (HOLD_KNEE + roll) * plant)
+	_rotate(node, "AnkleR", HOLD_ANKLE * plant)
+	# Standing leg: bent under the weight, and the whole figure drops with it.
+	_rotate(node, "HipL", 0.1 * plant)
+	_rotate(node, "KneeL", 0.22 * plant)
+	_rotate(node, "AnkleL", 0.0)
+	node.position.y -= 0.03 * plant
+
+	_rotate(node, "ShoulderL", -0.2 * plant, -0.6 * plant)
+	_rotate(node, "ShoulderR", 0.3 * plant, 0.45 * plant)
+	_rotate(node, "ElbowL", -0.35 * plant)
+	_rotate(node, "ElbowR", -0.35 * plant)
+	# Sat back over the standing foot, head up over the top of it.
+	_lean(node, -0.1 * plant)
+	_rotate(node, "Neck", -0.12 * plant, sin(t * 1.4) * 0.3 * plant)
 
 
 func _pose_catch(node: Node3D, u: float) -> void:
