@@ -510,11 +510,24 @@ const HAIR_LIBRARY := [
 	{"r": 1.10, "up": 0.08, "back": 0.18, "curls": 9},  # curly
 	{"r": 1.10, "up": 0.10, "back": 0.18, "curls": 13, "curl_r": 0.34},  # a big curly head
 	{"r": 1.14, "up": 0.06, "back": 0.21, "quiff": true, "burns": true},  # swept over
-	{"r": 1.14, "up": 0.06, "back": 0.20, "mass": true},  # collar length
-	{"r": 1.16, "up": 0.05, "back": 0.22, "mass": true, "burns": true},  # long
+	{"r": 1.14, "up": 0.06, "back": 0.20, "mass": 1.0},  # collar length
+	{"r": 1.16, "up": 0.05, "back": 0.22, "mass": 1.0, "burns": true},  # long
 	{"r": 1.10, "up": 0.11, "back": 0.28, "burns": true},  # receding
 	{"r": 1.11, "up": 0.10, "back": 0.24, "sy": 0.94, "peak": true},  # thin on top
 	{"r": 1.14, "up": 0.08, "back": 0.21, "tufts": 4},  # tousled
+	# Short on top, long at the back, and sideburns to finish it.
+	{"r": 1.10, "up": 0.07, "back": 0.22, "mass": 1.45, "burns": true},  # a mullet
+	# Combed back off a slightly high forehead, with the dome on top carrying the
+	# sweep. Two things this row cannot do: shrink the shell, which sinks its top
+	# to the skull and leaves a bald man with a rim, or push it much further back,
+	# which takes the hairline up to the crown and leaves the same man.
+	{"r": 1.12, "up": 0.06, "back": 0.21, "slick": true},  # slicked back
+	{"r": 1.13, "up": 0.05, "back": 0.22, "slick": true, "burns": true},  # slicked, with burns
+	# Going, and going faster. Dropping the shell below its usual lift lets the
+	# crown come up through it, which is a bald patch with hair all round it --
+	# a thinning man rather than a bald one, and the difference is the patch.
+	{"r": 1.13, "up": -0.05, "back": 0.24, "burns": true},  # thinning
+	{"r": 1.13, "up": -0.13, "back": 0.27},  # thin to the bone
 ]
 
 
@@ -553,12 +566,30 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 				Vector3(sin(a) * ring, lift, cos(a) * ring - back * 0.6))
 		_add_lump(root, head_r, curl_r * 1.05, mat, Vector3(0.0, 1.05, -back * 0.6))
 
-	# A quiff: one lobe swept up off the front of the hairline.
+	# A quiff: hair swept up off the front of the hairline. One lobe on top of the
+	# shell is a ball resting on a head and reads as nothing at all. Three across
+	# the front, tallest and furthest forward in the middle and falling away to
+	# either side, is a front with a shape to it.
 	if style.get("quiff", false):
-		var quiff := _sphere(head_r * 0.42, mat, true)
-		quiff.position = Vector3(0.0, head_r * 0.82, head_r * 0.3)
-		quiff.scale = Vector3(0.95, 0.85, 0.7)
-		root.add_child(quiff)
+		for i in 3:
+			var across := float(i) - 1.0
+			var off := absf(across)
+			var lobe := _sphere(head_r * (0.36 - off * 0.08), mat, true)
+			lobe.position = Vector3(
+				across * head_r * 0.33,
+				head_r * (0.82 - off * 0.12),
+				head_r * (0.32 - off * 0.14))
+			lobe.scale = Vector3(1.0, 0.9, 0.72)
+			root.add_child(lobe)
+
+	# Swept back instead: a low wide dome over the crown, running to the back of
+	# the head. With the hairline pushed well up the forehead it reads as hair
+	# combed back off the face rather than hair grown forward over it.
+	if style.get("slick", false):
+		var slick := _sphere(head_r * 0.42, mat, true)
+		slick.position = Vector3(0.0, head_r * 0.86, -head_r * 0.42)
+		slick.scale = Vector3(1.15, 0.75, 1.9)
+		root.add_child(slick)
 
 	# Tufts standing up: the same idea, smaller and scattered. Scattered evenly
 	# from straight ahead, and raised by distance round the ring rather than by
@@ -586,12 +617,14 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 		root.add_child(peak)
 
 	# The mass down the back of the neck, which is most of what the match camera
-	# sees of a long style.
-	if style.get("mass", false):
-		var mass := _sphere(head_r * 0.78, mat, true)
-		mass.position = Vector3(0.0, -head_r * 0.34, -head_r * 0.48)
-		mass.scale = Vector3(0.85, 1.15, 0.72)
-		root.add_child(mass)
+	# sees of a long style. The number is how long: 1 is collar length, and much
+	# past 1.4 it is a cape.
+	var mass: float = style.get("mass", 0.0)
+	if mass > 0.0:
+		var back_hair := _sphere(head_r * 0.78 * sqrt(mass), mat, true)
+		back_hair.position = Vector3(0.0, -head_r * 0.34 * mass, -head_r * 0.48)
+		back_hair.scale = Vector3(0.85, 1.15, 0.72)
+		root.add_child(back_hair)
 
 	return root
 

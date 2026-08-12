@@ -44,6 +44,10 @@ var _page := 0
 var _spin := true
 var _turn := 0.0
 var _face := SimAppearance.Face.NEUTRAL
+## Which cut to put on the rank, overriding what the men were born with. The four
+## on screen take this one and the next three, so five pages walk the library.
+## Negative leaves every man his own hair.
+var _hair := -1
 var _shot_path := ""
 var _elapsed := 0.0
 
@@ -70,6 +74,8 @@ func _ready() -> void:
 			_turn = float(args[i + 1])
 		elif args[i] == "--face" and i + 1 < args.size():
 			_face = int(args[i + 1])
+		elif args[i] == "--hair" and i + 1 < args.size():
+			_hair = int(args[i + 1])
 		elif args[i] == "--shot" and i + 1 < args.size():
 			_shot_path = args[i + 1]
 	# The window is fullscreen by project setting, which is not the frame
@@ -164,6 +170,9 @@ func _build_row() -> void:
 	for i in count:
 		var p = _pool[first + i]
 		var appearance := SimAppearance.from_seed(p.appearance_seed)
+		var styles := SimCharacterBuilder.HAIR_LIBRARY.size()
+		if _hair >= 0:
+			appearance.hair_style = (_hair + i) % styles
 		var at := Vector3((float(i) - float(count - 1) * 0.5) * SPACING, 0.0, 0.0)
 		var node := SimCharacterBuilder.build(appearance, _kits[p.team], p.shirt)
 		node.position = at
@@ -179,6 +188,8 @@ func _build_row() -> void:
 		label.text = "#%d  %s\n%.2f m\nseed %d" % [
 			p.shirt, p.player_name, appearance.height, p.appearance_seed,
 		]
+		if _hair >= 0:
+			label.text += "\nhair %d of %d" % [appearance.hair_style, styles]
 		label.font_size = 64
 		label.pixel_size = 0.0011
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED

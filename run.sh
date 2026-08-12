@@ -88,10 +88,12 @@ usage: ./run.sh <command> [args]
       [--page N] [--still]  each captioned with number, name, height and
       [--turn DEG]          appearance seed. The squad is the match squad, so a
       [--face 0-4]          note taken here holds in view3d at the same seed.
-      [--shot PATH]         Keys: < > page, N / P seed, SPACE turn, 1-5
-                            expression, Q quit. --shot renders one frame from a
+      [--hair N]            Keys: < > page, N / P seed, SPACE turn, 1-5
+      [--shot PATH]         expression, Q quit. --shot renders one frame from a
                             virtual display and quits, for a look without a
-                            screen; --turn 180 --still shows the backs.
+                            screen; --turn 180 --still shows the backs. --hair
+                            puts cut N and the next three on the rank instead of
+                            the men's own, so five pages walk the library.
   check                     parse-check every script, presentation included
   import                    refresh Godot's script class cache
 

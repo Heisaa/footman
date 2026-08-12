@@ -64,7 +64,7 @@ const HAIR_COLOURS := [
 ]
 
 ## Hair: a shell round the skull, pushed back to open the face. Style 0 is bald.
-const HAIR_STYLES := 14
+## The count comes off the library itself, so adding a cut is one line there.
 ## How far apart in brightness a man's hair and his skin have to be. Below this
 ## the head reads as one shape and the haircut is only a silhouette.
 const HAIR_SKIN_SEPARATION := 0.16
@@ -129,7 +129,7 @@ static func from_seed(seed_value: int) -> SimAppearance:
 		HEAD_WIDTH_MIN, HEAD_WIDTH_MAX)
 	a.head_height = lerpf(HEAD_HEIGHT_MIN, HEAD_HEIGHT_MAX, rng.unit_float())
 	a.skin = SKIN_TONES[rng.range_int(0, SKIN_TONES.size() - 1)]
-	a.hair_style = rng.range_int(0, HAIR_STYLES - 1)
+	a.hair_style = rng.range_int(0, SimCharacterBuilder.HAIR_LIBRARY.size() - 1)
 	a.hair_colour = _hair_colour(rng, a.skin)
 	a.accessory = ACCESSORIES[rng.range_int(0, ACCESSORIES.size() - 1)]
 	a.brow_style = rng.range_int(0, SimFaceAtlas.BROW_STYLES.size() - 1)
