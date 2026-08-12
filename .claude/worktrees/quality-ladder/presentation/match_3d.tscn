@@ -1,6 +1,0 @@
-[gd_scene format=3 uid="uid://dchn7im2l1n1p"]
-
-[ext_resource type="Script" uid="uid://wbknifth35bq" path="res://presentation/match_view_3d.gd" id="1_view3d"]
-
-[node name="Match3D" type="Node3D" unique_id=264730946]
-script = ExtResource("1_view3d")
