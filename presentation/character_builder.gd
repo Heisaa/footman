@@ -166,6 +166,7 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	root.set_meta("eye_style", appearance.eye_style)
 	root.set_meta("mouth_style", appearance.mouth_style)
 
+	_jaw(head, head_r, skin)
 	head.add_child(_nose(appearance, head_r))
 	_ears(head, head_r, skin)
 
@@ -321,6 +322,24 @@ static func _nose(appearance: SimAppearance, head_r: float) -> MeshInstance3D:
 	nose.position = Vector3(0.0, head_r * float(row[2]), head_r * float(row[3]))
 	nose.scale = Vector3(1.0, 1.0, float(row[4]))
 	return nose
+
+
+## A jaw. One sphere is an egg: it tapers to the same point at the bottom as at
+## the top, and a head does not. This is a second ellipsoid overlapping the lower
+## half, wide enough to stand proud of the skull between the ears and the chin
+## and back inside it above and below, which is cheeks rather than a second head.
+##
+## It stays behind the face quad at 0.96 of the radius, so the drawn mouth is
+## never buried.
+static func _jaw(head: Node3D, head_r: float, skin: Material) -> void:
+	var jaw := _sphere(head_r, skin, true)
+	jaw.name = "Jaw"
+	# Almost tangent to the skull at the equator and progressively fuller below
+	# it. Set squatter than this it crosses the head at an angle and leaves a
+	# crease across the cheek, which reads as a mask rather than a jaw.
+	jaw.position = Vector3(0.0, -head_r * 0.16, 0.0)
+	jaw.scale = Vector3(1.02, 0.9, 0.98)
+	head.add_child(jaw)
 
 
 ## Ears: two small tabs where the head is widest. They cost two spheres and they

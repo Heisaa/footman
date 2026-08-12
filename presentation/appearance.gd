@@ -25,8 +25,8 @@ const HEAD_FRACTION_MAX := 0.31
 ## of a head is supposed to be noticed second, after the man.
 const HEAD_WIDTH_MIN := 0.90
 const HEAD_WIDTH_MAX := 1.00
-const HEAD_HEIGHT_MIN := 1.04
-const HEAD_HEIGHT_MAX := 1.16
+const HEAD_HEIGHT_MIN := 1.02
+const HEAD_HEIGHT_MAX := 1.12
 ## Heights. A squad wants a giant and a small one in it, so the range reaches
 ## further out than a squad list would and the draw below spends most of its mass
 ## in the middle anyway.
