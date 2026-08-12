@@ -102,8 +102,11 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	var limb := LIMB_RADIUS * (h / 1.78) * lerpf(0.9, 1.2, appearance.build)
 
 	var second_colour: Color = SimPalette.INK if kit.size() < 2 else kit[1]
+	# The shorts are their own colour where a kit carries one. A two-colour kit
+	# falls back to the trim, which is what every kit used to do.
+	var shorts_colour: Color = second_colour if kit.size() < 3 else kit[2]
 	var shirt := toy_material(kit[0])
-	var shorts := toy_material(second_colour)
+	var shorts := toy_material(shorts_colour)
 	var trim := toy_material(second_colour)
 	var skin := toy_material(appearance.skin)
 	var boot := toy_material(SimPalette.INK)
@@ -502,9 +505,9 @@ const HAIR_LIBRARY := [
 	{"r": 1.14, "up": 0.12, "back": 0.20, "quiff": true},  # a quiff
 	{"r": 1.10, "up": 0.08, "back": 0.18, "curls": 9},  # curly
 	{"r": 1.10, "up": 0.10, "back": 0.18, "curls": 13, "curl_r": 0.34},  # a big curly head
-	{"r": 1.14, "up": 0.06, "back": 0.21, "side": 0.05, "quiff": true},  # swept over
+	{"r": 1.14, "up": 0.06, "back": 0.21, "quiff": true, "burns": true},  # swept over
 	{"r": 1.14, "up": 0.06, "back": 0.20, "mass": true},  # collar length
-	{"r": 1.16, "up": 0.05, "back": 0.22, "side": 0.04, "mass": true, "burns": true},  # long
+	{"r": 1.16, "up": 0.05, "back": 0.22, "mass": true, "burns": true},  # long
 	{"r": 1.10, "up": 0.11, "back": 0.28, "burns": true},  # receding
 	{"r": 1.11, "up": 0.10, "back": 0.24, "sy": 0.94, "peak": true},  # thin on top
 	{"r": 1.14, "up": 0.08, "back": 0.21, "tufts": 4},  # tousled
@@ -524,9 +527,7 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 	var back: float = style.get("back", 0.18)
 	var shell := _sphere(head_r * shell_r, mat, true)
 	shell.position = Vector3(
-		head_r * float(style.get("side", 0.0)),
-		head_r * (up + HAIR_LIFT),
-		-head_r * (back + HAIR_BACK_EXTRA))
+		0.0, head_r * (up + HAIR_LIFT), -head_r * (back + HAIR_BACK_EXTRA))
 	shell.scale = Vector3(1.0, float(style.get("sy", 1.0)) * HAIR_SQUASH, 1.0)
 	root.add_child(shell)
 
@@ -537,8 +538,13 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 		var curl_r: float = style.get("curl_r", 0.3)
 		for i in curls:
 			var a := TAU * float(i) / float(curls)
-			var ring: float = 0.82 if i % 2 == 0 else 0.68
-			var lift: float = 0.52 if i % 2 == 0 else 0.78
+			# Alternated by distance round the ring rather than by index, so a curl
+			# and its mirror get the same treatment. Counted by index with an odd
+			# number of curls -- nine and thirteen, both of them -- the two halves
+			# of the head came out different.
+			var out := mini(i, curls - i) % 2 == 0
+			var ring: float = 0.82 if out else 0.68
+			var lift: float = 0.52 if out else 0.78
 			_add_lump(root, head_r, curl_r, mat,
 				Vector3(sin(a) * ring, lift, cos(a) * ring - back * 0.6))
 		_add_lump(root, head_r, curl_r * 1.05, mat, Vector3(0.0, 1.05, -back * 0.6))
@@ -546,17 +552,19 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 	# A quiff: one lobe swept up off the front of the hairline.
 	if style.get("quiff", false):
 		var quiff := _sphere(head_r * 0.42, mat, true)
-		quiff.position = Vector3(
-			head_r * float(style.get("side", 0.0)) * 2.0, head_r * 0.82, head_r * 0.3)
+		quiff.position = Vector3(0.0, head_r * 0.82, head_r * 0.3)
 		quiff.scale = Vector3(0.95, 0.85, 0.7)
 		root.add_child(quiff)
 
-	# Tufts standing up: the same idea, smaller and scattered.
+	# Tufts standing up: the same idea, smaller and scattered. Scattered evenly
+	# from straight ahead, and raised by distance round the ring rather than by
+	# index, for the same reason the curls are.
 	var tufts: int = style.get("tufts", 0)
 	for i in tufts:
-		var a := TAU * (float(i) / float(maxi(tufts, 1))) + 0.4
+		var a := TAU * (float(i) / float(maxi(tufts, 1)))
+		var high := mini(i, tufts - i) % 2
 		_add_lump(root, head_r, 0.26, mat,
-			Vector3(sin(a) * 0.4, 0.9 + 0.08 * float(i % 2), cos(a) * 0.4 - back * 0.5))
+			Vector3(sin(a) * 0.4, 0.9 + 0.08 * float(high), cos(a) * 0.4 - back * 0.5))
 
 	# Sideburns: a tab in front of each ear.
 	if style.get("burns", false):

@@ -44,9 +44,31 @@ const KIT_COLOURS := [RED, CORAL, ORANGE, AMBER, LEMON, TEAL, SKY, BLUE, NAVY, V
 const BACKDROPS := [SALMON, CORAL, AMBER, SKY, VIOLET, TEAL, LIME]
 
 
-## A contrasting second kit colour for the given primary.
+## A contrasting second kit colour for the given primary. Also what the
+## scoreboard writes on a coloured chip with, so it stays black or white.
 static func contrast_for(primary: Color) -> Color:
 	return INK if primary.get_luminance() > 0.45 else CHALK
+
+
+## Shorts a club might wear. A placeholder set to get the bottom half of the
+## figure off black-and-white until real kits arrive, not a wardrobe.
+##
+## No greens: the pitch is green. No browns or sands either -- the thigh between
+## the shorts and the socks is bare skin, so a shorts colour anywhere near a skin
+## tone reads as a man who has forgotten them.
+const SHORTS_COLOURS := [CHALK, INK, NAVY, SLATE, RED, BLUE]
+
+
+## The shorts for a given shirt. Picked off the shirt colour, so a club always
+## wears the same ones, and stepped on until they are far enough from the shirt in
+## brightness to read as a second block.
+static func shorts_for(primary: Color) -> Color:
+	var at := absi(int(primary.h * 97.0 + primary.get_luminance() * 31.0))
+	for step in SHORTS_COLOURS.size():
+		var candidate: Color = SHORTS_COLOURS[(at + step) % SHORTS_COLOURS.size()]
+		if absf(candidate.get_luminance() - primary.get_luminance()) >= 0.14:
+			return candidate
+	return contrast_for(primary)
 
 
 ## True if two kits are too close to tell apart at a glance.

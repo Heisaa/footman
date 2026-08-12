@@ -228,7 +228,11 @@ static func face_for_anim(anim: int, stamina: float) -> int:
 ## A two- or three-colour kit palette for a club, drawn from the master palette
 ## so the game stays coherent and can be re-skinned per competition.
 static func kit_for(primary: Color) -> PackedColorArray:
-	return PackedColorArray([primary, SimPalette.contrast_for(primary), SimPalette.INK])
+	# Shirt, trim, shorts. The trim stays black or white -- it is the collar, the
+	# cuffs, the sock hoops and the number, and all four have to read against the
+	# shirt at any distance -- while the shorts are free to be a colour.
+	return PackedColorArray([
+		primary, SimPalette.contrast_for(primary), SimPalette.shorts_for(primary)])
 
 
 ## Picks an away kit that will not be mistaken for the home one.
