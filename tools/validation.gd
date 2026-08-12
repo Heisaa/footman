@@ -71,13 +71,16 @@ static func _aggregate(all: Array[SimMatchStats], squad_size: int) -> Dictionary
 		"goals": 0.0, "shots": 0.0, "on_target": 0.0, "shots_total": 0.0,
 		"passes": 0.0, "pass_completion": 0.0, "fouls": 0.0, "offsides": 0.0,
 		"corners": 0.0, "distance": 0.0, "score_draws": 0.0, "all_draws": 0.0,
-		"stronger_possession": 0.0, "minutes": 0.0,
+		"stronger_possession": 0.0, "minutes": 0.0, "box_touches": 0.0,
+		"goals_total": 0.0,
 	}
 	for s in all:
 		acc["minutes"] += s.minutes_played()
 		acc["goals"] += s.per_90(float(s.total_goals()))
+		acc["goals_total"] += float(s.total_goals())
 		for t in 2:
 			acc["shots"] += s.per_90(float(s.shots[t]))
+			acc["box_touches"] += s.per_90(float(s.box_touches[t]))
 			acc["on_target"] += float(s.shots_on_target[t])
 			acc["shots_total"] += float(s.shots[t])
 			acc["passes"] += s.per_90(float(s.passes[t]))
@@ -110,6 +113,11 @@ static func _aggregate(all: Array[SimMatchStats], squad_size: int) -> Dictionary
 		"distance": acc["distance"] / per_team,
 		"score_draws": 100.0 * acc["score_draws"] / n,
 		"all_draws": 100.0 * acc["all_draws"] / n,
+		"box_touches": acc["box_touches"] / per_team,
+		# The ratio, not the ratio of the two per-90s: both are the same counts
+		# scaled by the same clock, and dividing the aggregates keeps the weight
+		# on the matches that actually had shots in them.
+		"goals_per_shot": acc["goals_total"] / maxf(acc["shots_total"], 1.0),
 	}
 
 
@@ -192,6 +200,16 @@ static func report(all: Array[SimMatchStats], squad_size: int, strict: bool = fa
 			Band.Status.OUT:
 				judged += 1
 				tuned = false
+
+	# Two figures §11 has no band for and that a shot count cannot substitute
+	# for. Conversion says whether a rising shot total is more chances or the
+	# same chances split into worse attempts, and the box count says whether the
+	# attack has to work for the area or simply walks into it. Football's own
+	# numbers are alongside them as context, not as a target: nothing here is
+	# tuned toward, and both are expected to move when the box work lands.
+	print("\n  the box, and what a shot is worth  (no §11 band; football alongside)")
+	print("    %-24s %8.3f      (football ~0.10)" % ["goals per shot", a["goals_per_shot"]])
+	print("    %-24s %8.1f      (football ~25)" % ["box touches per team", a["box_touches"]])
 
 	print("\n  (all draws including 0-0: %.0f%%)" % a["all_draws"])
 	var passed := sane and (tuned or not strict)

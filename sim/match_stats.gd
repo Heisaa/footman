@@ -23,6 +23,14 @@ var saves := [0, 0]
 var duels := [0, 0]
 var recoveries := [0, 0]
 var touches := [0, 0]
+## Touches taken inside the penalty area the side is attacking, a tackle or a
+## block excluded because those are the defence's touches in its own box.
+##
+## Here rather than only in `SimDiagnostics` because it is a rate and one seed
+## cannot say a rate. Football gives a side about twenty-five of these in a
+## match; an engine that lets a carrier walk to the six-yard line gives it four
+## times that, and the count is the instrument for the box work either way.
+var box_touches := [0, 0]
 var distance := [0.0, 0.0]
 var max_player_distance := 0.0
 var min_player_distance := 0.0
@@ -49,6 +57,17 @@ static func collect(m: SimMatch) -> SimMatchStats:
 
 	var pass_length_total := [0.0, 0.0]
 	var shot_distance_total := [0.0, 0.0]
+
+	# Which end a side is attacking, for the touches below. The trace is in world
+	# coordinates and the sides change ends, so a first-half touch in the box a
+	# team was attacking reads as inside its own: if this match has a second half
+	# at all, everything before it is in the other frame. `SimDiagnostics` walks
+	# it the same way for the same reason.
+	var attacking_frame := true
+	for e in ctx.telemetry.events:
+		if e["ev"] == SimTelemetry.Ev.PERIOD and int(e.get("period", 0)) == SimConsts.Period.SECOND_HALF:
+			attacking_frame = false
+			break
 
 	for e in ctx.telemetry.events:
 		var kind: int = e["ev"]
@@ -82,8 +101,18 @@ static func collect(m: SimMatch) -> SimMatchStats:
 				s.duels[int(e["team"])] += 1
 			SimTelemetry.Ev.RECOVERY:
 				s.recoveries[int(e["team"])] += 1
+			SimTelemetry.Ev.PERIOD:
+				if int(e.get("period", 0)) == SimConsts.Period.SECOND_HALF:
+					attacking_frame = true
 			SimTelemetry.Ev.TOUCH:
-				s.touches[int(e["team"])] += 1
+				var tt: int = e["team"]
+				s.touches[tt] += 1
+				var tk: int = e["kind"]
+				if tk != SimTelemetry.Touch.TACKLE and tk != SimTelemetry.Touch.BLOCK:
+					var inside := ctx.pitch.in_opponent_penalty_area(tt, e["from"]) if attacking_frame \
+						else ctx.pitch.in_own_penalty_area(tt, e["from"])
+					if inside:
+						s.box_touches[tt] += 1
 			SimTelemetry.Ev.SET_PIECE:
 				var sp: int = e["kind"]
 				if sp == SimSetPiece.Kind.CORNER:
@@ -119,7 +148,7 @@ static func collect(m: SimMatch) -> SimMatchStats:
 const PAIR_FIELDS := [
 	"score", "shots", "shots_on_target", "goals", "passes", "passes_completed",
 	"possession", "fouls", "cards", "reds", "offsides", "corners", "throw_ins",
-	"saves", "duels", "recoveries", "touches", "distance", "mean_pass_length",
+	"saves", "duels", "recoveries", "touches", "box_touches", "distance", "mean_pass_length",
 	"mean_shot_distance", "final_stamina",
 ]
 const SCALAR_FIELDS := ["max_player_distance", "min_player_distance", "ticks", "clock", "seed_value", "digest"]
