@@ -285,6 +285,14 @@ Heads are 28-33% of height rather than 30-35, and the shape range on both axes
 was narrowed so the extremes are a long face and a wide one rather than an egg
 and a melon.
 
+Then a fourth look, because the capsule could not be seen: it was sunk to 0.95
+of the head radius, so only its front showed and it was a ball again, and three
+of the six rows had a length under twice their radius, which **is** a sphere --
+that is what a capsule collapses to. They now stand fully proud of the skull at
+1.0 and every row clears the ratio. The nose colour was pushed further from the
+skin at the same time, and the drawn features moved a little lower and a little
+wider apart.
+
 The spacing of the features is the part that took two goes. Pulling the eyes in
 to a fifth of a head-width apart made every man look pinched, and it is recorded
 here because it looks like the obvious fix for a face that reads as too spread

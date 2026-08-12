@@ -140,11 +140,11 @@ static func _nose_colour(skin: Color, rng: SimRng) -> Color:
 	var hue: float = fposmod(lerpf(-0.015, 0.045, rng.unit_float()), 1.0)
 	var target := Color.from_hsv(
 		hue,
-		clampf(skin.s * 1.15 + 0.2, 0.0, 0.62),
-		clampf(skin.v * 1.03, 0.0, 1.0))
-	# The top of this range was 0.85 and it produced a circus nose. A red nose is
-	# a man who has been out in the cold, not a clown.
-	return skin.lerp(target, rng.range_float(0.3, 0.62))
+		clampf(skin.s * 1.2 + 0.3, 0.0, 0.78),
+		clampf(skin.v * 0.94, 0.0, 1.0))
+	# Enough of the target to read as a different colour from the face. Held just
+	# short of a circus nose: this is a man who has been out in the cold.
+	return skin.lerp(target, rng.range_float(0.5, 0.8))
 
 
 ## Height: mostly the middle of a squad list, sometimes a tail. The middle is the

@@ -312,14 +312,20 @@ static func _face_quad(head_r: float, appearance: SimAppearance) -> MeshInstance
 ## front of a head is a clown's. Standing upright it gives the bridge and the tip
 ## in one primitive.
 ##
+## How far out matters more than the size: sunk to 0.95 of the radius, all that
+## showed was the front of the capsule and the nose was a ball again. At 1.0 the
+## whole length of it stands proud of the skull and the shape reads.
+##
 ## Each row is [radius, length, height on the face, how far out, z scale].
+## Length has to clear twice the radius by a good margin or the capsule collapses
+## into a sphere -- half these rows did, which is why the shape could not be seen.
 const NOSE_LIBRARY := [
-	[0.085, 0.18, -0.03, 0.95, 1.15],  # a small straight one
-	[0.100, 0.15, -0.04, 0.94, 1.00],  # broader and shorter
-	[0.075, 0.22, -0.02, 0.96, 1.30],  # long and fine
-	[0.098, 0.24, -0.05, 0.94, 1.10],  # a big one
-	[0.080, 0.13, -0.01, 0.96, 1.05],  # a neat button, high on the face
-	[0.112, 0.18, -0.03, 0.93, 1.00],  # broad
+	[0.100, 0.32, -0.07, 1.00, 1.05],  # a small straight one
+	[0.112, 0.32, -0.09, 0.99, 0.95],  # broader
+	[0.092, 0.38, -0.06, 1.01, 1.15],  # long and fine
+	[0.118, 0.44, -0.10, 0.99, 1.00],  # a big one
+	[0.090, 0.28, -0.05, 1.01, 1.00],  # a neat short one, high on the face
+	[0.122, 0.36, -0.08, 0.98, 0.95],  # broad
 ]
 
 

@@ -51,14 +51,14 @@ const WHITE := Color(1.0, 1.0, 1.0, 1.0)
 ## in the middle of the face and the man looks pinched; the reference sets them
 ## about a quarter to a third of the head apart and draws them big.
 const EYE_STYLES := [
-	{"rx": 2.4, "ry": 3.0, "gap": 6.0, "y": 14.0},
-	{"rx": 2.9, "ry": 2.9, "gap": 6.2, "y": 13.8},
-	{"rx": 2.0, "ry": 2.0, "gap": 5.6, "y": 14.0},
-	{"rx": 1.8, "ry": 3.2, "gap": 6.6, "y": 14.2},
-	{"rx": 3.2, "ry": 2.4, "gap": 6.4, "y": 13.8},
-	{"rx": 2.2, "ry": 3.6, "gap": 5.8, "y": 14.0},
-	{"rx": 3.0, "ry": 3.4, "gap": 6.8, "y": 14.2},
-	{"rx": 1.6, "ry": 2.4, "gap": 5.6, "y": 14.0},
+	{"rx": 2.4, "ry": 3.0, "gap": 6.6, "y": 14.6},
+	{"rx": 2.9, "ry": 2.9, "gap": 6.8, "y": 14.4},
+	{"rx": 2.0, "ry": 2.0, "gap": 6.2, "y": 14.6},
+	{"rx": 1.8, "ry": 3.2, "gap": 7.2, "y": 14.8},
+	{"rx": 3.2, "ry": 2.4, "gap": 7.0, "y": 14.4},
+	{"rx": 2.2, "ry": 3.6, "gap": 6.4, "y": 14.6},
+	{"rx": 3.0, "ry": 3.4, "gap": 7.4, "y": 14.8},
+	{"rx": 1.6, "ry": 2.4, "gap": 6.2, "y": 14.6},
 ]
 
 ## Brows. `lift` is how far above the eye they sit, `tilt` how much the inner end
@@ -79,14 +79,14 @@ const BROW_STYLES := [
 ## closer under the nose than they did: the features were spread over the whole
 ## face and read as a long jaw with a mouth lost at the bottom of it.
 const MOUTH_STYLES := [
-	{"kind": "line", "w": 5.0, "y": 22.4},
-	{"kind": "smile", "w": 4.0, "y": 21.8},
-	{"kind": "frown", "w": 3.4, "y": 23.0},
-	{"kind": "open", "w": 2.1, "y": 22.4},
-	{"kind": "line", "w": 7.4, "y": 22.4},
-	{"kind": "smile", "w": 5.6, "y": 21.4},
-	{"kind": "line", "w": 3.0, "y": 22.4},
-	{"kind": "open", "w": 1.5, "y": 22.6},
+	{"kind": "line", "w": 5.0, "y": 23.2},
+	{"kind": "smile", "w": 4.0, "y": 22.6},
+	{"kind": "frown", "w": 3.4, "y": 23.8},
+	{"kind": "open", "w": 2.1, "y": 23.2},
+	{"kind": "line", "w": 7.4, "y": 23.2},
+	{"kind": "smile", "w": 5.6, "y": 22.2},
+	{"kind": "line", "w": 3.0, "y": 23.2},
+	{"kind": "open", "w": 1.5, "y": 23.4},
 ]
 
 static var _cache := {}
@@ -171,13 +171,13 @@ static func _draw_face(
 
 	match face:
 		SimAppearance.Face.EFFORT:
-			_ellipse(image, 16.0, 22.6, 2.8, 3.2, INK)
+			_ellipse(image, 16.0, 23.4, 2.8, 3.2, INK)
 		SimAppearance.Face.DELIGHT:
-			_arc(image, 16.0, 21.8, 4.6, true, 1.5)
+			_arc(image, 16.0, 22.6, 4.6, true, 1.5)
 		SimAppearance.Face.DESPAIR:
-			_arc(image, 16.0, 23.6, 3.6, false, 1.4)
+			_arc(image, 16.0, 24.4, 3.6, false, 1.4)
 		SimAppearance.Face.ANGER:
-			_line(image, 12.8, 22.8, 19.2, 22.8, 1.4)
+			_line(image, 12.8, 23.6, 19.2, 23.6, 1.4)
 		_:
 			_mouth(image, mouth)
 
