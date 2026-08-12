@@ -687,3 +687,161 @@ thirty metres out puts the ball five metres from their goal — on the byline or
 keeper — and that is what it is now priced as, where before it was priced as the good
 position nine metres away. Whether an engine that answers by playing in the middle third is
 better football is a question for the eye, not for this table.
+
+## A hold is worth the decision it defers, not the ball it keeps
+
+Every other candidate resolves the possession: a pass ends with the ball somewhere else and a
+new situation on the pitch, a shot ends it outright, and `score_of` states what the
+possession is worth afterwards. A hold states nothing — the ball is where it was, he still
+has it, and he still has to decide. Scoring it as `POSSESSION_VALUE` plus the grass under his
+feet credited him for retaining what was never at stake, and did it again every touch
+cooldown.
+
+Since expected threat is flat through the middle third, `POSSESSION_VALUE` was thirteen times
+the whole positional signal there, every candidate's gain collapsed to roughly the same
+number, and what was left discriminating between them was `success`. The hold is the highest
+success by construction — it is the option defined as not attempting anything. On seed 2 one
+midfielder held eleven times in a row at 95-100% of the softmax weight, with a through ball
+on the list whose positional gain was twelve times the hold's, scoring negative.
+
+`_hold_score` prices it as one step of waiting: with `success` he still has the ball and
+faces this board one touch later, otherwise he has lost it here. The continuation is the best
+of his other options put back through `score_of` with an extra discount, so a good option
+decays toward nothing while a bad one stays as bad — the hold can beat a list of losing
+options and cannot beat a winning one. On the same passage he now holds at 39-40% against
+the best pass at 55%, which is a choice rather than a foregone conclusion.
+
+**Two defects in the first cut, both found by measuring and both worth recording.**
+
+*The discount had no units.* `future_discount()` is a discount on an action — a pass in
+flight, a carry into space, something on the order of a second — and a hold defers by one
+touch cooldown, 0.17 to 0.27 s. Charged in full it costs 16% per hold; charged per second of
+actual delay, `DISCOUNT_SECONDS`, it costs 4%, and eleven in a row still cost a third. The
+constant existed implicitly and was wrong the moment anything had to be priced against the
+same option taken *now*.
+
+*A prior applied to a negative value is not a prior.* `score_of` guards its `bias` by
+ignoring it when the value is negative, which is right for a penalty and silently drops a
+promotion. The 1.5 on `uncontrolled` is the whole of "take a touch rather than play a ball
+that is still moving", and in the middle third the continuation is usually negative, so it
+was being dropped exactly where it works. First touches fell from 142 in a match to 27 —
+one-touch football, every ball played away before it was controlled. Scaling toward zero
+above one and away from it below keeps a prior a prior.
+
+**Seeds 7 and 3, ten minutes.** The carry is a footballer's again on both: 0.42 s and 2.11 m
+between touches, 0.56 s and 3.06 m, against 0.27 s and 0.61 m. That is the 4 Hz patting gone,
+and it is the visible one.
+
+The cost is on both seeds too. Ground passes 218 to 334 and 211 to 354, against a real ten
+minutes of football at something like a hundred. Own-third touches 11% to 18% and 8% to 17%,
+final third 11% to 8% and 14% to 8%. Shots 11 to 5 and 11 to 9. Box touches disagree by seed
+(12 to 5, 4 to 15) and so do turnovers (35% to 42%, 33% to 34%).
+
+**What would answer it.** With the retention fiction gone every option in the middle third
+scores near zero, because expected threat is flat there and cannot say that one pass breaks a
+line and another does not. The engine picks among near-equals and the ball changes feet more
+often than football does. Both of the mechanics that would price the difference are in
+`docs/BACKLOG.md`. The second is deeper: the score is now honest per decision while the
+*cadence* is still per touch, so a man is asked the whole question afresh every 0.17 s and has
+no way to express "I am still doing the thing I decided to do." The hold was standing in for
+that, propped up by a fiction, and removing the fiction leaves the gap visible.
+
+## A carrier could not see where his own touch would finish
+
+The owner watched a full-back carry it out of play at pace with nobody near him, and read it
+as a friction problem. It was a horizon problem, and `carry_room`'s own comment stated it:
+
+> It is the ground the ball covers until it has slowed to his pace, which is the moment he
+> starts closing on it.
+
+That is not where the ball ends up. At the moment it has slowed to his pace the ball is still
+doing seven metres a second, the gap is fully open, and he has closed nothing. Closing
+`ahead` metres on a ball that is still rolling takes as long again, and the two stages come to
+`2 * along * delta / decel`:
+
+| his pace | slows to his pace at | he reaches it at | it stops at |
+|---|---|---|---|
+| 2 m/s | 3.0 m | 3.8 m | 3.8 m |
+| 4 | 7.6 | 10.8 | 10.9 |
+| 7 | 16.3 | 25.0 | 26.5 |
+| 8.5 | 20.1 | 31.8 | 35.2 |
+
+Ten metres at a sprint, and the ball is beyond his reach for all of it — there is no second
+touch to shorten it with, so the decision that struck it is the only one that could have
+known. It matches the old measurement exactly: carries that went out were struck 16.8 m
+inside the nearest line at 11.2 m/s, which passes a sixteen-metre test and rolls twenty-six.
+
+`carry_travel` now reports the second figure and `carry_room` inverts it, so one convention
+answers both. `settle_room` splits off the hold, which does not carry his pace at all since
+`SimTouch.settle` went in and was being refused touches it could comfortably make.
+
+**Seeds 7 and 3, ten minutes.** Carries out of play 2 and 2 to **0 and 1**; every edge band on
+both seeds reports nothing going out inside three seconds. The balls still leaving the field
+are shots behind the goal, which rose because shots rose.
+
+Shots went **up** on both, 5 to 14 and 9 to 13, and final-third touches with them, 8% to 10%
+and 8% to 12%. That is worth flagging rather than celebrating: this figure is within six per
+cent of the free-roll test recorded above under "the distance to price it against", which was
+measured to take "nearly every forward touch in the attacking half off the table and cost half
+the shots in a match". It did not reproduce. The likeliest reason is that the engine around it
+is not the one that measurement was made in — `close_control` and `_in_play_odds` both post-date
+it, and the hold rework changed what the carry is competing against. Worth a second look if
+the attacking third ever looks thin.
+
+## Passing forward, and the term that was missing
+
+The owner watched the ball go backwards out of positions where a safe forward pass was
+on. Measured on seed 7 at ten minutes, **42% of every pass in the match went backwards
+and 15% went more than fifteen metres forward.**
+
+The cause is arithmetic and it is the same one `_hold_score` was written for. Expected
+threat as this engine bakes it is 0.0001 on your own eighteen-yard line and 0.004 at the
+halfway line, against the flat 0.013 the engine added for merely having the ball. The
+whole of your own half — thirty-five metres of ground — was worth under a third of what
+having the ball at all was worth, and `_add_passes` then multiplied that positional
+difference by a length bias of about a fifth while the possession term went in after the
+bias, untouched. What was left separating a pass forward from a pass back was `success`,
+and the ball rolled back to a man with nobody near him is the highest success on the list
+by construction.
+
+So `POSSESSION_VALUE` became `SimDecision.possession_value`, a function of where the ball
+ends up, tilted up the pitch by `TERRITORY`. Every candidate now carries an `end` — where
+the possession stands once the option is played — and it is charged twice: what your own
+possession is worth there, and what the opponent's would be worth if you lost it there.
+`SimOffBall._value_of` and the throw-in in `SimSetPiece` read the same function, so a man
+offering ahead of the ball is now worth more than the same man offering behind it, which
+is the receiver's half of the same complaint.
+
+**Lifting the expected-threat map instead does not work**, and the reason is worth
+keeping. The map is read twice per candidate, once as `gain` where the ball is going and
+once as `loss` for the opponent at the same point, and only `gain` is scaled by the bias.
+Add the same territory to both and the loss half wins — a flatter map makes the *forward*
+pass score worse. Territory has to be priced where the bias cannot reach it.
+
+Also removed: the `maxf(gain, current_threat * 0.85)` floor under a ground pass's gain,
+which handed the ball played backwards most of the value of the position it was giving up.
+
+**Seed 7, ten minutes, against the same engine with `TERRITORY` at zero.**
+
+| | flat | 0.4 | 0.75 |
+|---|---|---|---|
+| passes backward | 42% | 33% | 19% |
+| forward, of which long | 39% (15%) | 56% (27%) | 67% (37%) |
+| long-forward completion | 74% | 72% | 47% |
+| ground gained per possession | 5.2 m | 8.7 m | 8.6 m |
+| passes per possession | 3.2 | 2.4 | 1.4 |
+| touches in the final third | 9% | 16% | 24% |
+| shots | 14 | 15 | 34 |
+
+**0.4 is the size that leaves it a passing side.** At 0.75 the ball goes further forward
+again and the engine stops passing: better than a third of every ball long and forward at
+47% completion, possessions of one and a half passes, shots up two and a half times. That
+is not the mechanic being tuned away from a band — it is the mechanic having no
+counterweight. Territory is credited in metres, so the ball that gains most of it is the
+long one, and a long ball escapes the length bias entirely because this term is added
+after it. What should pay for that is the cost of losing it stretched, which is the same
+thing the knock past a man cannot price and which a single-step model has no vocabulary
+for. Until that exists, territory stays modest and `success` carries what there is.
+
+One seed, ten minutes, and the seed spread on this engine is large. What it can see is the
+direction and the character; what it cannot is the rate.

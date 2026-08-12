@@ -541,8 +541,9 @@ static func throw_range(taker: SimPlayer) -> float:
 ## the team is worth with the ball there, times the chance of it arriving. Pitch
 ## control answers the second part and now counts the crowd, so a man with two
 ## opponents around him prices below a man with one. Retention is on the books
-## through `SimDecision.POSSESSION_VALUE`, which is what keeps the short throw
-## competitive with the hopeful one up the line.
+## through `SimDecision.possession_value`, which is what keeps the short throw
+## competitive with the hopeful one up the line -- and, since that term stopped
+## being flat, what stops the safe throw back down the line being free.
 ##
 ## Deliberately not softmaxed. A throw-in is taken by a man standing still with
 ## the game stopped and as long as he likes to look, which is the one moment in a
@@ -568,7 +569,7 @@ static func _throw_target(ctx: SimContext, taker: SimPlayer) -> SimPlayer:
 		# defence has to close him down in. Longer throws are worth less than
 		# their landing point says they are.
 		var flight: float = 1.0 - clampf(d / reach, 0.0, 1.0) * 0.25
-		var score := control * (threat + SimDecision.POSSESSION_VALUE) * flight
+		var score := control * (threat + SimDecision.possession_value(ctx, taker.team, arrival)) * flight
 		if score > best_score:
 			best_score = score
 			best = p

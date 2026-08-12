@@ -295,10 +295,12 @@ static func _option(ctx: SimContext, player: SimPlayer, c: Dictionary, weight: f
 	var action := int(c.get("action", -1))
 	var point: Vector3 = c.get("point", c.get("aim", player.pos))
 	var target := int(c.get("target", -1))
+	var catch := _catch_point(ctx, player, c)
 	return {
 		"action": action,
-		"label": _label(ctx, player, action, target, point, attack),
+		"label": _label(ctx, player, action, target, point, attack, catch),
 		"point": point,
+		"catch": catch,
 		"target": target,
 		"success": float(c.get("success", NAN)),
 		"gain": float(c.get("gain", NAN)),
@@ -311,9 +313,40 @@ static func _option(ctx: SimContext, player: SimPlayer, c: Dictionary, weight: f
 
 static func _label_option(label: String) -> Dictionary:
 	return {
-		"action": -1, "label": label, "point": Vector3.ZERO, "target": -1,
+		"action": -1, "label": label, "point": Vector3.ZERO, "catch": Vector3.INF, "target": -1,
 		"success": NAN, "gain": NAN, "loss": NAN, "bias": NAN, "score": NAN, "weight": NAN,
 	}
+
+
+## Where the carrier expects to meet the ball again -- his next touch -- if he
+## plays this carry. `Vector3.INF` for everything that is not one.
+##
+## It is a different point from the option's own `point`, and the gap between
+## them is the distinction `docs/GLOSSARY.md` draws between the horizon and the
+## reach. An ordinary carry's `point` is the *horizon*: how far the direction can
+## be pursued at all, which is what every term in the score is read at. The ball
+## does not go there. It goes `carry_travel(ahead)`, which is a good deal shorter
+## at a walk and longer than it looks at a sprint, and that is the spot the next
+## decision gets taken from.
+##
+## The burst is the exception and needs no work here: its `point` already *is*
+## this, because a knock past a man is the one touch in the engine that runs to
+## completion. Drawn anyway, so the layer says the same thing about both.
+##
+## Both halves come from the engine's own functions -- `SimTouch.dribble_ahead`
+## for the touch, `SimDecision.carry_travel` for the roll -- so the mark on
+## screen cannot disagree with the touch that gets played.
+static func _catch_point(ctx: SimContext, player: SimPlayer, c: Dictionary) -> Vector3:
+	if int(c.get("action", -1)) != SimDecision.Action.DRIBBLE:
+		return Vector3.INF
+	var dir: Vector3 = c.get("dir", Vector3.ZERO)
+	if dir.length_squared() < 1e-6:
+		return Vector3.INF
+	var ahead := SimTouch.dribble_ahead(
+		ctx, player, float(c.get("space", 0.0)),
+		float(c.get("push", 0.0)), float(c.get("max_ahead", INF)))
+	var travel := SimDecision.carry_travel(ctx, player, dir, ahead)
+	return ctx.pitch.clamp_to_pitch(ctx.ball.ground_pos() + dir * travel, 0.5)
 
 
 ## What the option was, in football rather than in coordinates.
@@ -322,8 +355,14 @@ static func _label_option(label: String) -> Dictionary:
 ## the player's side was attacking at the time. Anything that works it out later
 ## from a stored point has to know which half it was, and `docs/DIAGNOSTICS.md`
 ## has the two ways that has already gone wrong.
+##
+## A carry is measured to `catch` -- where he meets the ball again -- and not to
+## the option's `point`, which for a carry is the horizon the direction was
+## judged over. Labelled off the horizon, as it was, every carry on the panel
+## read two to three times longer than the touch about to be played, and a
+## four-metre knock under the sole was printed as a twelve-metre run.
 static func _label(ctx: SimContext, player: SimPlayer, action: int, target: int, point: Vector3,
-		attack: float) -> String:
+		attack: float, catch: Vector3 = Vector3.INF) -> String:
 	var name: String = ACTION_NAMES[action] if action >= 0 and action < ACTION_NAMES.size() else "?"
 	var delta := point - player.pos
 	var distance := SimConsts.horizontal_length(delta)
@@ -336,7 +375,8 @@ static func _label(ctx: SimContext, player: SimPlayer, action: int, target: int,
 			return "shot, %.0f m" % SimConsts.horizontal_length(
 				ctx.pitch.target_goal(player.team) - player.pos)
 		A_DRIBBLE:
-			return "carry %s %.1f m" % [compass(delta, attack), distance]
+			var run := delta if is_inf(catch.x) else catch - player.pos
+			return "carry %s %.1f m" % [compass(run, attack), SimConsts.horizontal_length(run)]
 		_:
 			var mate := "#%d" % ctx.players[target].shirt if target >= 0 and target < ctx.players.size() else "?"
 			return "%s -> %s %.0f m %s" % [name, mate, distance, compass(delta, attack)]

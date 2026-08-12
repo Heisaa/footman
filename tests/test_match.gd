@@ -7,35 +7,45 @@ extends SimTestCase
 ## elsewhere. That is measurable, so it is measured here rather than eyeballed.
 
 
+## Long enough to play both halves and settle a rate, and no longer. It was
+## twelve, and every check below is either a ratio -- which converges in the
+## first minute or two -- or a floor on a count with a wide margin. See
+## `MIN_EVENTS`.
+const MINUTES := 6.0
+
+## The floor under the event count, and it is a "did a match happen at all" test
+## rather than a rate. Six minutes of football produces several hundred events --
+## touches alone run to about sixty a minute -- so this sits far below the
+## measurement on purpose. It was 200 against a twelve-minute match; halving the
+## match without halving the floor would have turned a sanity check into a band.
+const MIN_EVENTS := 150.0
+
+
 func run() -> void:
 	_whole_match_invariants()
 	_offside_line_is_the_second_last_defender()
-	_teams_change_ends_at_half_time()
 	_sent_off_players_stop_playing()
 
 
-static func _played(seed_value: int = 3, minutes: float = 12.0) -> SimMatch:
-	var opts := SimRunner.Options.new()
-	opts.seed_value = seed_value
-	opts.minutes = minutes
-	var m := SimRunner.build(opts)
-	m.run_to_completion()
-	return m
-
-
-## Five whole-match invariants over one stepped match rather than five.
+## Six whole-match invariants over one stepped match rather than six.
 ##
 ## They all want the same thing -- a match played tick by tick with something
-## sampled along the way -- and simulating it once instead of five times is
-## most of this suite's wall clock. The suite is the check that has to be cheap
-## enough to run on every change (PLAN.md §11.1); breadth across seeds comes
-## from the smoke and gate runs, which sample many.
+## sampled along the way -- and simulating it once instead of six times is most
+## of this suite's wall clock. The suite is the check that has to be cheap enough
+## to run on every change (PLAN.md §11.1); breadth across seeds comes from the
+## smoke and gate runs, which sample many.
+##
+## The half-time flip used to be its own eight-minute match, run to the interval
+## and then thrown away. This match already crosses the interval, so it is
+## watched here instead, and the second match is gone.
 func _whole_match_invariants() -> void:
 	var opts := SimRunner.Options.new()
 	opts.seed_value = 8
-	opts.minutes = 12.0
+	opts.minutes = MINUTES
 	var m := SimRunner.build(opts)
 
+	var first_half_dir := m.ctx.pitch.attack_dir(0)
+	var second_half_dir := first_half_dir
 	var stray_ticks := 0
 	var players_off := 0
 	var near_samples := 0
@@ -47,6 +57,8 @@ func _whole_match_invariants() -> void:
 	while not m.finished:
 		m.tick()
 		var ctx := m.ctx
+		if ctx.period == SimConsts.Period.SECOND_HALF:
+			second_half_dir = ctx.pitch.attack_dir(0)
 		var b := ctx.ball
 		if absf(b.pos.x) > ctx.pitch.half_length + 6.0 or absf(b.pos.z) > ctx.pitch.half_width + 6.0:
 			stray_ticks += 1
@@ -91,9 +103,10 @@ func _whole_match_invariants() -> void:
 				spread_samples += 1
 
 	check(m.finished, "a match must reach full time")
-	check_greater(float(m.ctx.telemetry.events.size()), 200.0, "and produce a substantial event log")
+	check_greater(float(m.ctx.telemetry.events.size()), MIN_EVENTS, "and produce a substantial event log")
 	check_equal(m.ctx.period, SimConsts.Period.FULL_TIME, "and end in the full-time period")
 	check_greater(float(m.ctx.telemetry.count_of(SimTelemetry.Ev.KICKOFF)), 1.0, "both halves must kick off")
+	check_near(second_half_dir, -first_half_dir, 0.01, "sides must change ends at half time")
 
 	check_less(float(stray_ticks) / float(maxi(m.ctx.tick_index, 1)), 0.06, "the ball must not spend long off the pitch")
 	check_equal(players_off, 0, "players must stay on or near the field of play")
@@ -144,17 +157,6 @@ func _offside_line_is_the_second_last_defender() -> void:
 	check(SimReferee.would_be_offside(ctx, 0, Vector3(46.0, 0.0, 0.0)), "beyond the line and the ball is offside")
 	check(not SimReferee.would_be_offside(ctx, 0, Vector3(20.0, 0.0, 0.0)), "short of the line is not")
 	check(not SimReferee.would_be_offside(ctx, 0, Vector3(-20.0, 0.0, 0.0)), "you cannot be offside in your own half")
-
-
-func _teams_change_ends_at_half_time() -> void:
-	var opts := SimRunner.Options.new()
-	opts.seed_value = 33
-	opts.minutes = 8.0
-	var m := SimRunner.build(opts)
-	var first := m.ctx.pitch.attack_dir(0)
-	while not m.finished and m.ctx.period == SimConsts.Period.FIRST_HALF:
-		m.tick()
-	check_near(m.ctx.pitch.attack_dir(0), -first, 0.01, "sides must change ends at half time")
 
 
 func _sent_off_players_stop_playing() -> void:

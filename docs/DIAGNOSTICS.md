@@ -220,6 +220,22 @@ winger" resolves to either "the winger was not a candidate" or "he was, and he
 scored 0.02 lower", which are two different jobs. Layer 6 is the other half of
 that question — an option he cannot perceive can never be scored at all.
 
+**On layer 1 a carry has two marks, and they are not the same distance.** The
+ring at the end of the arrow is the **horizon**: how far that direction can be
+pursued at all, which is what every term in the option's score was read at. The
+**cross** is where he expects to meet the ball again — the next touch — and it is
+where the ball actually goes. At a walk the cross is well short of the ring; at a
+sprint it runs out past where the arrow's own ring was drawn, because the ball is
+struck to beat a man who keeps running. The panel's `carry fwd 4.2 m` is the
+cross, not the ring.
+
+Both come from the functions the engine plays the touch with —
+`SimTouch.dribble_ahead` and `SimDecision.carry_travel` — so a mark that
+disagrees with what happens next is a bug in the sim, not in the drawing. Before
+the cross existed, the layer and the panel both reported the horizon, and every
+carry in the match read two to three times longer than the touch about to be
+played.
+
 **`M` marks the moment.** It writes `bookmarks/seedN-tT.md` and the frame beside
 it: the ball, everyone within twenty metres with their intent and chase role,
 every decision and event of the previous eight seconds, and the command that

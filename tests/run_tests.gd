@@ -3,10 +3,22 @@ extends SceneTree
 ##
 ##   godot --headless --script res://tests/run_tests.gd
 ##   godot --headless --script res://tests/run_tests.gd -- --only TestBall
+##   godot --headless --script res://tests/run_tests.gd -- --bands
 ##
 ## PLAN.md §11 asks for three suites: golden replays, the statistical bands, and
 ## determinism. All three live here; the statistical bands are a slow suite and
-## are only run with --bands, because they simulate hundreds of matches.
+## are only run with `--bands`, because they simulate matches by the dozen.
+##
+## `--bands` was documented here and never implemented, so every statistical
+## check ran on every pass. `SimTestCase.bands` is the flag, and a case asks it
+## before simulating a sample rather than a match: `test_tactics` alone was 112
+## match-minutes, more than the whole of the rest of the suite.
+##
+## **What the suite is for** (CLAUDE.md, "Verification is proportional to the
+## change"): it is the check that has to be cheap enough to run on any change.
+## Breadth across seeds is what `smoke` and `gate` are for, and a rate measured
+## over many matches is what `accept` is for. Nothing here should simulate a
+## match longer than the shortest one that can fail.
 
 const CASES := [
 	"res://tests/test_rng.gd",
@@ -28,6 +40,8 @@ func _initialize() -> void:
 	for i in args.size():
 		if args[i] == "--only" and i + 1 < args.size():
 			only = args[i + 1]
+		if args[i] == "--bands":
+			SimTestCase.bands = true
 
 	var total_checks := 0
 	var total_failures := 0
@@ -60,6 +74,8 @@ func _initialize() -> void:
 
 	var elapsed := Time.get_ticks_msec() - started
 	print("\n%d checks, %d failures, %d failing cases, %d ms" % [total_checks, total_failures, failed_cases, elapsed])
+	if not SimTestCase.bands:
+		print("(statistical checks skipped; --bands runs them and takes minutes)")
 	if total_failures == 0:
 		print("PASS")
 		quit(0)

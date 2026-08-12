@@ -108,9 +108,17 @@ momentum he has to shed first, and everyone within reach is weighed, so five
 defenders around a point read differently from one. `control_at_time` asks the same
 question given that the ball takes a known time to arrive.
 
-**Possession value** — `POSSESSION_VALUE`. What simply having the ball is worth.
+**Possession value** — `possession_value`. What simply having the ball is worth.
 Without it the engine compares only where the ball ends up, and a fifty-metre punt to
-a well-placed striker beats a fifteen-metre pass that keeps it.
+a well-placed striker beats a fifteen-metre pass that keeps it. `POSSESSION_VALUE` is
+its average over the pitch; `TERRITORY` tilts it up the field, and both are read
+through the function, never as the bare constant.
+
+**Territory** — that tilt, and the only thing in the engine that says a metre up the
+pitch is worth having. Expected threat is flat at the back — 0.0001 on your own
+eighteen-yard line — so without it a pass forward and a pass back scored the same and
+`success` picked, which meant the ball went back. Charged twice: what your possession
+gains, and what the opponent's would be worth if you lost it there.
 
 **Bias** — a per-candidate multiplier on the *positional value* of an option, where
 the tactical plan and the standing penalties live. Never a multiplier on the whole

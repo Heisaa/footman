@@ -603,9 +603,14 @@ static func _behind_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector
 ## this from the plain value field -- a pocket with two opponents standing in
 ## the line to it is not an option, however much space is in it.
 ##
-## `retain` scales the flat value of simply keeping the ball, which is what
-## stops every short option scoring zero next to anything played forward. It is
-## the same term, and the same reasoning, as SimDecision.POSSESSION_VALUE.
+## `retain` scales the value of simply keeping the ball, which is what stops
+## every short option scoring zero next to anything played forward. It is the
+## same term, and the same reasoning, as `SimDecision.possession_value` -- and
+## since that stopped being flat it also says that a man offering ahead of the
+## ball is worth more than the same man offering behind it. That is the receiver's
+## half of the same complaint the decision layer had: expected threat is flat in
+## one's own half, so the only thing separating the pocket in front from the
+## pocket behind was the open lane, and the lane behind the ball is always open.
 static func _value_of(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3, point: Vector3, retain: float, lane_power: float = 1.0) -> float:
 	var control := ctx.value.control_at_local(ctx, point, team)
 	var threat := ctx.value.xt_at(team, point, ctx.pitch) * ctx.tactics(team).focus_at(point.z, ctx.pitch)
@@ -618,7 +623,7 @@ static func _value_of(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3, p
 	# A man who has to turn and travel is a later option than one already there.
 	var arrival: float = SimValueField.time_to_arrive(p, point, 0.0)
 	var promptness: float = 1.0 / (1.0 + arrival * 0.35)
-	return control * lane * (threat + SimDecision.POSSESSION_VALUE * retain) * promptness
+	return control * lane * (threat + SimDecision.possession_value(ctx, team, point) * retain) * promptness
 
 
 ## How open the line from the ball to a point is, as a fraction. Geometric and

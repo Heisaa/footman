@@ -40,9 +40,15 @@ func _dribble_puts_the_ball_ahead() -> void:
 func _the_ball_is_never_glued_to_a_foot() -> void:
 	# Run a real match and watch the distance from the ball to whoever last
 	# touched it. If the ball were glued, that distance would sit near zero.
+	#
+	# Four minutes, not ten. Both bounds below are *shares of the samples*, and a
+	# share is settled long before the whole-match count is: four minutes is
+	# already fourteen thousand ticks, so the `> 1000 samples` floor has an order
+	# of magnitude of headroom and the ratios move in the third decimal after the
+	# first minute.
 	var opts := SimRunner.Options.new()
 	opts.seed_value = 21
-	opts.minutes = 10.0
+	opts.minutes = 4.0
 	var m := SimRunner.build(opts)
 	var samples := 0
 	var glued := 0

@@ -6,6 +6,16 @@ extends RefCounted
 var failures: PackedStringArray = PackedStringArray()
 var checks := 0
 
+## Set by `run_tests.gd` from `--bands`. A check that has to simulate a *sample*
+## of matches to say anything -- anything answered with a t-test or a rate --
+## asks this first and skips itself otherwise. Everything else runs always.
+##
+## The distinction is not "slow", it is what the check can see. A statistical
+## claim needs matches by the dozen and is measuring an engine that is missing
+## parts (CLAUDE.md, "What this is judged by"), so it belongs with `smoke` and
+## `accept` rather than in the check that runs on every change.
+static var bands := false
+
 
 ## Override with the tests. Use the check_* helpers; they record rather than
 ## abort, so one broken assumption does not hide the next five.

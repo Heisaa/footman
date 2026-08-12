@@ -13,8 +13,19 @@ extends SimTestCase
 ## failure is worth nothing, so the recording is a separate, explicit action.
 
 const GOLDEN_PATH := "res://tests/golden.json"
+
+## Three seeds, because three matches reach different code paths -- a sending
+## off, a penalty, a keeper coming for a cross -- and one may reach none of them.
+##
+## Three minutes each, because *length buys this test nothing*. The comparison is
+## a hash over the whole event log, so a behaviour change diverges at the first
+## tick it touches and every tick after that differs too. It was eight minutes,
+## which is 24 match-minutes to detect a difference that shows up in the first
+## few seconds of the first seed. What length would buy is reaching a rarer code
+## path, and eight minutes does not reliably reach one either -- that is what
+## `gate` and `accept` sample for.
 const SEEDS := [101, 202, 303]
-const MINUTES := 8.0
+const MINUTES := 3.0
 
 
 func run() -> void:

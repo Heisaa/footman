@@ -363,11 +363,14 @@ static func _perturb(ctx: SimContext, vel: Vector3, sigma_rad: float, weight_sig
 ## and strikes the next one harder still. Four holds in a row took #7 from 1.1 to
 ## 7.6 m/s without a single decision to run anywhere, and the last "settling
 ## touch" left his foot at 10.7 m/s and ran eleven metres into nobody.
-static func dribble(ctx: SimContext, player: SimPlayer, dir: Vector3, space: float, push: float = 0.0, away: float = 0.0, max_ahead: float = INF, settle: bool = false) -> void:
-	var d := SimConsts.horizontal(dir)
-	if d.length_squared() < 1e-6:
-		d = player.heading_dir()
-	d = d.normalized()
+## How far in front of himself this touch puts the ball, in metres of relative
+## gap. Split out of `dribble` so it can be asked *before* the touch is played.
+##
+## The debug overlay needs it to say where the carrier expects to meet the ball
+## again, and working that out from a copy of these four lines is how the drawn
+## number and the played touch drift apart -- the failure `first_touch_drift`
+## exists to prevent on the other primitive. One function, asked by both.
+static func dribble_ahead(ctx: SimContext, player: SimPlayer, space: float, push: float = 0.0, max_ahead: float = INF) -> float:
 	var press := ctx.pressure_on(player)
 	var ahead: float = lerpf(DRIBBLE_AHEAD_MIN, DRIBBLE_AHEAD_MAX, clampf(space, 0.0, 1.0))
 	ahead = maxf(ahead * clampf(1.0 - 0.28 * press, 0.45, 1.0), DRIBBLE_AHEAD_FLOOR)
@@ -376,7 +379,15 @@ static func dribble(ctx: SimContext, player: SimPlayer, dir: Vector3, space: flo
 	# The decision layer scored this touch on the room it found for it, and a
 	# touch played bigger than the one that was scored is the engine lying to
 	# itself about its own option.
-	ahead = minf(ahead, max_ahead)
+	return minf(ahead, max_ahead)
+
+
+static func dribble(ctx: SimContext, player: SimPlayer, dir: Vector3, space: float, push: float = 0.0, away: float = 0.0, max_ahead: float = INF, settle: bool = false) -> void:
+	var d := SimConsts.horizontal(dir)
+	if d.length_squared() < 1e-6:
+		d = player.heading_dir()
+	d = d.normalized()
+	var ahead := dribble_ahead(ctx, player, space, push, max_ahead)
 	# Relative speed that puts the ball `ahead` metres in front before friction
 	# hands it back to the runner -- and, for a settling touch, the whole of the
 	# strike, because there the runner is not going anywhere with it.

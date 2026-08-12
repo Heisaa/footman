@@ -7,23 +7,31 @@ extends SimTestCase
 ## test pass rather than only when someone remembers to check.
 ##
 ## The real version is `./run.sh tactics`, which shards both arms across cores
-## and can afford full-length matches; this is the cheap directional check that
-## belongs in the ordinary suite.
+## and can afford full-length matches.
 ##
-## Sixteen matches at eighteen minutes was six hundred seconds, most of the
-## suite's wall clock on its own. The metrics compared here -- possession share,
-## mean pass length, passes, distance, shot distance -- are all *rates*, and a
-## rate is well estimated from a short match, so shortening the matches costs
-## almost no discrimination while the sample size, which is what sets the
-## degrees of freedom, is barely touched.
+## **The sampled half of this runs only under `--bands`.** It simulates fourteen
+## matches, and at eight minutes each that is 112 match-minutes -- more than the
+## whole of the rest of the suite put together, and by some distance the largest
+## thing in it. It had already been cut once, from sixteen matches at eighteen
+## minutes, and shortening the matches is the wrong lever anyway: what a t-test
+## needs is sample size, and cutting minutes to protect the wall clock quietly
+## degrades the thing being measured.
+##
+## So it is not shortened, it is moved. `_plans_are_distinguishable` is a
+## statistical claim about a machine that is missing parts, which is what
+## `--bands`, `smoke` and `accept` are for. What stays in every pass is the two
+## checks that cost nothing and catch the same failure sooner: if the tactical
+## layer stops being a set of modifiers on the value function, the modifiers
+## themselves stop separating, and no simulation is needed to see it.
 const SAMPLE := 7
 const MINUTES := 8.0
 
 
 func run() -> void:
 	_modifiers_move_in_the_right_direction()
-	_plans_are_distinguishable()
 	_every_tactical_axis_is_a_modifier()
+	if bands:
+		_plans_are_distinguishable()
 
 
 func _modifiers_move_in_the_right_direction() -> void:
@@ -53,9 +61,10 @@ func _plans_are_distinguishable() -> void:
 			separated += 1
 	check_greater(float(separated), 1.5, "two contrasting plans must separate on several measures")
 
-	# And in the direction a manager would expect.
+	# And in the direction a manager would expect. The `* 0.0` term that used to
+	# be on the first argument was left over from an edit and did nothing.
 	check_greater(
-		SimValidation.mean_of(_extract(block, "pass_length")) * 0.0 + SimValidation.mean_of(_extract(press, "pass_length")),
+		SimValidation.mean_of(_extract(press, "pass_length")),
 		SimValidation.mean_of(_extract(block, "pass_length")),
 		"a direct plan plays longer passes than a patient one"
 	)

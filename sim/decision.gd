@@ -198,11 +198,16 @@ static func _add_shot(ctx: SimContext, player: SimPlayer, first_time: bool) -> v
 		return
 	var tactics := ctx.tactics(player.team)
 	# Losing the ball with a shot costs little: the ball ends up deep in the
-	# opponent's half either way.
-	var loss := ctx.value.xt_at(SimConsts.other_team(player.team), Vector3(goal.x * 0.75, 0.0, 0.0), ctx.pitch)
+	# opponent's half either way. That restart is also where the possession
+	# stands afterwards, so it is the point `score_of` prices the turnover at.
+	var restart := Vector3(goal.x * 0.75, 0.0, 0.0)
+	var loss := ctx.value.xt_at(SimConsts.other_team(player.team), restart, ctx.pitch)
 	_candidates.append({
 		"action": Action.SHOOT,
 		"aim": aim,
+		# Not `point`: the debug overlay draws the arrow at that key, and a shot's
+		# arrow is its aim.
+		"end": restart,
 		"success": quality,
 		"gain": 1.0,
 		"loss": loss,
@@ -305,7 +310,6 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 	# play, so the through ball and the lofted pass keep their standing prices.
 	var secure: float = lerpf(1.0, 1.7, regain)
 	var from := ctx.ball.pos
-	var current_threat := ctx.value.xt_at(player.team, from, ctx.pitch)
 	var attack_dir := ctx.pitch.attack_dir(player.team)
 	# Nobody plays a measured pass off a ball that is still bouncing. This is
 	# what makes a first touch the usual answer to a ball arriving at pace.
@@ -342,8 +346,14 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				"action": Action.GROUND_PASS,
 				"target": mate_id,
 				"point": lead,
+				"end": lead,
 				"success": success * off_balance,
-				"gain": maxf(gain, current_threat * 0.85),
+				# Read where the ball is going and nowhere else. The floor that
+				# used to be here -- worth at least 85% of the grass it left --
+				# handed the ball played backwards the value of the position it
+				# was giving up, which is the option this whole section exists to
+				# price honestly.
+				"gain": gain,
 				"loss": ctx.value.xt_at(SimConsts.other_team(player.team), lead, ctx.pitch),
 				"pace": pace,
 				# Football's pass-length distribution is heavily short. Without
@@ -396,6 +406,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 					"action": Action.THROUGH_BALL,
 					"target": mate_id,
 					"point": target,
+					"end": target,
 					"success": t_success * off_balance,
 					"gain": ctx.value.xt_at(player.team, target, ctx.pitch) * tactics.focus_at(target.z, ctx.pitch)
 						+ _arrival_gain(ctx, player.team, target, believed, mate, t_travel),
@@ -436,6 +447,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				"action": Action.CROSS if is_cross else Action.LOFTED_PASS,
 				"target": mate_id,
 				"point": lofted_target,
+				"end": lofted_target,
 				"success": lofted_success * off_balance,
 				"gain": ctx.value.xt_at(player.team, lofted_target, ctx.pitch) * tactics.focus_at(lofted_target.z, ctx.pitch) * (1.15 if is_cross else 1.0),
 				"loss": ctx.value.xt_at(SimConsts.other_team(player.team), lofted_target, ctx.pitch),
@@ -792,33 +804,45 @@ static func _room_ahead(ctx: SimContext, player: SimPlayer, dir: Vector3) -> flo
 ## there by a dribble, 11 of them carried over the goal line the carrier was
 ## running at.
 ##
-## The distance to price it against is neither of the two obvious ones. It is not
-## where the touch puts the ball relative to the carrier -- the ball is struck to
-## be `ahead` metres clear of a man who keeps running, so in the world frame it
-## travels much further than that. Nor is it where the ball would stop rolling,
-## which is what `_room_ahead` above charges the burst: the carrier catches this
-## one, so the ball never gets to stop. It is the ground the ball covers until it
-## has slowed to his pace, which is the moment he starts closing on it:
+## The distance to price it against is not where the touch puts the ball relative
+## to the carrier: the ball is struck to be `ahead` metres clear of a man who
+## keeps running, so in the world frame it travels much further. `carry_travel`
+## is the figure, and this is that inversion.
 ##
-##     travel = (2 * along * delta + delta * delta) / (2 * decel)
+## It used to charge the ball only as far as the point where it has slowed to his
+## pace, on the reasoning that the carrier catches it there so it never gets to
+## stop. He does not catch it there. That is the moment he *starts* closing, with
+## the gap still open and the ball still doing his own speed; he reaches it most
+## of the way to where it would have stopped anyway. At a sprint the two figures
+## are 16 metres and 25, and the ten metres in between is where the ball crosses
+## the line -- measured before this, carries that went out were struck 16.8 m
+## inside the nearest line at 11.2 m/s, which passes a 16 m test and rolls 26.
 ##
-## for a carrier running at `along` and a launch that beats him by `delta`. That
-## is the free-roll figure without its `along * along` term, and the difference
-## is not academic -- at a sprint it is 15 metres against 27, and charging a
-## carry the larger of the two took nearly every forward touch in the attacking
-## half off the table and cost half the shots in a match.
-##
-## Inverted for `ahead`, which is what the caller needs.
+## Nothing in between could have caught it either. The ball is beyond his reach
+## for that whole stretch, so there is no second touch to shorten it with: the
+## decision that put it there is the only one that could have known.
 static func carry_room(ctx: SimContext, player: SimPlayer, dir: Vector3, wanted: float) -> float:
 	var room := ctx.pitch.run_room(ctx.ball.ground_pos(), dir, LINE_MARGIN)
 	if is_inf(room):
 		return wanted
+	room = maxf(room, 0.0)
 	var along: float = maxf(player.vel.dot(dir), 0.0)
 	var decel: float = maxf(ctx.env.roll_decel, 0.1)
-	var delta: float = sqrt(along * along + 2.0 * decel * maxf(room, 0.0)) - along
-	if delta <= 0.0:
-		return 0.0
-	return minf(wanted, delta * delta / (2.0 * decel))
+	# `travel = 2 * along * sqrt(2 * decel * ahead) / decel`, solved for `ahead`.
+	# The standing case is the other branch: the ball simply goes `ahead`.
+	var allowed := room
+	if along > 0.01:
+		allowed = minf(allowed, room * room * decel / (8.0 * along * along))
+	return minf(wanted, allowed)
+
+
+## The same question for a settling touch, which does not carry his pace at all:
+## `SimTouch.settle` strikes it to travel `ahead` over the grass, so the room test
+## is the plain one. Asking `carry_room` -- which assumes a moving frame -- refused
+## a sprinting player a forward settle he could comfortably make.
+static func settle_room(ctx: SimContext, player: SimPlayer, dir: Vector3, wanted: float) -> float:
+	var room := ctx.pitch.run_room(ctx.ball.ground_pos(), dir, LINE_MARGIN)
+	return wanted if is_inf(room) else minf(wanted, maxf(room, 0.0))
 
 
 ## How big a touch this direction is worth at the pace he is going.
@@ -860,12 +884,23 @@ static func close_control(ctx: SimContext, player: SimPlayer, wanted: float) -> 
 	return minf(wanted, lerpf(CLOSE_CONTROL_TOUCH, wanted, t))
 
 
-## The ground a carry of this size covers before the carrier catches it up.
+## The ground a carry of this size covers before the carrier gets to it.
+##
+## Two stages, and leaving out the second is what let carries run off the pitch.
+## The ball beats him by `delta` and that decays at the rolling rate, so after
+## `delta / decel` seconds it is down to his pace with the gap fully open at
+## `ahead` -- and he has closed nothing. Only then does he start gaining, and
+## closing `ahead` metres on a ball that is still rolling takes as long again.
+## The two stages come to `2 * along * delta / decel`, which at a sprint is 25 m
+## against the 16 the first stage alone reports.
+##
+## Floored at `ahead`, which is the standing case: no pace to add, so the ball
+## goes exactly as far as the touch was struck to send it.
 static func carry_travel(ctx: SimContext, player: SimPlayer, dir: Vector3, ahead: float) -> float:
 	var along: float = maxf(player.vel.dot(dir), 0.0)
 	var decel: float = maxf(ctx.env.roll_decel, 0.1)
 	var delta: float = sqrt(2.0 * decel * maxf(ahead, 0.0))
-	return (2.0 * along * delta + delta * delta) / (2.0 * decel)
+	return maxf(ahead, 2.0 * along * delta / decel)
 
 
 ## Probability this carry leaves the ball on the field of play.
@@ -1016,6 +1051,7 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 		_candidates.append({
 			"action": Action.DRIBBLE,
 			"point": target,
+			"end": target,
 			"dir": dir,
 			"escape": escape,
 			"away": _awayness(challenger, player, dir),
@@ -1133,6 +1169,7 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 		# man who has knocked it twenty-five metres past a defender should not be
 		# setting off toward the nine-metre mark.
 		"point": arrival,
+		"end": arrival,
 		"dir": burst_dir,
 		"escape": burst_escape,
 		"away": _awayness(challenger, player, burst_dir),
@@ -1162,13 +1199,16 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 ## the engine then moved it. `SimTouch.first_touch_drift` is the execution's own
 ## model asked in advance, so the two layers cannot drift apart again.
 ##
+## Since `_hold_score` went in this feeds the loss term alone -- where the ball
+## would be handed over, which for a first touch is a metre or two from where it
+## was received. The gain half of the question is no longer asked here, because a
+## hold is not worth the grass it sits on. It is worth what he does next.
+##
 ## What this deliberately does not do is grade the *option* on how well he will
 ## take it. `success` is the chance his side still has the ball afterwards, and
 ## measured it is already about right: 86-92% kept three seconds later across all
 ## three bands of `Taking it down`, against the 0.72-0.97 this reads off the
-## attribute. The known cost is that a poorer receiver is credited with the extra
-## ground his worse touch runs, since gain is read where the ball stops. Both
-## terms move together, and it is second-order beside scoring it at a standstill.
+## attribute.
 static func _hold_rest_point(ctx: SimContext, player: SimPlayer, uncontrolled: bool) -> Vector3:
 	if not uncontrolled:
 		return player.pos
@@ -1180,20 +1220,23 @@ static func _hold_rest_point(ctx: SimContext, player: SimPlayer, uncontrolled: b
 static func _add_hold(ctx: SimContext, player: SimPlayer, uncontrolled: bool, regain: float) -> void:
 	var tactics := ctx.tactics(player.team)
 	var rest := _hold_rest_point(ctx, player, uncontrolled)
-	var here := ctx.value.xt_at(player.team, rest, ctx.pitch)
-	# Holding is safe but goes nowhere. Taking a first touch out of a moving
-	# ball is the same candidate: it keeps the ball without advancing it much.
-	#
-	# Except with a man arriving, when it is neither safe nor nowhere: standing
-	# over the ball as a challenge comes in is how the ball is lost, and it is
-	# the option the engine used to take almost every time, because the pressure
-	# field it was reading rates the man on the carrier's back at nearly nothing.
+	# Standing over the ball as a challenge comes in is how the ball is lost, and
+	# it is the option the engine used to take almost every time, because the
+	# pressure field it reads rates the man on the carrier's back at nearly
+	# nothing. `success` is the only term here that says so.
 	var success: float = lerpf(0.72, 0.97, player.attrs.first_touch)
 	success -= ctx.pressure_on(player) * 0.16 + ctx.challenge_on(player) * 0.30
 	_candidates.append({
 		"action": Action.HOLD,
+		# Not `point`: nothing executes a hold from a target, and the overlay
+		# draws no arrow for it. It is where the ball would be handed over.
+		"end": rest,
 		"success": clampf(success, 0.05, 0.98),
-		"gain": here * 0.92,
+		# Filled in by `_hold_score`, which is the only place a hold's value can
+		# be worked out: it is the best of the other candidates, and they do not
+		# exist yet. Written back so the debug overlay reports the number that
+		# was used rather than one nothing reads.
+		"gain": 0.0,
 		"loss": ctx.value.xt_at(SimConsts.other_team(player.team), rest, ctx.pitch),
 		"bias": tactics.retention_bias() * (1.5 if uncontrolled else 1.0) * lerpf(1.0, 0.5, regain),
 	})
@@ -1224,6 +1267,7 @@ static func _add_clear(ctx: SimContext, player: SimPlayer) -> void:
 	var landing := ctx.pitch.orient(player.team, Vector3(minf(player.pos.x * ctx.pitch.attack_dir(player.team) + 40.0, ctx.pitch.half_length - 5.0), 0.0, 0.0))
 	_candidates.append({
 		"action": Action.CLEAR,
+		"end": landing,
 		# A hack made with a man coming through you is not the same stroke as one
 		# made in space, and if it were the clearance would be strictly the best
 		# answer to a challenge: every other option's success falls as the man
@@ -1255,7 +1299,67 @@ static func _add_clear(ctx: SimContext, player: SimPlayer) -> void:
 ## ball ends up, and a fifty-metre punt to a well-placed striker looks better
 ## than a fifteen-metre pass that keeps the ball. Retention has to be on the
 ## books or the engine plays like a team chasing a game in the 94th minute.
+##
+## It is an average over the pitch, and `TERRITORY` says where.
 const POSSESSION_VALUE := 0.013
+
+## How much more a possession is worth at the far end of the pitch than at your
+## own goal line, as a fraction either side of the average above.
+##
+## This is the term that sends the ball forward, and it is not a taste knob. It
+## is there because expected threat as this engine bakes it is flat at the back
+## and the flatness is not football: 0.0001 on your own eighteen-yard line, 0.004
+## at the halfway line, against the 0.013 the engine adds for merely having the
+## ball. Thirty-five metres of ground gained -- the whole of your own half --
+## moved a candidate's score by under a third of what having the ball at all is
+## worth, and `_add_passes` then multiplied that positional difference by a
+## length bias of about a fifth while `POSSESSION_VALUE` went in untouched.
+##
+## What was left deciding between a pass forward and a pass back was `success`.
+## The ball rolled back to a man with nobody near him is the highest success on
+## the list by construction, so that is the ball that got played -- the same
+## shape as the hold's, in `_hold_score`, from the same cause.
+##
+## Lifting the map instead does not work, and the reason is worth keeping. The
+## map is read twice, once as `gain` where the ball is going and once as `loss`
+## for the opponent at the same point, and only `gain` is scaled by the bias. Add
+## the same territory to both and the loss half wins: a flatter map makes the
+## *forward* pass score worse. Territory has to be priced where the bias cannot
+## reach it, which is here, beside `POSSESSION_VALUE` and added after it.
+##
+## At 0.4 a possession runs from three fifths of the average on your own goal
+## line to seven fifths of it on theirs: 0.0001 of goal probability per metre up
+## the pitch. An ordinary fifteen-metre ball forward is worth about a ninth of
+## the ball itself, the same ball backwards costs the same again, and it is
+## charged twice, because a turnover there hands the opponent a possession by the
+## same measure. It stays a small correction where expected threat is steep --
+## 0.018 against 0.3 inside the box -- and is the whole positional signal where
+## the map is flat, which is the region the ball would not leave.
+##
+## The size is held down by a mechanic that does not exist. Territory is credited
+## in metres, so the ball that gains most of it is the long one, and a long ball
+## escapes the length bias entirely because this term is added after it. What
+## should be paying for that is the cost of losing it stretched -- the same thing
+## the knock past a man cannot price, three hundred lines up -- and nothing in a
+## single-step model can say it. `success` carries what there is: 0.47 on a thirty
+## metre ball against 0.9 on a short one.
+##
+## So it was measured for character rather than fitted to anything. On seed 7 at
+## ten minutes, against the same engine with this at zero: passes backwards 42% ->
+## 33%, forward 39% -> 56%, ground gained per possession 5.2 m -> 8.7 m, touches
+## in the final third 9% -> 16%, shots 14 -> 15, and a possession still 2.4 passes
+## long against 3.2. At 0.75 the ball goes further forward again and the engine
+## stops being a passing side: 37% of every ball long and forward at 47%
+## completion, possessions of 1.4 passes, 34 shots. One seed, ten minutes.
+const TERRITORY := 0.4
+
+
+## What having the ball at a point is worth to a team, in goal probability.
+static func possession_value(ctx: SimContext, team: int, point: Vector3) -> float:
+	var progress: float = clampf(
+		point.x * ctx.pitch.attack_dir(team) / ctx.pitch.half_length, -1.0, 1.0)
+	return POSSESSION_VALUE * (1.0 + TERRITORY * progress)
+
 
 ## How much a teammate's committed offer bids up the pass that serves it.
 ##
@@ -1318,24 +1422,119 @@ static func regain_urgency(ctx: SimContext, player: SimPlayer) -> float:
 	return 1.0 - elapsed / REGAIN_WINDOW
 
 
-static func score_of(ctx: SimContext, player: SimPlayer, c: Dictionary) -> float:
+## `delay` is one further step of waiting, and only the hold passes anything but
+## 1.0: it is how a deferred option is priced against the same option taken now.
+## It multiplies the gain and never the loss, which is what makes waiting cost
+## something at every sign -- a good option decays toward nothing while a bad one
+## stays exactly as bad.
+static func score_of(ctx: SimContext, player: SimPlayer, c: Dictionary, delay: float = 1.0) -> float:
 	var tactics := ctx.tactics(player.team)
 	var success: float = c["success"]
-	var gain: float = c["gain"]
+	var gain: float = c["gain"] * delay
 	var loss: float = c["loss"]
+	# Where the possession stands once the option has been played, which is what
+	# decides what having it -- or handing it over -- is worth. Every candidate
+	# carries it, the shot included, where it is the deep restart its `loss` is
+	# already read at.
+	var settles: Vector3 = c["end"]
 	if c["action"] != Action.SHOOT:
 		# Value that only arrives later is discounted; a high-tempo side
 		# discounts harder and therefore releases the ball sooner.
 		gain *= tactics.future_discount()
 		# The bias scales the positional value of the option, never the whole
 		# expression: a penalty applied to a negative score would make a bad
-		# option look better.
-		gain = gain * float(c.get("bias", 1.0)) + POSSESSION_VALUE
-		loss += POSSESSION_VALUE
+		# option look better. Possession value is added after it for the same
+		# reason it is not discounted: it is not a claim about a position the
+		# plan has an opinion on, it is the ball.
+		gain = gain * float(c.get("bias", 1.0)) + possession_value(ctx, player.team, settles)
 	else:
 		gain *= float(c.get("bias", 1.0))
-		loss += POSSESSION_VALUE
+	loss += possession_value(ctx, SimConsts.other_team(player.team), settles)
 	return success * gain - (1.0 - success) * tactics.risk_weight() * loss
+
+
+## The delay one application of `tactics.future_discount()` stands for, in
+## seconds.
+##
+## Implicit until a hold needed to be priced against the same option taken now,
+## and wrong the moment it was left implicit. `future_discount` is a discount on
+## an *action* -- a pass in flight, a carry into space, something on the order of
+## a second. A hold defers by one touch cooldown, 0.17 to 0.27 s, and charging it
+## a whole action's discount for a fifth of a second's wait is a units error.
+##
+## Measured, it is not a small one. Charged in full, the hold stops being chosen
+## at all and the engine plays one-touch football: on seeds 7 and 3 at ten
+## minutes, ground passes 218 and 314 against a real match's hundred-odd, carries
+## down to 31 and 55, and 27 first touches in a whole match because every ball is
+## played away before it is controlled. Charged per second of actual delay, one
+## hold costs about four per cent and eleven in a row cost a third, which is the
+## shape that was wanted.
+const DISCOUNT_SECONDS := 1.0
+
+
+## What waiting one more touch costs, as a multiplier on the deferred option.
+static func _wait_discount(ctx: SimContext, player: SimPlayer) -> float:
+	var steps: float = player.touch_cooldown_length() / DISCOUNT_SECONDS
+	return pow(ctx.tactics(player.team).future_discount(), steps)
+
+
+## What a hold is worth: the decision it defers, not the ball it keeps.
+##
+## Every other candidate resolves the possession. A pass ends with the ball at
+## the target and a new situation on the pitch; a shot ends the possession
+## outright. `score_of` states what the possession is worth afterwards, and for
+## those that is a complete statement.
+##
+## A hold states nothing. The ball is where it was, he still has it, and he still
+## has to decide -- so scoring it as `POSSESSION_VALUE` plus the grass under his
+## feet credited him for retaining what was never at stake, and did it again
+## every touch cooldown. Since expected threat is flat through the middle third,
+## `POSSESSION_VALUE` was thirteen times the whole positional signal there and
+## every candidate's gain collapsed to roughly the same number. What was left
+## discriminating between them was `success` -- and the hold is the highest
+## success by construction, because it is the option defined as not attempting
+## anything. Measured on seed 2, one midfielder held eleven times in a row at
+## 95-100% of the softmax weight, with a through ball on the list whose
+## positional gain was twelve times the hold's scoring negative.
+##
+## So a hold is priced as one step of waiting: with `success` he still has the
+## ball and faces the board he faces now, one touch later; otherwise he has lost
+## it here. The continuation is the best of his other options put through
+## `score_of` again with an extra `future_discount`, which is what makes deferring
+## cost something -- a good option decays toward nothing while a bad one stays as
+## bad, so the hold can beat a list of losing options and cannot beat a winning
+## one. That is the shape that was wanted: hold because there is nothing on, never
+## because holding is safe.
+##
+## Two things it is not. It is not a lookahead -- the board it assumes he will
+## face is this one, which is exactly wrong in the case that matters most, a man
+## about to be closed down. `success` carries some of that and the extra discount
+## carries the rest, crudely. And it is a per-*decision* fix to what is really a
+## per-*possession* problem: nothing here counts how long he has already held it,
+## because the engine has no representation of a possession as a thing with a
+## history. `docs/BACKLOG.md` is where that belongs.
+static func _hold_score(ctx: SimContext, player: SimPlayer, c: Dictionary, best_index: int) -> float:
+	var tactics := ctx.tactics(player.team)
+	var success: float = c["success"]
+	var loss: float = float(c["loss"]) + possession_value(
+		ctx, SimConsts.other_team(player.team), c["end"])
+	var continuation := 0.0
+	if best_index >= 0:
+		continuation = score_of(ctx, player, _candidates[best_index], _wait_discount(ctx, player))
+	# A prior has to move the option the same way whatever the sign of what it is
+	# applied to, and multiplying does not: a bias of 1.5 on a negative
+	# continuation makes waiting look *worse*, and `score_of`'s own guard --
+	# ignore the bias when the value is negative -- silently drops the prior
+	# instead. Both are wrong here, and the second is worse than it sounds: the
+	# 1.5 on `uncontrolled` is the whole of "take a touch rather than play a ball
+	# that is still moving", and in the middle third the continuation is usually
+	# negative, so it was being dropped exactly where it does its work. Measured,
+	# first touches fell from 142 in a match to 27. Scaling toward zero for a
+	# prior above one, and away from it for one below, keeps a prior a prior.
+	var bias: float = maxf(float(c.get("bias", 1.0)), 0.01)
+	continuation = continuation * bias if continuation > 0.0 else continuation / bias
+	c["gain"] = continuation
+	return success * continuation - (1.0 - success) * tactics.risk_weight() * loss
 
 
 ## Softmax over candidate scores, never argmax. Temperature falls with the
@@ -1352,11 +1551,25 @@ static func _softmax_pick(ctx: SimContext, player: SimPlayer) -> Dictionary:
 	if _weights.size() != n:
 		_weights.resize(n)
 
+	# Two passes, because a hold is not an action in the sense the others are and
+	# cannot be scored beside them. See `_hold_score`.
+	var best_other := -INF
+	var best_index := -1
+	for i in n:
+		if int(_candidates[i]["action"]) == Action.HOLD:
+			continue
+		var s := score_of(ctx, player, _candidates[i])
+		_candidates[i]["score"] = s
+		if s > best_other:
+			best_other = s
+			best_index = i
+
 	var best := -INF
 	var total_score := 0.0
 	for i in n:
-		var s := score_of(ctx, player, _candidates[i])
-		_candidates[i]["score"] = s
+		if int(_candidates[i]["action"]) == Action.HOLD:
+			_candidates[i]["score"] = _hold_score(ctx, player, _candidates[i], best_index)
+		var s: float = _candidates[i]["score"]
 		total_score += s
 		best = maxf(best, s)
 	var mean := total_score / float(n)
@@ -1446,7 +1659,7 @@ static func _play_hold(ctx: SimContext, player: SimPlayer, uncontrolled: bool) -
 		SimTouch.first_touch(ctx, player, dir)
 		return
 	player.settling = true
-	SimTouch.settle(ctx, player, dir, carry_room(ctx, player, dir, HOLD_AHEAD))
+	SimTouch.settle(ctx, player, dir, settle_room(ctx, player, dir, HOLD_AHEAD))
 
 
 ## Where to take a settling touch: forward if the way is clear and there is grass
@@ -1506,7 +1719,7 @@ static func _safe_direction(ctx: SimContext, player: SimPlayer, ahead: float) ->
 ## returned "at the goal" from two metres inside the byline and the touch was
 ## played with nothing to shorten it.
 static func _hold_fits(ctx: SimContext, player: SimPlayer, dir: Vector3, ahead: float) -> bool:
-	return carry_room(ctx, player, dir, ahead) >= SimTouch.DRIBBLE_AHEAD_FLOOR
+	return settle_room(ctx, player, dir, ahead) >= SimTouch.DRIBBLE_AHEAD_FLOOR
 
 
 ## The man a settling touch has to be sheltered from: whoever is close enough to

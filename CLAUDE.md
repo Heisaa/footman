@@ -93,18 +93,6 @@ change, and use the fastest one that can answer the question.
 
 The rules below are that principle applied to specific cases.
 
-**Never run `./run.sh test`. It is the owner's, like `smoke`, `gate` and
-`accept`.** If you catch yourself reasoning that this change really ought to be
-tested, that is the thought this rule exists to overrule: say what you changed
-and let the owner run it. `--only <case>` is there for one specific check.
-
-**Do not run statistical batches. Five matches is the absolute ceiling, and ask
-before running even that.** A batch costs minutes and measures a machine that is
-missing parts. Use, in order: `check` for correctness, `diagnose --seed N
---minutes 10` (~15 s) for behaviour, and only then a five-match `pbatch` for a
-structural aggregate. Say which you ran, what it can and cannot see, and quote
-the sample size with any band result.
-
 **For a look-and-feel change, compiling is the whole check.** Anything the owner
 judges by watching — camera, a pose, a colour, a constant in `presentation/` — is
 done when `check` passes. Do not render frames to grade your own work, and do not
@@ -112,6 +100,29 @@ instrument the code to count what it did. Two exceptions: render a frame when th
 change could plausibly produce *nothing* (black screen, camera in the stand,
 geometry that fails to build), and measure when the owner's own words are a
 quantity ("it cuts too often") — then once, and stop.
+
+**Which runs are mine, which are yours.** Three tiers, and
+`.claude/hooks/guard-slow-runs.sh` enforces them.
+
+- **Mine, no asking.** `check`; `diagnose --seed N --minutes 10` or shorter;
+  `test --only rng|ball|locomotion|value_field`; and `record-golden`, which is
+  required after a mechanic change rather than optional.
+- **Yours to approve, mine to offer.** Everything measured in minutes: the slow
+  single test cases (`--only touch|match|golden|determinism|patterns`), `test` in
+  full (about 2 min, and `--bands` adds the statistical half on top), `match`,
+  `perf`, `determinism`, a full-length `diagnose`, `smoke`, `pbatch` and
+  `tactics`. The guard turns these into a prompt. Say what one would tell you
+  before it starts, and never chain a second. A batch still measures a machine
+  that is missing parts, so five matches is the ceiling and `diagnose` is usually
+  the honest answer instead — but that is now your judgement to make in a
+  keystroke rather than the guard's to make for you.
+- **Yours.** `gate` and `accept`. Tens of minutes, and never the answer to a
+  question that came up mid-change.
+
+The middle tier is the point. A rule that only says *no* has nothing left to say
+the moment it is lifted, which is how a scoped permission — "you can unblock the
+golden re-record" — became a whole suite. A prompt costs one keystroke, keeps the
+decision yours, and leaves a gradient to reason about when it is suspended.
 
 **A changed mechanic breaks the golden replay digests. Re-record them with
 `./run.sh record-golden` and say so — do not ask.** Ask only when they move after
@@ -121,11 +132,11 @@ a change that should not have touched behaviour. That is a real finding.
 
 ```
 sim/          the simulation — no scene tree, no nodes, no frame delta. core/ is rng,
-              constants, environment; *.gd is ball, player, touch, decision, ...
+			  constants, environment; *.gd is ball, player, touch, decision, ...
 presentation/ reads snapshots and draws them. Depends on sim; nothing depends on it.
 shared/       palette (used by both, contains no logic)
 tools/        headless entry point, batch runner, validation, diagnostics; tests/
-              is the suite, run through the same entry point
+			  is the suite, run through the same entry point
 ```
 
 ## The rules that hold the design up

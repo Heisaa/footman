@@ -159,11 +159,6 @@ static func tuning_bands(all: Array[SimMatchStats], squad_size: int) -> Array[Ba
 	]
 
 
-## Kept for callers that want the old flat list.
-static func bands_for(all: Array[SimMatchStats], squad_size: int) -> Array[Band]:
-	return tuning_bands(all, squad_size)
-
-
 ## Prints both layers and returns the verdict.
 ##
 ## `strict` promotes the tuning table to a pass/fail criterion. That is the

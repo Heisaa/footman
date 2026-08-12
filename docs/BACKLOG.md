@@ -55,6 +55,7 @@ hunt.
 | 10 | The third man | `SimPatterns` | + |
 | 11 | Separate a ball into space from a ball to feet | `SimDecision.pass_tolerance` | + |
 | 12 | Check the passer can perceive the option at all | `SimPerception` | ? |
+| 13 | What losing it costs the shape, not just the ball | `SimDecision.score_of` | - |
 
 **(8b) is the largest of these, and it is the residue of a job half done.**
 `_arrival_gain` is built and credits a pass with the threat the receiver builds
@@ -62,13 +63,24 @@ carrying it on. What remains is that expected threat itself is single-step: it
 sees where the *ball* stops, so a ball played in behind is priced as its landing
 spot on the map rather than as a man running onto it with the defence turned.
 Until that is priced, the engine keeps preferring the safe square ball.
-`POSSESSION_VALUE` (0.013) patches the same hole from the other side.
+`possession_value` patches the same hole from the other side, and its
+`TERRITORY` tilt now patches the flat map underneath it.
 
 **(11): the flag half exists.** `_pass_success` takes an `into_space` argument and
 uses it to change how arrival is judged, but the striking tolerance is
 `pass_tolerance(distance) = 2.0 + distance * 0.06` — distance only. A ball that
 must arrive in a runner's stride and a ball to a standing man's feet are held to
 the same standard.
+
+**(13) is the counterweight `TERRITORY` is missing**, and the burst has been
+waiting on the same thing since it was written. `loss` says what the ball is worth
+to the opponent where they win it and nothing about what shape the side is in when
+they do. A long ball forward and a short ball square are lost in the same currency,
+so the only thing holding the engine back from hitting the long one is `success`.
+`docs/STATUS.md`, "Passing forward, and the term that was missing", is the
+measurement: territory has to stay small because this does not exist. It is a
+second-order term on every candidate, so it wants care -- see the burst's own note
+in `_add_dribbles`, which declines to paper it over with a coefficient.
 
 **(12) is a question, not a finding.** Nothing has been checked. Perception gates
 what a player knows, and an option outside it can never be generated — which

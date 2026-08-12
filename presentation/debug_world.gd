@@ -44,6 +44,9 @@ const RING_SEGMENTS := 20
 ## pixel whatever it is told, so a line that has to read as heavier is drawn
 ## more than once.
 const THICKEN := 0.11
+## Radius of the cross marking where a carrier meets the ball again. Smaller than
+## the option rings it sits among, because it is a point rather than an area.
+const CATCH_MARK := 0.75
 
 var env: SimEnv = null
 var layers := 0
@@ -144,6 +147,12 @@ func show_state(frame: MatchDebugFrame, snap: SimSnapshot, trail: Array[SimSnaps
 ## What the man on the ball was choosing between, drawn from where he stood when
 ## he chose. The chosen option is heavy and lemon; the rest fade with the softmax
 ## weight they were actually taken at.
+##
+## A carry gets a second mark: a cross where he expects to meet the ball again.
+## The ring at the end of a carry's arrow is the *horizon* — how far that
+## direction was judged over — and the ball never goes there, so without the
+## cross the layer overstates every carry in the match.
+## `SimDebugProbe._catch_point` has the distinction.
 func _draw_options(rec: Dictionary) -> void:
 	if rec.is_empty():
 		return
@@ -153,6 +162,8 @@ func _draw_options(rec: Dictionary) -> void:
 	for i in options.size():
 		var opt: Dictionary = options[i]
 		var to: Vector3 = opt["point"]
+		var weight := float(opt["weight"])
+		var alpha: float = 0.22 + 0.6 * (0.0 if is_nan(weight) else clampf(weight, 0.0, 1.0))
 		if SimConsts.horizontal_length(to - from) < 0.4:
 			# A hold and a clearance go nowhere, so there is no line to draw. The
 			# ring at his feet is how the layer still says which one he took.
@@ -162,11 +173,21 @@ func _draw_options(rec: Dictionary) -> void:
 		if i == chosen:
 			_thick_line(from, to, SimPalette.LEMON)
 			_ring(to, 1.1, SimPalette.LEMON)
+			_draw_catch(opt, SimPalette.LEMON, 1.0)
 			continue
-		var weight := float(opt["weight"])
-		var alpha: float = 0.22 + 0.6 * (0.0 if is_nan(weight) else clampf(weight, 0.0, 1.0))
 		_line(from, to, Color(SimPalette.CHALK, alpha))
 		_ring(to, 0.6, Color(SimPalette.CHALK, alpha * 0.8))
+		_draw_catch(opt, SimPalette.CHALK, alpha)
+
+
+## The next touch: where the ball will have run to by the time he gets to it.
+## Drawn as a cross so it cannot be read as one of the option rings.
+func _draw_catch(opt: Dictionary, colour: Color, alpha: float) -> void:
+	var catch: Vector3 = opt.get("catch", Vector3.INF)
+	if is_inf(catch.x):
+		return
+	var tint := Color(colour, alpha * 0.85)
+	_cross(catch, CATCH_MARK, tint)
 
 
 ## A ring under every player, sized by how much of what he wants to do is being
@@ -296,6 +317,14 @@ func _thick_line(a: Vector3, b: Vector3, colour: Color) -> void:
 	_line(a, b, colour)
 	_line(a + side, b + side, colour)
 	_line(a - side, b - side, colour)
+
+
+## An X on the grass. Deliberately not a ring: the options layer is already full
+## of rings and this mark means something else.
+func _cross(centre: Vector3, radius: float, colour: Color) -> void:
+	var d := radius * 0.7071
+	_line(Vector3(centre.x - d, 0.0, centre.z - d), Vector3(centre.x + d, 0.0, centre.z + d), colour)
+	_line(Vector3(centre.x - d, 0.0, centre.z + d), Vector3(centre.x + d, 0.0, centre.z - d), colour)
 
 
 func _ring(centre: Vector3, radius: float, colour: Color) -> void:
