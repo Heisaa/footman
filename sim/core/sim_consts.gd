@@ -230,7 +230,14 @@ const CONTROL_RANGE := 0.9
 ## Highest ball a standing player can play with a foot.
 const FOOT_REACH_HEIGHT := 0.75
 ## Highest ball a player can head, before jumping.
-const HEAD_REACH_HEIGHT := 2.35
+##
+## Measured off the drawn figure rather than guessed, because this number is the
+## one a viewer checks by eye: the head sits at about 1.7 m and its crown at
+## about 2.0, so 2.0 is a ball met at full stretch on tiptoe. At 2.35 the contact
+## was half a metre over the crown — the ball changed direction in clear air and
+## nobody could see what had touched it, which is exactly the complaint that
+## headers bounce above the head. `SimTouch.playable_height` adds the leap on top.
+const HEAD_REACH_HEIGHT := 2.0
 const TOUCH_COOLDOWN_BASE := 0.27
 const TOUCH_COOLDOWN_MIN := 0.17
 ## Shot speed range, scaled by the power attribute.
@@ -251,7 +258,7 @@ enum Phase { KICKOFF, BUILD_UP, ATTACK, TRANSITION_TO_DEFEND, TRANSITION_TO_ATTA
 ## reads these back.
 ## Appended to, never reordered: the snapshot carries the anim as its integer,
 ## and the pose sheet indexes the same list.
-enum Anim { IDLE, JOG, RUN, SPRINT, TURN, KICK_LIGHT, KICK_HARD, HEADER, SLIDE, FALL, GET_UP, CELEBRATE, DEJECTED, EXHAUSTED, DIVE_LEFT, DIVE_RIGHT, KEEPER_CATCH, THROW, KEEPER_HOLD, HOLD }
+enum Anim { IDLE, JOG, RUN, SPRINT, TURN, KICK_LIGHT, KICK_HARD, HEADER, SLIDE, FALL, GET_UP, CELEBRATE, DEJECTED, EXHAUSTED, DIVE_LEFT, DIVE_RIGHT, KEEPER_CATCH, THROW, KEEPER_HOLD, HOLD, CHEST }
 
 
 static func other_team(team: int) -> int:

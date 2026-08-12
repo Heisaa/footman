@@ -444,6 +444,12 @@ static func expected_goals(ctx: SimContext, player: SimPlayer, from: Vector3, ai
 	base *= lerpf(0.55, 1.35, player.attrs.finishing)
 	base *= lerpf(1.0, 0.35, clampf(ctx.pressure_on(player), 0.0, 1.5) / 1.5)
 	base *= lerpf(0.8, 1.05, player.attrs.composure)
+	# And whether there is a shot there at all from where his body is pointing.
+	# `SimTouch.shot` scales the strike by the same number, so the chance the
+	# engine prices and the ball it then hits are the same event: a man with the
+	# goal over his shoulder gets a scuffed poke, and the way to a real shot is to
+	# turn first.
+	base *= SimTouch.strike_scale(player, aim - from)
 	# Bodies in the way.
 	var blockers := 0
 	for oid in ctx.opponent_ids(player.team):
@@ -473,9 +479,18 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 		var mate := ctx.players[mate_id]
 		var believed := SimPerception.believed_pos(ctx, player, mate)
 		var raw_distance := SimConsts.horizontal_length(believed - from)
+		# How long a ball he can hit this way at all. A pass played across or
+		# behind the body is not a shorter version of the same pass, it is a
+		# different act with a fraction of the range -- see `SimTouch.strike_scale`,
+		# which `ground_pass` and `lofted_pass` clamp the struck ball to. Gating the
+		# candidate on the same number is what stops the engine scoring a
+		# forty-metre diagonal off a man's back foot, choosing it, and then playing
+		# a fifteen-metre one. The way to the long ball is to turn and hit it.
+		var ground_reach := SimTouch.strike_range(player, believed - from, MAX_GROUND_PASS)
+		var air_reach := SimTouch.strike_range(player, believed - from, MAX_LOFTED_PASS)
 
 		# --- Ground pass to feet -------------------------------------------
-		if raw_distance <= MAX_GROUND_PASS:
+		if raw_distance <= ground_reach:
 			var pace := arrival_pace(raw_distance, tactics)
 			var travel := ctx.ballistics.ground_travel_time(
 				raw_distance, ctx.ballistics.ground_pass_speed(raw_distance, pace, ctx.env), ctx.env)
@@ -558,7 +573,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 					target = _keep_in_play(ctx, believed + to_run / span
 						* minf(span, _run_reach(ctx, mate, to_run, far_travel)))
 			var t_distance := SimConsts.horizontal_length(target - from)
-			if t_distance > 4.0 and t_distance <= MAX_GROUND_PASS + 6.0:
+			if t_distance > 4.0 and t_distance <= SimTouch.strike_range(player, target - from, MAX_GROUND_PASS + 6.0):
 				var t_pace := arrival_pace(t_distance, tactics) * 1.15
 				var t_speed := ctx.ballistics.ground_pass_speed(t_distance, t_pace, ctx.env)
 				var t_travel := ctx.ballistics.ground_travel_time(t_distance, t_speed, ctx.env)
@@ -601,7 +616,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 		# A ball in the air is a choice, not a default: only over a distance
 		# that a ground pass cannot cover, or into the box.
 		var box_target := ctx.pitch.in_opponent_penalty_area(player.team, believed)
-		if raw_distance <= MAX_LOFTED_PASS and (raw_distance > LOFTED_FROM or (box_target and raw_distance > 12.0)):
+		if raw_distance <= air_reach and (raw_distance > LOFTED_FROM or (box_target and raw_distance > 12.0)):
 			# Flight time, which is the whole character of a ball in the air: ask
 			# for a long one and the solver lobs it, ask for a short one and it
 			# drives it.
@@ -1570,7 +1585,7 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 static func _hold_rest_point(ctx: SimContext, player: SimPlayer, uncontrolled: bool) -> Vector3:
 	if not uncontrolled:
 		return player.pos
-	var dir := _safe_direction(ctx, player, HOLD_AHEAD)
+	var dir := safe_direction(ctx, player, HOLD_AHEAD)
 	var drift := SimTouch.first_touch_drift(ctx, player, dir)
 	return ctx.pitch.clamp_to_pitch(ctx.ball.ground_pos() + drift, 1.0)
 
@@ -2126,7 +2141,7 @@ static func _execute(ctx: SimContext, player: SimPlayer, c: Dictionary, uncontro
 ## because a metre played at a line the man is standing on is still a metre too
 ## far.
 static func _play_hold(ctx: SimContext, player: SimPlayer, uncontrolled: bool) -> void:
-	var dir := _safe_direction(ctx, player, HOLD_AHEAD)
+	var dir := safe_direction(ctx, player, HOLD_AHEAD)
 	if uncontrolled:
 		SimTouch.first_touch(ctx, player, dir)
 		return
@@ -2155,7 +2170,10 @@ static func _play_hold(ctx: SimContext, player: SimPlayer, uncontrolled: bool) -
 ## back with the ball is still available; it is available where it belongs, in
 ## the eight scored dribble probes and in a pass, both of which price the ground
 ## they give up.
-static func _safe_direction(ctx: SimContext, player: SimPlayer, ahead: float) -> Vector3:
+## Public because `SimAerial` asks the same question of a ball taken down off the
+## chest: he is not choosing between candidates, he is putting the ball somewhere
+## he can still play it.
+static func safe_direction(ctx: SimContext, player: SimPlayer, ahead: float) -> Vector3:
 	var forward := SimConsts.horizontal(ctx.pitch.target_goal(player.team) - player.pos)
 	if forward.length() < 0.1:
 		return player.heading_dir()

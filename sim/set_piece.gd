@@ -53,6 +53,15 @@ const WALL_DISTANCE := 9.15
 ## How far the kicking side's outfielders stand off a goal kick, so that the
 ## keeper is visibly alone over the ball.
 const KEEPER_CLEARANCE := 6.0
+## How far outside the penalty area the defending side is put at a goal kick.
+##
+## The law says outside, and the spots have to say further than that or the rule
+## reads as broken even when it is kept. At 1.5 m the diagnostic still found 0.2
+## opponents a goal kick inside the area, which was not the gate failing -- that
+## is exact, and it is checked at the instant of the strike -- but men standing
+## on the paint with a 5 Hz trace catching them mid-stride. Two and a half metres
+## puts the line between the two sides where an eye can see it.
+const AREA_CLEARANCE := 2.5
 
 ## The deepest the ball may be, as a fraction of the half length, when the
 ## kicking side builds its restart shape around it.
@@ -174,7 +183,17 @@ static func goal_kick(ctx: SimContext, team: int) -> void:
 	# The keeper takes it, so `_default_spots` must not also send the nearest
 	# outfielder onto the ball — two players standing over a goal kick reads as
 	# a bug to anyone watching.
-	_default_spots(ctx, spot, team, 12.0, keeper == null, true)
+	_default_spots(ctx, spot, team, 12.0, keeper == null, true, true)
+	# And the law: the defending side waits outside the area. The radial clearance
+	# above cannot say that -- twelve metres from a spot on the six-yard line is
+	# still inside the box anywhere off the middle of it, which is where a striker
+	# stands -- so the shape it produced is pushed out of the area as well.
+	for p in ctx.players:
+		if p.team == team or p.is_keeper or not ctx.restart_spots.has(p.id):
+			continue
+		ctx.restart_spots[p.id] = ctx.pitch.clamp_to_pitch(
+			_out_of_penalty_area(ctx.pitch, team, ctx.restart_spots[p.id], AREA_CLEARANCE), 0.5
+		)
 	if keeper != null:
 		ctx.restart_taker = keeper.id
 		ctx.restart_spots[keeper.id] = spot - Vector3(ctx.pitch.attack_dir(team) * TAKER_STANCE, 0.0, 0.0)
@@ -191,6 +210,43 @@ static func goal_kick(ctx: SimContext, team: int) -> void:
 			if d < KEEPER_CLEARANCE:
 				var dir := away / d if d > 0.1 else Vector3(ctx.pitch.attack_dir(team), 0.0, 0.0)
 				ctx.restart_spots[p.id] = ctx.pitch.clamp_to_pitch(spot + dir * KEEPER_CLEARANCE, 0.5)
+
+
+## The nearest point outside the penalty area `team` defends, with `margin`
+## metres to spare. Points already outside come back unchanged.
+##
+## The shortest way out, which is the way a player would walk it: forward past
+## the eighteen-yard line if he is somewhere near the middle, sideways past the
+## edge of the area if he is wide. Picking one of the two unconditionally is how
+## a defending side ends up in a queue on the D or strung along the touchline.
+static func _out_of_penalty_area(pitch: SimPitch, team: int, point: Vector3, margin: float) -> Vector3:
+	if not pitch.in_own_penalty_area(team, point):
+		return point
+	var dir := pitch.attack_dir(team)
+	var goal_x := -dir * pitch.half_length
+	var front := goal_x + dir * (pitch.penalty_depth + margin)
+	var flank := pitch.penalty_half_width + margin
+	var out_front := absf(front - point.x)
+	var side: float = signf(point.z) if absf(point.z) > 0.1 else 1.0
+	var out_side := flank - absf(point.z)
+	if out_front <= out_side:
+		return Vector3(front, point.y, point.z)
+	return Vector3(point.x, point.y, side * flank)
+
+
+## True when every opponent is out of the area a goal kick is being taken from.
+##
+## Read as a condition on taking the kick rather than as a positioning rule,
+## because positioning is a request and this is the law. The spots put them
+## outside; this is what stops the ball being struck while somebody is still
+## walking out.
+static func _area_is_clear(ctx: SimContext) -> bool:
+	for p in ctx.players:
+		if p.team == ctx.restart_team or not p.on_pitch:
+			continue
+		if ctx.pitch.in_own_penalty_area(ctx.restart_team, p.pos):
+			return false
+	return true
 
 
 static func corner(ctx: SimContext, team: int, side: float) -> void:
@@ -262,28 +318,45 @@ static func _begin(ctx: SimContext, kind: int, team: int, spot: Vector3) -> void
 ## Where a player stands for a restart.
 ##
 ## The kicking side's outfielders push out, on the rule in `RESTART_SHAPE_DEPTH`.
-## The keeper does not -- he is either taking it or minding the goal -- and
-## neither does the defending side, whose shape is already being pulled up the
-## pitch by the same ball and is right where it should be.
-static func _restart_shape(ctx: SimContext, p: SimPlayer, spot: Vector3, team: int, push_up: bool) -> Vector3:
+## The keeper does not -- he is either taking it or minding the goal.
+##
+## `push_defenders` gives the other side the same imaginary ball, and it is what
+## a goal kick needs. The rule above was written for the kicking side alone, and
+## the missing half is what put an opponent's chest in front of the ball.
+## `SimMovement.shape_position` slides a shape toward the ball; measured in the
+## frame the defending side attacks in, a ball on the six-yard line sits
+## forty-seven metres up the pitch, so `BALL_PULL_X` carried their whole team
+## seventeen metres onto it. A front line standing seventeen metres inside the
+## opposition half by formation ended up on the edge of the penalty area, which
+## is exactly where a goal kick struck along the grass hits somebody.
+##
+## With it on, both sides build their shape around the same point and the point
+## is the halfway line: the kicking side comes up off its own goal line, the
+## defending side drops back off the box, and the forty metres between the two
+## banks is the picture a goal kick makes. It is off for an own-half free kick,
+## where the defending side pressing high is a choice it is entitled to make.
+static func _restart_shape(ctx: SimContext, p: SimPlayer, spot: Vector3, team: int, push_up: bool, push_defenders: bool = false) -> Vector3:
 	if p.is_keeper:
 		return SimKeeper.station(ctx, p, spot)
-	if not push_up or p.team != team:
+	var mine := p.team == team
+	if not push_up or (not mine and not push_defenders):
 		return SimMovement.shape_position(ctx, p)
 	var canonical := ctx.pitch.orient(p.team, spot)
 	var limit := -ctx.pitch.half_length * RESTART_SHAPE_DEPTH
-	if canonical.x >= limit:
+	# Deep in his own half for the kicking side, far up it for the defending one:
+	# the same line, met from either direction, and the shape is built at it.
+	if (canonical.x >= limit) if mine else (canonical.x <= -limit):
 		return SimMovement.shape_position(ctx, p)
-	canonical.x = limit
+	canonical.x = limit if mine else -limit
 	canonical.y = 0.0
 	return SimMovement.shape_position(ctx, p, ctx.pitch.orient(p.team, canonical))
 
 
 ## Puts everyone at their shape position, pushes the defending side back the
 ## required distance, and picks the nearest attacker as the taker.
-static func _default_spots(ctx: SimContext, spot: Vector3, team: int, clearance_radius: float, pick_taker := true, push_up := false) -> void:
+static func _default_spots(ctx: SimContext, spot: Vector3, team: int, clearance_radius: float, pick_taker := true, push_up := false, push_defenders := false) -> void:
 	for p in ctx.players:
-		var target := _restart_shape(ctx, p, spot, team, push_up)
+		var target := _restart_shape(ctx, p, spot, team, push_up, push_defenders)
 		if p.team != team:
 			var away := target - spot
 			away.y = 0.0
@@ -467,7 +540,14 @@ static func update(ctx: SimContext) -> void:
 				return
 	if ctx.restart_ticks < _min_delay(ctx):
 		return
-	if not ready and ctx.restart_ticks < _compress(ctx, MAX_WAIT, MAX_WAIT_FLOOR):
+	var waited := ctx.restart_ticks >= _compress(ctx, MAX_WAIT, MAX_WAIT_FLOOR)
+	if not ready and not waited:
+		return
+	# A goal kick is not taken while an opponent is still in the area. He is
+	# already walking out of it -- `goal_kick` put his spot outside -- so this
+	# only ever holds the ball for the second or two that takes, and the timeout
+	# above is still the backstop against a restart that never happens.
+	if ctx.restart_kind == Kind.GOAL_KICK and not waited and not _area_is_clear(ctx):
 		return
 	if not ready:
 		# Nobody got there. Put the taker on the ball rather than stalling.

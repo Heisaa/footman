@@ -71,6 +71,30 @@ the softmax chooses.
 **Shot** — struck at the goal. Scored in the same currency as everything else:
 `expected_goals` times one goal.
 
+**Header** — a ball played above `SimAerial.HEADER_FROM`, which is the shoulders:
+below it he has a chest. Three intents, stamped on the touch so the log can tell
+them apart — **cleared**, **at goal**, and **to a man**, the knock-down. A header
+at goal is logged as a shot, because from outside it is one.
+
+**Chest** — a ball between the boot and the shoulders, killed and put on the
+grass in front of him (`SimTouch.chest`). The same skill, difficulty and dice as
+a first touch, with a tighter cushion and no lift: what it buys is the ball at
+his feet a moment later rather than ground now. It is the commonest thing done
+with a ball in the air, and it is what stops every bounce being a header.
+
+**Letting it drop** — declining to head a ball at all
+(`SimAerial.lets_it_drop`): free ball, coming down on him, nobody near, no goal
+in front of him, so he waits and chests it. Asked by `SimDuel` *before* he is a
+contender, because a declined touch that has already been booked as a recovery is
+a lie in the log.
+
+**Strike reach** — how far a player can hit the ball along a given line, as a
+fraction of what he could hit it facing that way (`SimTouch.strike_scale`). A ball
+played behind the body has no backlift and no hips behind it, so it is not a worse
+pass, it is a *shorter* one. The decision layer gates its candidates on it and the
+touch primitives clamp the aim point to it, so the long ball behind you is not
+available at any accuracy — it has to be turned onto first.
+
 ---
 
 ## How an option is judged
@@ -224,6 +248,11 @@ otherwise strikers sprint in behind on a metronome.
 
 **Making a run** — a committed off-ball run, held to the metre rather than to a
 drifter's tolerance.
+
+**Claim** — the keeper coming for a ball in the air inside his own area
+(`SimKeeper._claim_target`). Above head height it is his by right; below it he has
+to beat the first attacker by a margin scaled by `command`. He then either holds
+it or **punches** it, which is a clearance struck with two fists.
 
 ---
 

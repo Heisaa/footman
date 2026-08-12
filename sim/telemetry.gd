@@ -51,12 +51,17 @@ enum Touch {
 	KEEPER_PARRY,
 	KEEPER_THROW,
 	THROW_IN,
+	## Taken down off the body: chest, thigh, whatever is in the way. Its own
+	## kind rather than a first touch with a height on it, because the question
+	## "how much of this match is played in the air" is answered by counting
+	## these against headers, and a first touch on the floor is neither.
+	CHEST,
 }
 
 const TOUCH_NAMES := [
 	"dribble", "ground_pass", "lofted_pass", "through_ball", "cross", "shot",
 	"first_touch", "clearance", "header", "tackle", "block", "keeper_catch",
-	"keeper_parry", "keeper_throw", "throw_in",
+	"keeper_parry", "keeper_throw", "throw_in", "chest",
 ]
 
 var events: Array[Dictionary] = []

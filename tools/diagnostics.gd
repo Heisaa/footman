@@ -74,18 +74,29 @@ static func _ball_control(events: Array) -> void:
 
 	if reach_n == 0:
 		return
-	# Anything past the control range should be impossible, so when it happens
-	# the useful question is which kind of touch did it.
+	# Anything past the reach that applied to it should be impossible, so when it
+	# happens the useful question is which kind of touch did it.
+	#
+	# The reach is per touch and not one constant, because two of them are not
+	# `CONTROL_RANGE`. A ball above head height is met with a leap and
+	# `SimAerial.contact_range` says how far that carries; and a keeper has his own
+	# contact rules entirely -- he gathers at `GATHER_RANGE`, claims at
+	# `CLAIM_RANGE` and meets a shot at the end of a three-metre dive -- so his
+	# touches are counted here only for the record. Measured against the flat
+	# constant, every header in the match reported as a magnetic touch and the
+	# instrument stopped saying anything.
 	var over := {}
 	for e in events:
 		if e["ev"] != SimTelemetry.Ev.TOUCH or not e.has("at"):
 			continue
-		if SimConsts.horizontal_length(e["from"] - e["at"]) <= SimConsts.CONTROL_RANGE:
+		var ball_y: float = (e["from"] as Vector3).y
+		if SimConsts.horizontal_length(e["from"] - e["at"]) <= SimAerial.contact_range(ball_y):
 			continue
 		var k: int = e["kind"]
 		over[k] = int(over.get(k, 0)) + 1
 	print("")
-	print("Ball control  (CONTROL_RANGE is %.2f m, measured from the player's centre)" % SimConsts.CONTROL_RANGE)
+	print("Ball control  (CONTROL_RANGE is %.2f m from the player's centre, %.2f m for a ball in the air)"
+		% [SimConsts.CONTROL_RANGE, SimAerial.AERIAL_RANGE])
 	print("  reach at contact   mean %.2f m   longest %.2f m" % [reach_sum / float(reach_n), reach_max])
 	var last := 0.0
 	for i in REACH_BUCKETS.size():
@@ -162,10 +173,10 @@ const CARRY_OUT_SECONDS := 3.0
 ## top half, the paint in the bottom. Read the `lost` column against the
 ## bottom row of the top half, which is the same engine carrying into space --
 ## that difference is the price of carrying into somebody, and it is the number
-## to watch after anything that touches `_add_dribbles`, `_safe_direction` or
+## to watch after anything that touches `_add_dribbles`, `safe_direction` or
 ## `_play_hold`. A pathology here does not have to be the scoring: three quarters
 ## of the carries in a match are settling touches, and those are aimed by
-## `SimDecision._safe_direction` rather than scored by anything.
+## `SimDecision.safe_direction` rather than scored by anything.
 static func _where_the_carry_went(ctx: SimContext, events: Array) -> void:
 	var trace := ctx.telemetry.trace
 	if trace.is_empty():
@@ -1356,10 +1367,12 @@ static func _by_body_angle(ctx: SimContext, events: Array) -> void:
 	var resolved := PackedInt32Array()
 	var ok := PackedInt32Array()
 	var deft := PackedFloat32Array()
+	var length := PackedFloat32Array()
 	tried.resize(n)
 	resolved.resize(n)
 	ok.resize(n)
 	deft.resize(n)
+	length.resize(n)
 
 	var pending := {}
 	for e in events:
@@ -1372,6 +1385,7 @@ static func _by_body_angle(ctx: SimContext, events: Array) -> void:
 			while bucket < n - 1 and degrees >= float(BODY_BUCKETS[bucket]):
 				bucket += 1
 			tried[bucket] += 1
+			length[bucket] += float(e.get("dist", 0.0))
 			if passer < ctx.players.size():
 				var a := ctx.players[passer].attrs
 				deft[bucket] += a.technique * 0.6 + a.agility * 0.4
@@ -1392,19 +1406,102 @@ static func _by_body_angle(ctx: SimContext, events: Array) -> void:
 	if total == 0:
 		return
 	print("\nPassing by body angle  (where the ball went, relative to the way the passer faced)")
-	print("  sector                 attempts   share   resolved   completed   deftness")
+	# The length column is what `SimTouch.strike_scale` shows up as. A ball played
+	# behind the body is not a worse pass, it is a shorter one -- there is no swing
+	# behind it -- so the mechanic is visible here as the mean length falling away
+	# across the sectors, and nowhere else.
+	print("  sector                 attempts   share   resolved   completed   deftness   mean len")
 	var low := 0.0
 	for i in n:
 		if tried[i] == 0:
 			low = float(BODY_BUCKETS[i])
 			continue
 		var pct := "     -" if resolved[i] == 0 else "%5.0f%%" % (100.0 * float(ok[i]) / float(resolved[i]))
-		print("  %-18s %3.0f-%3.0f  %6d  %5.1f%%   %8d      %s      %.2f" % [
+		print("  %-18s %3.0f-%3.0f  %6d  %5.1f%%   %8d      %s      %.2f     %5.1f m" % [
 			BODY_LABELS[i], low, minf(float(BODY_BUCKETS[i]), 180.0), tried[i],
 			100.0 * float(tried[i]) / float(total), resolved[i], pct,
-			deft[i] / float(tried[i]),
+			deft[i] / float(tried[i]), length[i] / float(tried[i]),
 		])
 		low = float(BODY_BUCKETS[i])
+
+
+## The height above which the keeper is using his hands rather than his feet.
+## Read off the ball's own position at the moment of the touch, because a keeper
+## claiming a cross and a keeper picking one off the grass are the same event
+## kind in the log and nothing else separates them.
+const KEEPER_HANDS_UP := SimConsts.FOOT_REACH_HEIGHT
+
+
+## What the aerial layer did.
+##
+## Four questions, and none of them is answerable from a touch count. Are balls
+## in the air being played at all, or landing among people who let them bounce?
+## How much of that is a head and how much a chest -- because a match in which
+## every ball off the grass is headed is a match nobody would recognise, and that
+## is exactly what this engine produced before `SimTouch.chest` existed. When
+## they are headed, is it a clearance, a knock-down or an attempt on goal --
+## because a match where every header is a clearance is a match with no attacking
+## aerial game in it. And does the keeper come for anything?
+##
+## `head` on the touch is the intent `SimAerial` stamped, so the third question
+## is read rather than inferred. The keeper rows are inferred, from the height
+## the ball was at when he took it.
+static func _in_the_air(ctx: SimContext, events: Array) -> void:
+	var headers := PackedInt32Array()
+	headers.resize(SimAerial.INTENT_NAMES.size())
+	var unmarked := 0
+	var chests := 0
+	var chest_quality := 0.0
+	var caught_high := 0
+	var punched := 0
+	var caught_low := 0
+	for e in events:
+		if e["ev"] != SimTelemetry.Ev.TOUCH:
+			continue
+		var kind := int(e["kind"])
+		if kind == SimTelemetry.Touch.CHEST:
+			chests += 1
+			chest_quality += float(e.get("quality", 0.0))
+			continue
+		if kind == SimTelemetry.Touch.HEADER:
+			var intent := int(e.get("head", -1))
+			if intent >= 0 and intent < headers.size():
+				headers[intent] += 1
+			else:
+				unmarked += 1
+			continue
+		var by := int(e["p"])
+		if by < 0 or by >= ctx.players.size() or not ctx.players[by].is_keeper:
+			continue
+		var height: float = (e["from"] as Vector3).y
+		if kind == SimTelemetry.Touch.KEEPER_CATCH:
+			if height > KEEPER_HANDS_UP:
+				caught_high += 1
+			else:
+				caught_low += 1
+		elif kind == SimTelemetry.Touch.CLEARANCE and height > KEEPER_HANDS_UP:
+			punched += 1
+
+	var total := unmarked
+	for c in headers:
+		total += c
+	print("\nIn the air  (balls played above %.2f m)" % SimAerial.CHEST_FROM)
+	if total == 0:
+		print("  no headers")
+	else:
+		var parts := PackedStringArray()
+		for i in headers.size():
+			parts.append("%s %d" % [SimAerial.INTENT_NAMES[i], headers[i]])
+		print("  headers %d  (above %.2f m):  %s" % [total, SimAerial.HEADER_FROM, ", ".join(parts)])
+	if chests == 0:
+		print("  nothing taken down off the chest")
+	else:
+		print("  taken down off the chest %d:  quality %.2f   (%d%% of the balls played off the grass)" % [
+			chests, chest_quality / float(chests), roundi(100.0 * float(chests) / float(chests + total)),
+		])
+	print("  keeper came and claimed it:  caught %d, punched %d   (off the floor: caught %d)" % [
+		caught_high, punched, caught_low,
+	])
 
 
 ## How close to the target point a body has to be to be contesting it. Six metres
@@ -1689,6 +1786,16 @@ const SET_PIECE_NAMES := ["kickoff", "throw-in", "goal kick", "corner", "free ki
 ## deepest and the highest of them beside it -- a side pushed out for a goal kick
 ## reads as a mean around the halfway line and a deepest man near his own box,
 ## and a side that never moved reads as both numbers pinned to the goal line.
+##
+## `theirs` is the same measurement of the other side, off the same goal line, and
+## `in the area` is how many of them were inside the kicking side's penalty area
+## when the ball was struck. That last one is only a rule for a goal kick, where it
+## should be zero; on every other row it is ordinary football, since a side
+## defending a throw-in deep in its own half stands where it likes.
+##
+## `worst` is there because the mean hides a stall. Eight seconds is the timeout in
+## `SimSetPiece.update`, so a worst of exactly eight is a restart where nobody was
+## ever ready and the taker was put on the ball to stop it stalling.
 static func _restarts(ctx: SimContext, events: Array) -> void:
 	var n := SET_PIECE_NAMES.size()
 	var count := PackedInt32Array()
@@ -1697,12 +1804,27 @@ static func _restarts(ctx: SimContext, events: Array) -> void:
 	var deepest := PackedFloat32Array()
 	var highest := PackedFloat32Array()
 	var measured := PackedInt32Array()
+	# And where the other side stood, which is the half of a restart the columns
+	# above cannot see. `their_nearest` is their deepest man's distance from the
+	# kicking side's own goal line, and `their_inside` is how many of them were
+	# still inside the penalty area when the ball was struck -- which at a goal
+	# kick is a count of how often the law was broken, and should be zero.
+	var their_nearest := PackedFloat32Array()
+	var their_inside := PackedFloat32Array()
+	# The mean hides a stall, and a stall is the failure mode of every condition
+	# that has to be met before a restart may be taken: eight seconds is the
+	# timeout in `SimSetPiece.update`, so a `worst` at eight is a restart nobody
+	# was ever going to be ready for.
+	var worst := PackedFloat32Array()
 	count.resize(n)
 	waited.resize(n)
 	mean_depth.resize(n)
 	deepest.resize(n)
 	highest.resize(n)
 	measured.resize(n)
+	their_nearest.resize(n)
+	their_inside.resize(n)
+	worst.resize(n)
 
 	var trace := ctx.telemetry.trace
 	var flip := _first_half_flip(events)
@@ -1724,7 +1846,9 @@ static func _restarts(ctx: SimContext, events: Array) -> void:
 		# The first touch after the whistle is the restart being taken.
 		var taken := int(e["t"])
 		if pending_kind >= 0 and pending_kind < n:
-			waited[pending_kind] += float(taken - pending_tick) / float(SimConsts.TICK_HZ)
+			var sat := float(taken - pending_tick) / float(SimConsts.TICK_HZ)
+			waited[pending_kind] += sat
+			worst[pending_kind] = maxf(worst[pending_kind], sat)
 			var index := taken / SimConsts.TRACE_TICKS
 			if index >= 0 and index < trace.size():
 				var sample: PackedVector3Array = trace[index]
@@ -1743,11 +1867,29 @@ static func _restarts(ctx: SimContext, events: Array) -> void:
 						bodies += 1
 						low = minf(low, from_goal)
 						high = maxf(high, from_goal)
+					# The other side, measured off the same goal line so the two
+					# rows are comparable. Distance and lateral offset rather than
+					# `in_own_penalty_area`, because the trace is in world
+					# coordinates and the pitch has swapped ends by the time this
+					# runs -- `flip` is already in `dir` and this reuses it.
+					var closest := INF
+					var inside := 0
+					for pid in ctx.players.size():
+						var p := ctx.players[pid]
+						if p.team == pending_team or p.is_keeper or not p.on_pitch:
+							continue
+						var from_goal := sample[pid + 1].x * dir + ctx.pitch.half_length
+						closest = minf(closest, from_goal)
+						if from_goal <= ctx.pitch.penalty_depth \
+								and absf(sample[pid + 1].z) <= ctx.pitch.penalty_half_width:
+							inside += 1
 					if bodies > 0:
 						mean_depth[pending_kind] += total / float(bodies)
 						deepest[pending_kind] += low
 						highest[pending_kind] += high
 						measured[pending_kind] += 1
+						their_nearest[pending_kind] += closest if not is_inf(closest) else 0.0
+						their_inside[pending_kind] += float(inside)
 		pending_kind = -1
 
 	var any := false
@@ -1757,18 +1899,19 @@ static func _restarts(ctx: SimContext, events: Array) -> void:
 	if not any:
 		return
 	print("\nRestarts  (distances from the kicking side's own goal line)")
-	print("  kind             count   waited   own outfield: deepest    mean   highest")
+	print("  kind             count   waited  worst   own outfield: deepest    mean   highest   theirs: nearest  in the area")
 	for i in n:
 		if count[i] == 0:
 			continue
-		var shape := "         -       -         -"
+		var shape := "         -       -         -              -            -"
 		if measured[i] > 0:
 			var m := float(measured[i])
-			shape = "%10.0f m %5.0f m %7.0f m" % [
+			shape = "%10.0f m %5.0f m %7.0f m %12.0f m %11.1f" % [
 				deepest[i] / m, mean_depth[i] / m, highest[i] / m,
+				their_nearest[i] / m, their_inside[i] / m,
 			]
-		print("  %-16s %5d  %5.1f s %s" % [
-			SET_PIECE_NAMES[i], count[i], waited[i] / float(maxi(count[i], 1)), shape,
+		print("  %-16s %5d  %5.1f s %4.1f s %s" % [
+			SET_PIECE_NAMES[i], count[i], waited[i] / float(maxi(count[i], 1)), worst[i], shape,
 		])
 
 
@@ -2456,6 +2599,7 @@ static func report(m: SimMatch) -> void:
 	_by_body_angle(ctx, events)
 	_passing_quality(ctx, events)
 	_pass_destination(ctx, events)
+	_in_the_air(ctx, events)
 	_restarts(ctx, events)
 	_goalkeeping(ctx, events)
 

@@ -178,8 +178,86 @@ static func station(ctx: SimContext, k: SimPlayer, ball: Vector3) -> Vector3:
 	return at
 
 
+## How high a keeper's hands go, standing.
+##
+## A head reaches 2.35 m and this is the difference between claiming a cross and
+## watching one drop over the top of everybody. It is the one advantage he has in
+## a crowded six-yard box, and until it existed a ball hung up in his own area was
+## somebody else's ball.
+const CLAIM_HEIGHT := 2.8
+## How far from him he can claim it, horizontally. A step and two hands, which
+## goes further than a boot: `GATHER_RANGE` is a keeper picking a ball up off the
+## floor and this is one coming to take it out of the air.
+const CLAIM_RANGE := 1.9
+## The margin, in seconds, by which he has to beat the first attacker to a ball
+## he can only get his head to. Scaled by `command`, which is the whole of what
+## the attribute means: a commanding keeper comes for balls a nervous one leaves.
+const CLAIM_LEAD := 0.2
+## How far up the pitch a ball in the air is worth walking the forecast for.
+const CLAIM_SIGHT := 24.0
+
+
+## Where to go and claim a ball in the air, or Vector3.INF to stay at home.
+##
+## The rule has two halves and the height decides which one applies. Above head
+## reach the ball is his and nobody else's -- that is what hands are for, and he
+## needs only to be there when it arrives. Between his boot and the top of a
+## jumping centre-half it is a contest like any other, so he has to beat the
+## first attacker to it by a margin or leave it to his defenders. A keeper who
+## comes for everything is the one who gets lobbed, and a keeper who comes for
+## nothing is the one a cross goes over.
+##
+## Only inside his own area, because outside it he may not use his hands and a
+## claim that ends there is not a claim.
+static func _claim_target(ctx: SimContext, k: SimPlayer) -> Vector3:
+	var ball := ctx.ball
+	if ball.grounded or ball.pos.y <= SimConsts.FOOT_REACH_HEIGHT:
+		return Vector3.INF
+	if ctx.possession_team == k.team:
+		return Vector3.INF
+	var goal := ctx.pitch.own_goal(k.team)
+	if absf(ball.pos.x - goal.x) > ctx.pitch.penalty_depth + CLAIM_SIGHT:
+		return Vector3.INF
+	var boldness: float = lerpf(0.8, 1.2, k.attrs.command)
+	var traj := ctx.trajectory_now()
+	for i in range(0, traj.count, 2):
+		var sample := traj.points[i]
+		if sample.y <= SimConsts.FOOT_REACH_HEIGHT or sample.y > CLAIM_HEIGHT * boldness:
+			continue
+		var at := Vector3(sample.x, 0.0, sample.z)
+		if not ctx.pitch.in_own_penalty_area(k.team, at):
+			continue
+		var t := traj.time_of_index(i)
+		var mine := SimValueField.time_to_arrive(k, at, SimValueField.reaction_of(k) * 0.6)
+		if mine > t:
+			continue
+		if sample.y > SimConsts.HEAD_REACH_HEIGHT:
+			return at
+		var needed := CLAIM_LEAD / boldness
+		var contested := false
+		for oid in ctx.opponent_ids(k.team):
+			var o := ctx.players[oid]
+			if not o.on_pitch:
+				continue
+			if SimValueField.time_to_arrive(o, at, SimValueField.reaction_of(o)) < mine + needed:
+				contested = true
+				break
+		if not contested:
+			return at
+	return Vector3.INF
+
+
 static func _position(ctx: SimContext, k: SimPlayer) -> void:
 	var hold_at := station(ctx, k, ctx.ball.ground_pos())
+
+	# A cross, a lofted ball or a clearance dropping into his own area. Ahead of
+	# the sweep because it is the same decision made about a ball that has not
+	# come down yet, and the sweep cannot see one: it only looks at the part of
+	# the forecast a man could already head.
+	var claim := _claim_target(ctx, k)
+	if claim != Vector3.INF:
+		k.steer_to(ctx.pitch.clamp_to_pitch(claim, 0.3), INF)
+		return
 
 	# Come off the line for a through ball when the keeper beats the attacker
 	# to it. This is the whole of "sweeper keeper" -- a time comparison, not a
@@ -518,7 +596,8 @@ static func _resolve_pass_of_shot(ctx: SimContext, _k: SimPlayer) -> void:
 # --- Contact rules ----------------------------------------------------------
 
 
-## A keeper gathers a slow ball inside their own area.
+## A keeper gathers a slow ball inside their own area, or takes a high one out of
+## the air above it.
 static func _try_gather(ctx: SimContext, k: SimPlayer) -> void:
 	if not k.can_touch():
 		return
@@ -527,12 +606,29 @@ static func _try_gather(ctx: SimContext, k: SimPlayer) -> void:
 		if k.dist_to(ctx.ball.pos) <= SimConsts.CONTROL_RANGE and ctx.ball.pos.y < SimConsts.FOOT_REACH_HEIGHT:
 			SimTouch.clearance(ctx, k)
 		return
-	if k.dist_to(ctx.ball.pos) > GATHER_RANGE or ctx.ball.pos.y > SimConsts.HEAD_REACH_HEIGHT:
+	var high := ctx.ball.pos.y > SimConsts.FOOT_REACH_HEIGHT
+	if ctx.ball.pos.y > CLAIM_HEIGHT * lerpf(0.8, 1.2, k.attrs.command):
+		return
+	if k.dist_to(ctx.ball.pos) > (CLAIM_RANGE if high else GATHER_RANGE):
 		return
 	var speed := ctx.ball.vel.length()
 	var handled: float = clampf(lerpf(0.45, 0.97, k.attrs.handling) - speed / 45.0, 0.05, 0.97)
-	if ctx.rng.chance(handled):
+	if high:
+		# A ball he has come for is a different question from a ball that arrives
+		# at him. He has both hands to it by the time this is asked -- getting
+		# there is `_claim_target`'s problem -- so what is left is whether he holds
+		# it, which is handling for the catch and command for the bodies around
+		# him. That is what the two attributes are for, and the pace term is far
+		# gentler than the shot's because a cross is dropping rather than driven.
+		handled = clampf(lerpf(0.6, 0.97, k.attrs.handling) * lerpf(0.82, 1.1, k.attrs.command)
+			- speed / 110.0, 0.1, 0.95)
+		handled *= lerpf(1.0, 0.78, clampf(ctx.pressure_on(k) / 2.0, 0.0, 1.0))
+	if ctx.rng.chance(clampf(handled, 0.05, 0.97)):
 		SimTouch.apply(ctx, k, SimTelemetry.Touch.KEEPER_CATCH, Vector3.ZERO, Vector3.ZERO)
+	elif high:
+		# He could not hold it, so he punches: two fists, away and wide, which is
+		# the same ball a defender's clearing header is.
+		SimTouch.clearance(ctx, k)
 	else:
 		SimTouch.poke(ctx, k, SimTelemetry.Touch.BLOCK)
 

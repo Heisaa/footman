@@ -847,3 +847,200 @@ for. Until that exists, territory stays modest and `success` carries what there 
 
 One seed, ten minutes, and the seed spread on this engine is large. What it can see is the
 direction and the character; what it cannot is the rate.
+
+## The goal kick nobody could take
+
+Two rules about where a side stands at a restart, and only one of them had been
+written. `SimSetPiece.RESTART_SHAPE_DEPTH` builds the *kicking* side's shape
+around an imaginary ball on the halfway line, so a goal kick is taken by a team
+pushed out to the edge of its own box rather than one stacked on its own goal
+line. Nothing said anything about the other side, whose shape
+`SimMovement.shape_position` was sliding toward the real ball — and the real ball
+is on the six-yard line.
+
+Worked through in the frame the defending side attacks in, that ball sits
+forty-seven metres up the pitch, so `BALL_PULL_X` carried their whole team
+seventeen metres onto it. A front line that stands seventeen metres inside the
+opposition half by formation ended up on the edge of the penalty area. That is
+the owner's report — goal kicks struck at an attacker's body — and it was
+arithmetic rather than bad luck.
+
+Both sides now build the restart shape around the same imaginary ball, which is
+the halfway line for each of them: `_restart_shape` takes a `push_defenders` flag
+and clamps the canonical ball depth from whichever side it approaches the line.
+The kicking side comes up off its own goal line and the defending side drops back
+off the box, so the two banks are forty metres apart and there is a goal kick to
+take.
+
+The law is the other half, and the radial clearance could not express it: twelve
+metres from a spot on the six-yard line is still inside the penalty area anywhere
+off the middle of it, which is exactly where a striker stands.
+`_out_of_penalty_area` moves each opponent's spot out of the area by the shortest
+way — past the eighteen-yard line if he is central, past the edge if he is wide —
+and `update` will not let the kick be taken while one of them is still inside it,
+with the existing eight-second timeout as the backstop.
+
+Measured on seeds 3 and 7 at ten minutes, the wait before a goal kick was
+unchanged (3.5 s and 4.9 s before, 3.7 s and 4.8 s after) — the opponents are
+already walking out when the whistle goes, so the gate costs nothing. `Restarts`
+gained the other side's columns to show it: the nearest opponent now stands 20 to
+23 m from the kicking side's goal line, three to six metres clear of the area.
+
+It is not exactly zero — the diagnostic finds 0.2 opponents a goal kick still
+inside — and the cause is worth recording because it is not this rule. The
+`worst` column shows goal kicks hitting the eight-second timeout, at which point
+`update` puts the taker on the ball and strikes it whatever the box looks like;
+and indirect free kicks, which have no box rule at all, hit the same eight
+seconds just as often. The stall is the old one `TAKER_STANCE` was written for —
+a taker who never reaches the ball — and the backstop overriding the law
+occasionally is better than a restart that never happens.
+
+## A back line that splits when it builds
+
+Width was a single number for a whole match. `SimTactics.width_scale` is a
+plan-level prior and cannot know where the ball is, so a side playing out of its
+own box stood exactly as narrow as it does defending a cross: every angle out of
+the back ran through the same crowded middle, and the ball that was on was the
+square one.
+
+`SimMovement._build_up_width` multiplies the back line's own z — centre-halves
+and full-backs, the same test `_hold_the_line` uses — by up to `BUILD_UP_WIDTH`
+when the side has the ball and the ball is in its own half, fading to nothing by
+the halfway line. Applied to the formation's z rather than replacing it, so the
+proportions of the line survive and only its width changes: a full-back at 23 m
+goes to 31, a centre-half at 8 m to 11. The plan's own width still multiplies on
+top, so a narrow side splits less than a wide one.
+
+## A pass has a range, and the body decides it
+
+Body orientation was priced as aim error and nothing else, and error alone cannot
+say the thing a viewer sees. A man with his back to play does not hit a
+forty-metre diagonal *wide of the mark*; he does not hit it. There is no backlift
+behind him and no hips to swing through the ball, and what comes off his boot is
+a flick that travels a fraction of the distance.
+
+`SimTouch.strike_scale` is that missing statement, as a fraction of range rather
+than of speed, because a range is the legible form: a man who can find somebody
+forty-five metres away in front of him can find somebody ten metres behind him.
+It is squared in the same off-axis measure `facing_penalty` uses, so opening up
+to play one square costs a quarter of turning it all the way round, and technique
+and standing still buy some of it back — `STRIKE_STATIC_SHARE` is higher than
+`FACING_STATIC_SHARE` because a man on the spot recovers his accuracy and not his
+swing.
+
+Both layers read it. `SimDecision._add_passes` gates each candidate on the reach
+along that line, `SimTouch.ground_pass` and `lofted_pass` pull the aim point back
+to it, and `SimTouch.shot` scales the strike speed by it while
+`SimDecision.expected_goals` scales the chance — so the ball the engine scores is
+the ball it strikes. The way to the long ball is what it is on a pitch: turn
+first, then hit it.
+
+**Seed 7, ten minutes, against the same engine without it.** The mean length by
+body sector is the instrument, and `./run.sh diagnose` now prints it.
+
+The length column did not exist before this went in, so the before column is the
+share alone.
+
+| sector | share, before | share, after | mean length, after |
+|---|---|---|---|
+| ahead 0-45 | 33% | 36% | 16.1 m |
+| opening up 45-90 | 27% | 33% | 15.3 m |
+| over the shoulder 90-135 | 21% | 22% | 13.7 m |
+| straight back 135-180 | 19% | 9% | 9.8 m |
+
+The blind ball back halved as a share of all passing and what is left completes
+at 87%, which is a short safe ball and is what a pass behind you should be.
+
+Shots fell from 33 to 20 on the same seed and goals from 3 to 2, and the cause is
+the shot's half of the same rule: a shot was the one strike in the engine that
+paid nothing at all for the way the body was pointing, in a module whose own
+header comment lists body orientation as an error source. Conversion went up
+rather than down, so what was removed was the shot taken across a man's own
+shoulder from six yards.
+
+## The aerial game
+
+The largest single hole in the engine, and `docs/THE_FOOTBALL.md` had been
+carrying it as three absent rows. `SimTouch.header` was written and nothing
+called it. Heading and jumping were generated, priced into squad quality and read
+by nothing in a match. A cross was met on the floor or not at all.
+
+`sim/aerial.gd` is the layer, and it is deliberately small. A ball above the
+shoulders — `HEADER_FROM`, 1.75 m — is resolved by the same `SimDuel` contest as any
+other, with heading and jumping in place of dribbling and tackling and a wider
+contact range, because meeting one is a leap into it rather than a boot put out.
+The winner heads it, and a header is a reflex rather than a deliberation: at goal
+if there is a goal to head it at, clear if it is in his own area or he is under
+pressure in his own half, and otherwise to the best shirt inside fifteen metres,
+scored in the same control-times-threat units as a throw-in. An attempt on goal
+goes through `SimTouch._log_shot`, so a headed goal is a shot like any other.
+
+Two things had to change around it or nobody would ever have contested one.
+`SimMovement` allows `AERIAL_CHASERS` men a side at a ball in the air rather than
+the one the possession cap allows, and they go at the ball itself rather than at
+the lane behind it — a cross used to arrive with the man it was aimed at and
+nobody else, because the near post, the far post and the second ball were all
+covered by players holding a shape. And the keeper comes for it: `_claim_target`
+walks the shared forecast for a ball dropping into his own area, takes anything
+above head height as his by right and anything below it only if he beats the
+first attacker by a margin scaled by `command`, and `_try_gather` then either
+holds it or punches it clear.
+
+**Seed 7, ten minutes.** 76 headers — 49 to a teammate, 20 clearances, 7 at goal
+— and ten balls the keeper came out and claimed. Before it, none of either.
+
+### Everything above the boot was a header, and it should not have been
+
+The first version of the layer headed every ball above 1.45 m, and watched by eye
+that is not a football match: a centre-half alone in his own half with a ball
+dropping on him nodded it twenty metres to nobody, and it happened every time the
+ball left the grass. Two things were missing, and they are different.
+
+The first is the chest. Between the boot and the shoulders a footballer kills the
+ball and puts it on the floor, and `SimTouch.chest` is that — the first touch's
+skill, difficulty and dice, with a tighter cushion and a downward velocity in
+place of the lift, so what it buys is the ball at his feet a moment later.
+`SimAerial._play_off_the_body` chooses it: he strikes it as it comes if the
+chance is worth `VOLLEY_XG_FLOOR` and hands the ball to `SimDecision` when it is,
+hacks it away if he is somewhere a mistake is a goal, and otherwise takes it
+down.
+
+The second is not touching it at all. `SimAerial.lets_it_drop` takes a man out of
+the contest entirely when the ball is coming down on him, nobody is near, he is
+not in his own box and there is no goal in front of him — he waits and chests it.
+It is asked by `SimDuel` before the contender list is built, because `_act` books
+the recovery and the pass outcome before it plays the ball and a declined touch
+after that point is a lie in the log.
+
+`HEAD_REACH_HEIGHT` came down from 2.35 m to 2.0 at the same time, and that one
+is a drawing measurement rather than a football one: the figure's head sits at
+1.7 m and its crown at 2.0, so a ball met at 2.35 changed direction half a metre
+above anything a viewer could see touch it. The view had the other half of that
+bug — `_pose_header` jumped on `sin(u * PI)`, so the man stood flat on the grass
+while the ball flew off, then leapt a fifth of a second later under a ball that
+had gone. The contact is the *first* frame of a one-shot pose, and the leap now
+starts at its apex and is scaled to the gap between the ball and his own head.
+
+**Seed 7, ten minutes, against the same seed before it.** Headers 56 → 32, and 43
+balls taken down on the chest, so 57% of everything played off the grass is now
+played with the body rather than the head. Shots 25 → 14 and goals 4 → 1 on that
+one seed: a bouncing ball beyond eighteen metres is no longer struck first-time
+at goal, it is controlled, which is football and is also most of the shots that
+went. Nothing here is tuned; the aerial share is the number to watch by eye.
+
+## Balls rolling past people
+
+The press cap in `SimMovement._assign_chasers` is the anti-swarm guard and it is
+right about pressing: a side does not send five men at a carrier, and in
+possession it sends one. It was also the reason players stood and watched a ball
+dying two metres away, because going to a loose ball at your feet is not a
+decision to leave a station and the cap could not tell the two apart.
+
+`_add_nearby_chaser` is the one exception, and every condition in it carries
+weight. The ball must be loose, or a marker abandons the press to stand over a
+ball the carrier has under his foot. It must be slow and near, or a driven pass
+drags whoever it passes out of shape. He must be able to meet it inside
+`NEARBY_SECONDS`, or this is a bigger cap by another name. And it does not fire
+for the side a pass is already travelling to, whose man is on his way to meet it.
+One extra man per side: two players going for a loose ball is football, three is
+the swarm.

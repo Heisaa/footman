@@ -90,6 +90,9 @@ static func face_for_anim(anim: int, stamina: float) -> int:
 			return Face.DESPAIR
 		SimConsts.Anim.SLIDE, SimConsts.Anim.KICK_HARD, SimConsts.Anim.HEADER:
 			return Face.EFFORT
+		SimConsts.Anim.CHEST:
+			# Not effort: a chest-down is a man concentrating, not straining.
+			return Face.NEUTRAL
 		SimConsts.Anim.EXHAUSTED:
 			return Face.EFFORT
 		_:

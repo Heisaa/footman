@@ -20,7 +20,7 @@ afterwards instead of investigated.
 
 | | Proposal | Where | Goals |
 |---|---|---|---|
-| 2 | Let `expected_goals` see the three things it is blind to | `SimDecision.expected_goals` | - |
+| 2 | Let `expected_goals` see the two things it is still blind to | `SimDecision.expected_goals` | - |
 | 3 | Parry versus hold — the rebound cascade | `SimKeeper` | - |
 | 4 | The in-box pass backwards the owner watched happen | `SimDecision._add_passes` | + |
 | 5 | Blocks that cost the shooter, a keeper who narrows the angle | `SimKeeper`, `SimDuel` | - |
@@ -35,6 +35,13 @@ facing** (`SimTouch.facing_penalty`) and **fatigue**. A player sprinting across
 the box or turning away from goal prices a shot the same as one set and balanced,
 and should not.
 
+**Body facing is now done, and by a different route.** `expected_goals` multiplies
+by `SimTouch.strike_scale`, which is the *range* statement rather than the aim one,
+so it does not double-count `facing_penalty` inside `aim_sigma` — a man with the
+goal over his shoulder cannot get power through the ball, and `SimTouch.shot`
+scales the strike by the same number. `speed_ratio` and fatigue are still
+unpriced.
+
 **(3) surfaced as a consequence of the `SHOT_AIM_BASE` fix.** With shots reaching
 the target, about a third of them are second attempts within four seconds of the
 last: the keeper parries, the rebound falls to an attacker, he strikes again. Real
@@ -46,6 +53,41 @@ touches in the penalty area, against 34 struck and 12 carried. Either it is rare
 than it looked, or it happens just outside the area where the diagnostic block
 does not count it. Worth a second look with the owner's seed rather than a general
 hunt.
+
+## Attributes
+
+Both of these came out of asking whether player stats influence a match at all.
+The answer was yes, for every attribute but two, and with one hole in how quality
+reaches a role. Neither is visible by eye, so neither is urgent; both are cheap.
+
+| | Proposal | Where | Goals |
+|---|---|---|---|
+| 14 | Two attributes are read by nothing | `SimAttributes`, `SimRole._WEIGHTS` | ? |
+| 15 | A quality-1.0 forward is an average decision-maker | `SimRole._WEIGHTS` | + |
+
+**(14): `teamwork` and `distribution` decide nothing.** Counted across `sim/`,
+every attribute is read somewhere except those two — and both are in
+`SimRole.attribute_weights`, teamwork for CB, FB, DM, CM and AM, distribution at
+0.6 for the keeper. So they are priced into `role_rating`, into squad quality and
+into every scout report, and they change nothing that happens on the pitch. This
+is the state heading and jumping were in before the aerial layer went in. Either
+give them something to do — teamwork is the obvious lever on `SimOffBall`'s
+willingness to make a run that is not for himself, distribution on the keeper's
+choice and accuracy in `decide_with_ball` — or take them out of the weights. Do
+not leave them being paid for.
+
+**(15): quality only lifts what the role weights say matters.**
+`SimAttributes.generate` draws each attribute around
+`lerpf(0.35 + 0.3 * quality, quality, relevance)`, so an attribute with zero
+relevance sits at about 0.64 whatever the squad's level. `decisions` is not in
+the ST, WIDE or FB weights and `composure` is not in FB or WIDE, which means a
+quality-1.0 striker reads the game like a mid-table one. Measured off
+`./run.sh replay`, a 1.0 full-back picks his best option at 49% against a 0.2
+midfielder's 56% — the softmax temperature ratio is 0.21 against 0.50, and the
+gap is smaller than the two squads' quality suggests because the attribute
+driving it never rose. A forward's decision-making in the box is one of the
+things that most separates a good one from an ordinary one, and here it is an
+omission in a table rather than a design choice.
 
 ## Passing
 
@@ -114,7 +156,13 @@ square pass across the face of an empty goal.
 ## Open owner questions
 
 - Is there a skill difference between the two teams in the main scene game?
-  Unchecked.
+  Partly answered. `match_view_3d.QUALITY_LADDER` walks 0.6 v 0.6, 1.0 v 1.0 and
+  1.0 v 0.6 across a session, so the sides genuinely differ on the third rung.
+  Measured on the numbers, quality reads clearly in ball control — first-touch
+  quality 0.15 / 0.33 / 0.49 at squad quality 0.2 / 0.6 / 1.0, and a 1.0 side beat
+  a 0.2 one 3-0 in ten minutes — and not at all in chance creation, where shots
+  are noise-dominated across seeds. What is still unchecked is the part only the
+  owner can check: whether the better side *looks* better on the grass.
 
 ## Order
 
@@ -139,9 +187,12 @@ is the old approach and put the most visible defects last.
    engine ever plays a forward pass that looks like a footballer's idea.
 5. **10, 11, 12** — small passing work. Cheap, and worth taking whenever one of
    the above is blocked or waiting on the owner.
-6. **2** — the three things `expected_goals` is blind to. Real, but a valuation
-   correction rather than a behaviour, so almost nothing about it is visible by
-   eye.
+6. **2** — the two things `expected_goals` is still blind to. Real, but a
+   valuation correction rather than a behaviour, so almost nothing about it is
+   visible by eye.
+7. **14, 15** — the attribute bookkeeping. Nothing a viewer can see, and neither
+   costs more than an afternoon, but (15) is a squad the player pays for and does
+   not get and (14) is two attributes being charged for and never delivered.
 
 **5** and **3** are expected to cost goals, and the compressed match is already
 short of them. That is a band move to report, not a reason to reorder.

@@ -37,10 +37,16 @@ can see him.
 
 **`Passing by body angle`** — every pass bucketed by the angle between the passer's
 body and the line the ball was played along, with the share of attempts, the
-completion rate and the mean technique-and-agility of the passers in each bucket. The
-share is the decision layer's half of the answer and the completion rate is the
-execution layer's. A change to the facing model that moves only one of them has done
-half of what it claimed.
+completion rate, the mean technique-and-agility of the passers and the mean length
+in each bucket. The share is the decision layer's half of the answer and the
+completion rate is the execution layer's. A change to the facing model that moves
+only one of them has done half of what it claimed.
+
+The length column is the only place `SimTouch.strike_scale` is visible. A ball
+played behind the body is not a worse pass, it is a shorter one — there is no
+swing behind it — so the mechanic shows up as the mean length falling across the
+sectors and as the far bucket completing *better* than the near ones, because
+what is left of it is the short safe ball.
 
 **`Offering for the ball`** — two halves that have to be read against each other. The
 top half is `SimOffBall`'s own account of itself: how many times each way of making
@@ -145,8 +151,30 @@ it was built for, however many appear in the pass counts.
 **`Restarts`** — a set piece has two halves that are invisible from the event log.
 `waited` is how long the ball sat there: a goal kick struck six tenths of a second after
 the whistle gives the side taking it no time to do anything, so whatever the routine
-asked for never happened. The shape columns are where the kicking side actually stood
-when the ball was struck.
+asked for never happened. `worst` is beside it because a mean hides a stall — eight
+seconds is `SimSetPiece`'s timeout, so a worst of exactly eight is a restart nobody was
+ever ready for and the taker was placed on the ball to stop it hanging. The shape columns
+are where the kicking side actually stood when the ball was struck, and `theirs` is the
+same measurement of the other side. `in the area` counts opponents inside the kicking
+side's penalty area at the strike: a rule on the goal-kick row, where it should be zero,
+and ordinary football on every other.
+
+**`In the air`** — the aerial layer's own account of itself: how many headers, split
+by what `SimAerial` was trying to do with each — clear it, head it at goal, or find
+a shirt — how many balls were taken down on the chest instead, and how many the
+keeper came out and claimed, caught against punched. Nothing else can tell the
+three header intents apart: a clearing header and a knock-down are the same
+player, the same touch kind and the same place in the log, and a match where every
+header is a clearance is a match with no attacking aerial game in it. The chest
+share answers the other question — how much of a match is played with the head,
+which is the one thing that goes obviously wrong by eye when it moves. The keeper
+rows are inferred from the height the ball was at when he took it, so a ball he
+picked off the grass is counted separately.
+
+What it cannot see is the ball nobody played. `SimAerial.lets_it_drop` is a
+touch that does not happen, so a match where everybody stands under everything
+and a match with no high balls in it look the same here: headers plus chests
+falls, and neither number says why.
 
 **`Goalkeeping`** — split by whether there is anything to defend on purpose. One number
 over a match answers nothing: a keeper sweeping fifteen metres behind a high line with

@@ -2034,6 +2034,9 @@ const ANIM_SECONDS := {
 	SimConsts.Anim.KICK_LIGHT: 0.28,
 	SimConsts.Anim.KICK_HARD: 0.36,
 	SimConsts.Anim.HEADER: 0.5,
+	# As long as the ball takes to drop from his chest to his feet, near enough:
+	# the pose is the whole of that, not the instant of the contact.
+	SimConsts.Anim.CHEST: 0.5,
 	SimConsts.Anim.SLIDE: 0.7,
 	SimConsts.Anim.FALL: 0.7,
 	SimConsts.Anim.GET_UP: 0.6,
@@ -2103,6 +2106,8 @@ func _pose(node: Node3D, index: int, clock: float) -> void:
 			_pose_keeper_hold(node, t)
 		SimConsts.Anim.HOLD:
 			_pose_hold(node, t)
+		SimConsts.Anim.CHEST:
+			_pose_chest(node, u)
 		_:
 			pass
 
@@ -2304,12 +2309,35 @@ func _pose_kick(node: Node3D, u: float, force: float) -> void:
 	_squash(node, -0.16 * swing)
 
 
+## Where in the header's arc his feet are back on the grass. The rest of the span
+## is the landing: knees still folded, arms still out, coming upright.
+const HEADER_LAND := 0.7
+## The most a footballer leaves the ground by. Half a metre is a good leap at a
+## cross, and the figure's own head is already 1.7 m up, so this is a ball at 2.2
+## — about as high as anything gets headed.
+const HEADER_LIFT_MAX := 0.5
+
+
 ## Airborne, arched, arms wide. What sells a header is not the head — it is the
 ## legs leaving the ground and tucking, so the figure is unmistakably not
 ## standing.
+##
+## The contact is the *first* frame of this pose, not the middle of it: the sim
+## plays the anim after the ball has already gone, the same as it does for a
+## kick. So the leap is at its apex when the pose starts and falls away from
+## there. It used to be `sin(u * PI)` — the man stood flat on the grass while the
+## ball changed direction over his head, then jumped a fifth of a second later
+## under a ball that had already left, and was set back down before he landed.
+## That is the header that looks like it bounces above the head.
+##
+## And how far he leaves the ground is the ball's business, not a constant. A
+## fixed 0.55 m is a full leap at a ball on his forehead and half a leap at one
+## over it; both read as the head missing.
 func _pose_header(node: Node3D, u: float) -> void:
-	var arc := sin(u * PI)
-	node.position.y += arc * 0.55
+	var fall: float = clampf(u / HEADER_LAND, 0.0, 1.0)
+	# A body comes down like a body: slowly at first, then all at once.
+	var arc := 1.0 - fall * fall
+	node.position.y += arc * _header_lift(node)
 	_lean(node, -0.3 * arc)
 	_rotate(node, "Neck", 0.4 * arc)
 	# Arms thrown wide and back, mirrored.
@@ -2323,7 +2351,61 @@ func _pose_header(node: Node3D, u: float) -> void:
 	_rotate(node, "KneeL", 1.3 * arc)
 	_rotate(node, "KneeR", 0.35 * arc)
 	# Squashes on landing rather than in the air.
-	_squash(node, 0.3 * maxf(u - 0.75, 0.0) * 4.0)
+	_squash(node, 0.3 * maxf(u - HEADER_LAND, 0.0) / maxf(1.0 - HEADER_LAND, 0.01))
+
+
+## How high he has to get to meet this particular ball: the gap between it and
+## the top of his own head, capped at a leap a footballer can actually produce.
+func _header_lift(node: Node3D) -> float:
+	var contact: float = float(node.get_meta("contact_y", 0.0))
+	if contact < 0.01:
+		# No ball in the scene — the pose sheet. Show the leap it was drawn for.
+		return HEADER_LIFT_MAX * 0.6
+	return clampf(contact - _head_height(node), 0.0, HEADER_LIFT_MAX)
+
+
+## Where this figure's head sits when it is standing — its centre, which is where
+## a ball meets a forehead. Read off the joints it was built from, and cached: it
+## never changes, and it varies with height the way the leg length does.
+func _head_height(node: Node3D) -> float:
+	if not node.has_meta("head_height"):
+		var neck := _joint(node, "Neck")
+		var head := _joint(node, "Head")
+		var y := 1.7
+		if neck != null and head != null:
+			y = _spine_base(node) + neck.position.y + head.position.y
+		node.set_meta("head_height", y)
+	return node.get_meta("head_height")
+
+
+## Taking it down: chest thrown out and leaning away from the ball, arms wide of
+## it, then upright with the eyes following it to the floor.
+##
+## The lean is the whole pose, and it is what tells a viewer this is not a
+## header. A man cushioning a ball on his chest arches *back* — he gives with it,
+## because a chest held square bounces it straight off — and his arms go out wide
+## to keep them out of the way, which is also the shape that keeps him onside of
+## a handball. Nothing leaves the ground: that is the other half of the read.
+##
+## Like the header and the kick, contact is the first frame. What follows is the
+## half-second the ball spends dropping to his feet, and he spends it coming
+## upright and looking down at it.
+func _pose_chest(node: Node3D, u: float) -> void:
+	var give := 1.0 - smoothstep(0.0, 0.85, u)
+	_lean(node, -0.42 * give)
+	# Chin up at the ball on contact, down at it by the time it lands.
+	_rotate(node, "Neck", lerpf(-0.3, 0.45, smoothstep(0.0, 1.0, u)))
+	# Arms out and back, low: away from the ball rather than up at it.
+	_rotate(node, "ShoulderL", -0.35 * give, -0.95 * give)
+	_rotate(node, "ShoulderR", -0.35 * give, 0.95 * give)
+	_rotate(node, "ElbowL", -0.45 * give)
+	_rotate(node, "ElbowR", -0.45 * give)
+	# Knees soft, weight settling back onto the standing leg. He absorbs the ball
+	# with the whole body, so the whole body dips a little.
+	_rotate(node, "HipL", 0.28 * give)
+	_rotate(node, "KneeL", 0.4 * give)
+	_rotate(node, "KneeR", 0.3 * give)
+	node.position.y -= 0.04 * give
 
 
 ## Feet first, body reclined behind them. The root pivot is at the feet, so a
@@ -2616,6 +2698,12 @@ func _anim_phase(node: Node3D, anim: int) -> float:
 	if int(node.get_meta("anim", -1)) != anim:
 		node.set_meta("anim", anim)
 		node.set_meta("anim_started", _elapsed)
+		# Where the ball was when the act began, which for a one-shot is where it
+		# was struck. The header is the pose that needs it: how far a man has to
+		# leave the ground is the difference between the ball's height and his own
+		# head's, and it is the difference between a leap at a cross and a nod at
+		# one that was already on his forehead.
+		node.set_meta("contact_y", _curr.ball_pos.y)
 	return _elapsed - float(node.get_meta("anim_started", _elapsed))
 
 

@@ -50,6 +50,7 @@ static func resolve_contacts(ctx: SimContext) -> void:
 	_challenge_win.clear()
 	_challenge_foul.clear()
 	var ball := ctx.ball
+	var overhead := SimAerial.is_aerial(ctx)
 	for p in ctx.players:
 		# Note the cooldown is deliberately *not* checked here. A player who has
 		# just touched the ball is still standing over it, shielding it and being
@@ -59,9 +60,18 @@ static func resolve_contacts(ctx: SimContext) -> void:
 			continue
 		if p.is_keeper:
 			continue  # The keeper module owns its own contact rules.
-		if p.dist_sq_to(ball.pos) > SimConsts.CONTROL_RANGE * SimConsts.CONTROL_RANGE:
+		# A ball over head height is met with a leap, which arrives further from
+		# where he was standing than a boot does. `SimAerial.contact_range` is the
+		# one place that difference is stated.
+		var reach := SimAerial.contact_range(ball.pos.y)
+		if p.dist_sq_to(ball.pos) > reach * reach:
 			continue
 		if not SimTouch.playable_height(p, ball.pos.y):
+			continue
+		# A ball over his head that he would rather take on his chest a moment
+		# from now. He is not a contender for it, which is the whole of the
+		# mechanic: nobody touches it, and it comes down.
+		if overhead and SimAerial.lets_it_drop(ctx, p):
 			continue
 		_contenders.append(p)
 		_challenge_win.append(1.0)
@@ -145,12 +155,15 @@ static func _resolve_contest(ctx: SimContext) -> void:
 	if _weights.size() != n:
 		_weights.resize(n)
 	var ball := ctx.ball
+	var aerial := SimAerial.is_aerial(ctx)
 	for i in n:
 		var p := _contenders[i]
 		var holder := ball.last_touch_player == p.id
 		# Whoever has just touched it is defending possession with dribbling and
-		# strength; whoever is arriving is contesting it with tackling.
-		var skill: float = p.attrs.dribbling if holder else p.attrs.tackling
+		# strength; whoever is arriving is contesting it with tackling. Neither
+		# applies over head height: nobody is holding a ball he cannot reach with
+		# a foot, so an aerial contest is decided by who gets up to it.
+		var skill: float = SimAerial.duel_skill(p) if aerial else (p.attrs.dribbling if holder else p.attrs.tackling)
 		var w: float = 0.35 + skill * 1.1 + p.attrs.strength * 0.45
 		w *= lerpf(0.7, 1.15, p.attrs.aggression) if not holder else 1.0
 		w *= p.fatigue_factor()
@@ -158,7 +171,7 @@ static func _resolve_contest(ctx: SimContext) -> void:
 		var closing := _closing_speed(p, ball)
 		w *= 1.0 + closing * CLOSING_SPEED_WEIGHT
 		# Being nearer the ball helps.
-		w *= clampf(1.35 - p.dist_to(ball.pos) / SimConsts.CONTROL_RANGE * 0.5, 0.5, 1.35)
+		w *= clampf(1.35 - p.dist_to(ball.pos) / SimAerial.contact_range(ball.pos.y) * 0.5, 0.5, 1.35)
 		# And challenging the man rather than the ball is harder, worst from behind.
 		w *= _challenge_win[i]
 		_weights[i] = maxf(w, 0.01)
@@ -229,7 +242,8 @@ static func _resolve_contest(ctx: SimContext) -> void:
 	# runs on loose and both of them have to go and get it.
 	if not winner.can_touch():
 		return
-	if winner.dist_sq_to(ball.pos) > SimConsts.CONTROL_RANGE * SimConsts.CONTROL_RANGE:
+	var reach := SimAerial.contact_range(ball.pos.y)
+	if winner.dist_sq_to(ball.pos) > reach * reach:
 		return
 	_act(ctx, winner, true)
 
@@ -246,6 +260,13 @@ static func _closing_speed(p: SimPlayer, ball: SimBall) -> float:
 static func _act(ctx: SimContext, player: SimPlayer, from_contest: bool) -> void:
 	var ball := ctx.ball
 	var was_theirs := ball.last_touch_team == player.team
+	# A ball above his boot is played with his body, whoever it belonged to a
+	# moment ago -- headed if it is over his shoulders, taken down off the chest
+	# if it is not. The bookkeeping below is the same either way -- a regain is a
+	# regain and a pass is completed whether it was taken down or nodded on -- so
+	# only the act at the end of it changes.
+	var aerial := SimAerial.is_aerial(ctx)
+	var off_the_grass := SimAerial.above_boot(ctx)
 	if not was_theirs and ball.last_touch_team >= 0:
 		# Winning it back. A hard-charging challenge pokes it clear; a settled
 		# interception is played properly.
@@ -254,8 +275,11 @@ static func _act(ctx: SimContext, player: SimPlayer, from_contest: bool) -> void
 		# into pinball.
 		var closing := _closing_speed(player, ball)
 		var ceiling: float = lerpf(11.0, 22.0, player.attrs.first_touch)
+		# Height is judged against the head rather than the boot: a ball won back
+		# at chest height is taken down off the chest, and calling that a failed
+		# control stabbed away every interception of a bouncing ball in the match.
 		var can_control := ball.vel.length() < ceiling and closing < 6.0 \
-			and ctx.pressure_on(player) < 1.6 and ball.pos.y < SimConsts.FOOT_REACH_HEIGHT
+			and ctx.pressure_on(player) < 1.6 and ball.pos.y < SimAerial.HEADER_FROM
 		# Stamped whether or not the ball can be controlled: a poke that wins it
 		# back leaves him in the same crowded pocket a clean take does, and the
 		# priority for the next couple of seconds is the same either way.
@@ -275,13 +299,16 @@ static func _act(ctx: SimContext, player: SimPlayer, from_contest: bool) -> void
 			"clean": can_control,
 		})
 		_resolve_pass_outcome(ctx, player, false)
-		if not can_control:
+		if not can_control and not aerial:
 			SimTouch.poke(ctx, player, SimTelemetry.Touch.TACKLE if from_contest else SimTelemetry.Touch.BLOCK)
 			return
 	elif was_theirs and ball.last_touch_player != player.id:
 		# A teammate has picked it up. That completes the pass whether or not
 		# this was the player it was aimed at.
 		_resolve_pass_outcome(ctx, player, true)
+	if off_the_grass:
+		SimAerial.play(ctx, player)
+		return
 	SimDecision.choose_and_execute(ctx, player)
 
 

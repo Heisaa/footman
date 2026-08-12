@@ -161,8 +161,15 @@ static func apply(ctx: SimContext, player: SimPlayer, kind: int, vel: Vector3, s
 	# A throw-in's pose is already half over by the time the ball leaves -- the
 	# wind-up ran while he stood there holding it -- so it needs longer on the
 	# clock than a kick or the follow-through is cut off at the release.
+	# The other two that outlast their own contact. A header is a man in the air
+	# and he is still coming down; a chest is a ball still dropping to his feet.
+	# Cut to two tenths, both of them snap back to a run mid-act -- which for the
+	# header is a figure that rises off the grass and is put back on it before it
+	# has landed, and no viewer reads that as a leap.
 	var thrown: bool = kind == SimTelemetry.Touch.THROW_IN or kind == SimTelemetry.Touch.KEEPER_THROW
-	player.play_anim(_anim_for(kind, vel.length()), 0.45 if thrown else 0.2)
+	var slow: bool = thrown or kind == SimTelemetry.Touch.CHEST \
+		or kind == SimTelemetry.Touch.HEADER
+	player.play_anim(_anim_for(kind, vel.length()), 0.45 if slow else 0.2)
 
 	var data := {
 		"p": player.id,
@@ -193,6 +200,8 @@ static func _anim_for(kind: int, speed: float) -> int:
 	match kind:
 		SimTelemetry.Touch.HEADER:
 			return SimConsts.Anim.HEADER
+		SimTelemetry.Touch.CHEST:
+			return SimConsts.Anim.CHEST
 		SimTelemetry.Touch.TACKLE:
 			return SimConsts.Anim.SLIDE
 		SimTelemetry.Touch.KEEPER_CATCH:
@@ -242,20 +251,98 @@ static func aim_sigma(ctx: SimContext, player: SimPlayer, skill: float, distance
 ## Nothing here forbids the pass behind; it makes it a thing only some players
 ## can do well, which is the point.
 static func facing_penalty(player: SimPlayer, dir: Vector3) -> float:
+	# Squared, so playing it square across the body costs a quarter of turning it
+	# all the way round rather than half: opening up to play the ball sideways is
+	# ordinary football, and hitting one you cannot see is not.
+	var off := off_axis(player, dir)
+	return 1.0 + FACING_COST * off * off * lerpf(1.0, 0.28, deftness_of(player)) * momentum_of(player)
+
+
+## How far off the way the body is pointing the ball is being played: 0 straight
+## ahead, 0.5 square across him, 1 straight back.
+##
+## One measure, read by everything that prices the body -- the aim error above,
+## the reach below, and through them the decision layer's own estimate of both.
+## Two of anything here is two things that drift apart.
+static func off_axis(player: SimPlayer, dir: Vector3) -> float:
 	var d := SimConsts.horizontal(dir)
 	var length := d.length()
 	if length < 1e-6:
-		return 1.0
+		return 0.0
 	var ahead: float = player.heading_dir().dot(d / length)
-	# 0 straight ahead, 0.5 square, 1 straight back. Squared, so playing it square
-	# across the body costs a quarter of turning it all the way round rather than
-	# half: opening up to play the ball sideways is ordinary football, and hitting
-	# one you cannot see is not.
-	var off: float = (1.0 - clampf(ahead, -1.0, 1.0)) * 0.5
-	var deftness: float = clampf(player.attrs.technique * 0.6 + player.attrs.agility * 0.4, 0.0, 1.0)
+	return (1.0 - clampf(ahead, -1.0, 1.0)) * 0.5
+
+
+## Opening the hips and striking a ball you are not looking at: technique and
+## agility, not the skill of whatever action it is.
+static func deftness_of(player: SimPlayer) -> float:
+	return clampf(player.attrs.technique * 0.6 + player.attrs.agility * 0.4, 0.0, 1.0)
+
+
+## The share of the facing cost a running player pays over a standing one. See
+## `FACING_STATIC_SHARE`.
+static func momentum_of(player: SimPlayer) -> float:
 	var speed_ratio: float = clampf(player.speed() / maxf(player.nominal_max_speed(), 1e-3), 0.0, 1.0)
-	var momentum: float = lerpf(FACING_STATIC_SHARE, 1.0, speed_ratio)
-	return 1.0 + FACING_COST * off * off * lerpf(1.0, 0.28, deftness) * momentum
+	return lerpf(FACING_STATIC_SHARE, 1.0, speed_ratio)
+
+
+## What is left of a full-blooded strike when the ball has to be played along
+## `dir` rather than out in front of the body, as a fraction.
+##
+## Aim error used to be the whole of the body-facing model, and error alone
+## cannot say the thing anyone watching sees. A man with his back to play does
+## not hit a forty-metre diagonal *wide of the mark* -- he does not hit it at
+## all. There is no backlift behind him and no hips to swing through the ball, so
+## what comes off his boot is a flick or a scoop that travels a fraction of the
+## distance. The option is not a worse pass; it is not that pass, and the answer
+## a footballer uses is to turn first and hit it properly a moment later.
+##
+## Read as a fraction of *range* rather than of speed, which is what makes it
+## legible: a man who can find somebody forty-five metres away in front of him
+## can find somebody ten metres behind him. Squared in the off-axis measure, the
+## same shape `facing_penalty` uses -- square across the body is ordinary and
+## costs a quarter of what turning it all the way round costs. Technique buys
+## some of it back, and standing still buys the rest, which is the same statement
+## `FACING_STATIC_SHARE` makes about the second he does not spend turning.
+##
+## `SimDecision` gates its pass candidates on this and the touch primitives clamp
+## to it, so the ball the engine scores is the ball it can actually strike.
+const STRIKE_BEHIND := 0.22
+## The share of that cost a player standing still pays.
+##
+## Deliberately higher than `FACING_STATIC_SHARE`, which is the same idea about
+## aim. A man on the spot can plant, look and get most of his *accuracy* back;
+## what he cannot get back is the swing, because there is no run-up behind a ball
+## played past his own heel whether he is moving or not. Standing still is worth
+## something here and it is not worth half.
+const STRIKE_STATIC_SHARE := 0.75
+
+
+static func strike_scale(player: SimPlayer, dir: Vector3) -> float:
+	var off := off_axis(player, dir)
+	var speed_ratio: float = clampf(player.speed() / maxf(player.nominal_max_speed(), 1e-3), 0.0, 1.0)
+	var momentum: float = lerpf(STRIKE_STATIC_SHARE, 1.0, speed_ratio)
+	var cost: float = clampf(off * off * lerpf(1.0, 0.75, deftness_of(player)) * momentum, 0.0, 1.0)
+	return lerpf(1.0, STRIKE_BEHIND, cost)
+
+
+## The longest ball this player can strike along `dir`, given that he could hit
+## it `full_range` metres out in front of himself.
+static func strike_range(player: SimPlayer, dir: Vector3, full_range: float) -> float:
+	return full_range * strike_scale(player, dir)
+
+
+## Pulls an aim point back to a distance the striker can actually reach. What
+## comes out is the ball falling short, which is what a hooked clearance off the
+## back foot does.
+static func clamp_to_reach(player: SimPlayer, from: Vector3, target: Vector3, full_range: float) -> Vector3:
+	var line := SimConsts.horizontal(target - from)
+	var distance := line.length()
+	var reach := strike_range(player, line, full_range)
+	if distance <= reach or distance < 1e-3:
+		return target
+	var pulled := from + line / distance * reach
+	return Vector3(pulled.x, target.y, pulled.z)
 
 
 ## The share of a touch's control that survives being played along `dir`: 1.0
@@ -430,8 +517,28 @@ static func settle(ctx: SimContext, player: SimPlayer, dir: Vector3, ahead: floa
 	player.play_anim(SimConsts.Anim.HOLD, HOLD_ANIM_SECONDS)
 
 
+## How far a footballer can play the ball with his body behind it: along the
+## grass, and through the air. These are what `strike_scale` is a fraction of.
+##
+## Both sit a little above the longest ball `SimDecision` will offer -- 32 m and
+## 45 m -- so a pass played out in front of the body is never shortened by them.
+## The clamp exists for the ball played across or behind a man, and bites only
+## there.
+const GROUND_RANGE := 34.0
+const AIR_RANGE := 48.0
+
+
+## Whether this kind leaves the hands rather than the boot. A throw is made with
+## the body squared to wherever it is going, so nothing about the feet's facing
+## applies to it.
+static func is_thrown(kind: int) -> bool:
+	return kind == SimTelemetry.Touch.THROW_IN or kind == SimTelemetry.Touch.KEEPER_THROW
+
+
 ## Ground pass toward a point, arriving at roughly `arrive_pace` m/s.
 static func ground_pass(ctx: SimContext, player: SimPlayer, target: Vector3, arrive_pace: float, target_id: int, kind: int = SimTelemetry.Touch.GROUND_PASS, expected_value: float = 0.0) -> void:
+	if not is_thrown(kind):
+		target = clamp_to_reach(player, ctx.ball.pos, target, GROUND_RANGE)
 	var delta := SimConsts.horizontal(target - ctx.ball.pos)
 	var distance: float = maxf(delta.length(), 0.6)
 	var dir := delta / distance
@@ -451,6 +558,8 @@ static func ground_pass(ctx: SimContext, player: SimPlayer, target: Vector3, arr
 ## Lofted pass or cross. `curl` is sidespin in rad/s, signed.
 static func lofted_pass(ctx: SimContext, player: SimPlayer, target: Vector3, flight_time: float, target_id: int, kind: int = SimTelemetry.Touch.LOFTED_PASS, curl: float = 0.0, expected_value: float = 0.0) -> void:
 	var aim := target
+	if not is_thrown(kind):
+		aim = clamp_to_reach(player, ctx.ball.pos, aim, AIR_RANGE)
 	aim.y = maxf(aim.y, SimConsts.BALL_RADIUS)
 	var skill: float = player.attrs.crossing if kind == SimTelemetry.Touch.CROSS else player.attrs.passing
 	var spin := Vector3.UP * curl
@@ -468,22 +577,40 @@ static func lofted_pass(ctx: SimContext, player: SimPlayer, target: Vector3, fli
 
 ## Shot at a point in the goal mouth. `power` is 0..1 over the shot speed range.
 static func shot(ctx: SimContext, player: SimPlayer, aim_point: Vector3, power: float, first_time: bool, chance_quality: float) -> void:
+	var line := aim_point - ctx.ball.pos
 	var speed: float = lerpf(SimConsts.SHOT_SPEED_MIN, SimConsts.SHOT_SPEED_MAX, clampf(power * lerpf(0.65, 1.0, player.attrs.power), 0.0, 1.0))
-	var distance := SimConsts.horizontal_length(aim_point - ctx.ball.pos)
+	# Nobody strikes one hard off his back foot. The same reach the passes are
+	# clamped to, applied to the one number a shot is made of -- so a man with the
+	# goal behind him gets a scuffed poke at it and has to turn to hit it properly.
+	# `SimDecision.expected_goals` prices the same factor, so the shot the engine
+	# takes is the shot it scored.
+	speed *= strike_scale(player, line)
+	var distance := SimConsts.horizontal_length(line)
 	var curl: float = ctx.rng.gauss_clamped(0.0, 2.2, 2.0) * player.attrs.technique
 	var spin := Vector3.UP * curl
 	var vel := ctx.ballistics.solve_direct(ctx.ball.pos, aim_point, speed, ctx.env, spin)
 
-	var sigma := aim_sigma(ctx, player, player.attrs.finishing, distance, SHOT_AIM_BASE)
+	var sigma := aim_sigma(ctx, player, player.attrs.finishing, distance, SHOT_AIM_BASE, line)
 	if first_time:
 		sigma *= 1.45
 	# Elevation is the harder axis: the goal is 7.32 m wide and 2.44 m high, and
 	# most missed shots miss over the bar rather than round the post.
 	vel = _perturb(ctx, vel, sigma, weight_sigma(player, player.attrs.finishing), 1.6)
 
-	player.shots += 1
 	var from := ctx.ball.pos
 	apply(ctx, player, SimTelemetry.Touch.SHOT, vel, spin, -1, {"first_time": first_time})
+	_log_shot(ctx, player, from, aim_point, chance_quality, first_time, distance)
+
+
+## Opens an attempt on goal in the log.
+##
+## Split out of `shot` because a header at goal is the same event seen from
+## outside -- the same shot count, the same on-target and goal fields filled in
+## by the referee, the same entry on the post-match screen -- and an attempt that
+## does not go through here is an attempt nothing can see. It is not the same
+## *strike*, which is why `SimAerial` heads the ball rather than calling `shot`.
+static func _log_shot(ctx: SimContext, player: SimPlayer, from: Vector3, aim_point: Vector3, chance_quality: float, first_time: bool, distance: float) -> void:
+	player.shots += 1
 	# Held by reference: the referee fills in on_target and goal as the ball
 	# resolves, so the log carries the outcome alongside the intent.
 	var record := {
@@ -565,11 +692,11 @@ static func _resolve_first_touch(ctx: SimContext, player: SimPlayer, intent_dir:
 	# while this graded what he then did with it at 0.02. One of the two was
 	# wrong, and it was not the one calibrated against a footballer.
 	var skill: float = player.attrs.first_touch * lerpf(0.75, 1.0, player.attrs.technique)
-	var quality: float = clampf(skill * (1.0 - difficulty / DIFFICULTY_MAX), 0.0, 1.0)
+	var quality := _touch_quality(skill, difficulty)
 	var wanted := dir
 	# And he does not try to reverse a firm ball in one touch, because nobody
 	# does. The decision layer hands down where he would *like* to be going --
-	# `_safe_direction`, which is at the goal unless somebody is in the way -- and
+	# `safe_direction`, which is at the goal unless somebody is in the way -- and
 	# asking for that literally is how a man receiving a ball played back to him
 	# ends up attempting a 180 degree turn on a ball travelling at ten metres a
 	# second, failing it, and chasing it back the way it came. He takes it on the
@@ -589,10 +716,43 @@ static func _resolve_first_touch(ctx: SimContext, player: SimPlayer, intent_dir:
 			# him for the one he is actually attempting.
 			angle_penalty = 0.5 * (1.0 - cos(applied))
 			difficulty = clampf(incoming_speed / 18.0 + angle_penalty + ctx.ball.pos.y * 0.22 + ctx.pressure_on(player) * 0.15, 0.0, DIFFICULTY_MAX)
-			quality = clampf(skill * (1.0 - difficulty / DIFFICULTY_MAX), 0.0, 1.0)
+			quality = _touch_quality(skill, difficulty)
 	_ft_dir = dir
 	_ft_wanted = wanted
 	_ft_quality = quality * player.fatigue_factor()
+
+
+## How much of the difficulty a good touch shrugs off.
+##
+## Difficulty used to be discounted from skill flat -- `skill * (1 - difficulty /
+## DIFFICULTY_MAX)` -- and flat means *the same in relative terms for everybody*.
+## A 1.0 receiver and a 0.5 receiver both lost the same 62% of what they had to
+## the same ball, so the gap between them never widened where it should widen
+## most. The two attributes were read and then made not to matter.
+##
+## Work through what that cost the best player you can build. A completely
+## ordinary pass -- 9 m/s, met square, on the floor, nobody near him -- is
+## `9/18 + 0.5`, a difficulty of 1.0 against a maximum of 1.6. So a perfect first
+## touch came out at 0.375, a residual of 0.37, and the ball left his foot at
+## 3.3 m/s. The finest receiver in the game could not take a normal pass cleanly,
+## and the match average sat at 0.14 to 0.25 with balls arriving at 9 and leaving
+## at 3.5.
+##
+## Difficulty is the thing skill exists to overcome. Taking a firm ball on the
+## half-turn *is* what a good first touch is, so a good one is charged 0.45 of the
+## difficulty and a poor one all of it. The same ordinary pass now comes back at
+## 0.72 for the 1.0 receiver -- residual 0.20, the ball set in his stride at
+## 1.8 m/s -- and 0.27 for the 0.5 one, which is still a scramble.
+##
+## This is also the passing fix. `SimDecision.arrival_pace` was deliberately
+## slowed because the first touch could not handle pace, and slow balls are what
+## interceptions eat.
+const TOUCH_RESIST_BEST := 0.45
+
+
+static func _touch_quality(skill: float, difficulty: float) -> float:
+	var resist: float = lerpf(1.0, TOUCH_RESIST_BEST, clampf(skill, 0.0, 1.0))
+	return clampf(skill * (1.0 - resist * difficulty / DIFFICULTY_MAX), 0.0, 1.0)
 
 
 ## A damping impulse opposing the incoming ball. What is left over is the loose
@@ -675,6 +835,62 @@ static func first_touch(ctx: SimContext, player: SimPlayer, intent_dir: Vector3)
 	})
 
 
+## The ceiling on what a chest or a thigh leaves on the ball, in m/s.
+##
+## Tighter than `CUSHION_BEST` for a boot, and that is the point of the act. A
+## chest is the largest, softest surface a footballer has and it is the one he
+## uses when the ball is dropping on him: he leans back, gives with it, and the
+## ball dies at his feet. A boot at the same height is a volley, which is a
+## different thing entirely and not what he is doing here.
+const CHEST_CUSHION_WORST := 4.5
+const CHEST_CUSHION_BEST := 0.55
+## How hard the ball is driven into the grass, worst touch to best. A chest that
+## works ends with the ball on the floor in front of him; one that does not lets
+## it drop where it likes and somebody else gets there.
+const CHEST_DROP_WORST := 0.3
+const CHEST_DROP_BEST := 2.2
+
+
+## Taken down off the body: chest, thigh, whatever is in the way of a ball that
+## is too high to play with a foot and too low to head.
+##
+## Football's other answer to a ball in the air, and the engine had only the one.
+## Every ball above the boot was headed, so a cross met at chest height was nodded
+## on, a ball dropping over a shoulder was nodded on, and a match had a header in
+## it every time the ball left the ground -- which is not what a match looks like.
+## The commonest thing a footballer does with a ball at that height is kill it and
+## put it on the floor.
+##
+## It is the first touch with the same skill, the same difficulty and the same
+## dice, held to two changes. The cushion is tighter, because the chest absorbs
+## what a boot cannot; and the ball goes *down*, never up, so what it buys him is
+## the ball at his feet a moment later rather than a metre of ground now.
+static func chest(ctx: SimContext, player: SimPlayer, intent_dir: Vector3) -> void:
+	_resolve_first_touch(ctx, player, intent_dir)
+	var incoming_speed := ctx.ball.vel.length()
+	var dir := _ft_dir
+	var quality := _ft_quality
+	var residual: float = lerpf(0.5, 0.05, quality) * (1.0 + ctx.rng.gauss_clamped(0.0, 0.28, 2.5))
+	residual = clampf(residual, 0.02, 0.95)
+	var horiz := SimConsts.horizontal(ctx.ball.vel) * residual
+	var cushion: float = lerpf(CHEST_CUSHION_WORST, CHEST_CUSHION_BEST, quality)
+	if horiz.length() > cushion:
+		horiz *= cushion / horiz.length()
+	# Same shape as the first touch: what survives, turned toward where he wants
+	# to go by however good the touch was, plus the small push that sets it.
+	var vel := horiz.lerp(dir * horiz.length(), quality) + dir * lerpf(0.3, 1.1, quality)
+	vel.y = -lerpf(CHEST_DROP_WORST, CHEST_DROP_BEST, quality)
+	var sigma := aim_sigma(ctx, player, player.attrs.first_touch, 2.0, 0.16, dir)
+	# No elevation error: the one thing this touch decides is that the ball comes
+	# down, and a tilt that sent it back up would be a header by another name.
+	vel = _perturb(ctx, vel, sigma, 0.14, 0.0)
+	var flat := SimConsts.horizontal(vel)
+	apply(ctx, player, SimTelemetry.Touch.CHEST, vel, Vector3.ZERO, -1, {
+		"quality": quality, "residual": residual, "pace": flat.length(),
+		"in": incoming_speed, "height": ctx.ball.pos.y,
+	})
+
+
 ## Where a first touch here would leave the ball, as a displacement from where it
 ## is struck.
 ##
@@ -729,7 +945,18 @@ static func clearance(ctx: SimContext, player: SimPlayer) -> void:
 
 ## A header: reflection of the incoming ball, with power from heading and
 ## jumping.
-static func header(ctx: SimContext, player: SimPlayer, dir: Vector3, aim_up: float) -> void:
+##
+## Deliberately not a solved strike. Everything else in this module asks the
+## ballistics for the launch that lands the ball on a point; a header is a man
+## getting his forehead in the way of one and choosing a direction, and how far
+## it then goes is a fact about his neck and the pace of the ball rather than
+## about his intent. `aim_up` is the angle he heads it at, and the distance is
+## whatever that buys.
+##
+## `goal_aim` marks it as an attempt on goal, which is a bookkeeping matter and
+## not a physical one: the strike is the same, and `_log_shot` puts it on the
+## books so a headed goal is a shot like any other.
+static func header(ctx: SimContext, player: SimPlayer, dir: Vector3, aim_up: float, intent: int = -1, goal_aim: Vector3 = Vector3.INF, chance_quality: float = 0.0) -> void:
 	var d := SimConsts.horizontal(dir)
 	if d.length_squared() < 1e-6:
 		d = player.heading_dir()
@@ -741,7 +968,13 @@ static func header(ctx: SimContext, player: SimPlayer, dir: Vector3, aim_up: flo
 	var sigma := aim_sigma(ctx, player, player.attrs.heading, 10.0, 0.13)
 	vel = _perturb(ctx, vel, sigma, 0.16, 1.0)
 	player.spend_action(2.5)
-	apply(ctx, player, SimTelemetry.Touch.HEADER, vel, Vector3.ZERO)
+	var from := ctx.ball.pos
+	# What he was trying to do with it. Nothing else in the log can tell a
+	# clearing header from a knock-down: same player, same kind, same place.
+	apply(ctx, player, SimTelemetry.Touch.HEADER, vel, Vector3.ZERO, -1, {"head": intent})
+	if not is_inf(goal_aim.x):
+		_log_shot(ctx, player, from, goal_aim, chance_quality, true,
+			SimConsts.horizontal_length(goal_aim - from))
 
 
 ## A defender's poke or block. Knocks the ball away from the carrier; where it

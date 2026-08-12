@@ -45,6 +45,32 @@ static func ball_pull_shift(role: int, ball_x: float) -> float:
 	if ball_x >= 0.0 or not SimRole.is_attacking(role):
 		return BALL_PULL_X * ball_x
 	return BALL_PULL_X_HOLD * ball_x
+
+
+## How much wider the back line stands with the ball at its own feet in its own
+## half, as a multiplier on the width the formation gives it.
+##
+## A back four in possession splits. The centre-halves take the width of the
+## penalty area between them and the full-backs go and stand on the touchline,
+## because a pitch is only as big as a side makes it and building out is the one
+## moment nobody is close enough to punish the space between them. The engine had
+## a single width for the whole match -- `SimTactics.width_scale`, a plan-level
+## number that cannot know where the ball is -- so a side playing out of its own
+## box stood exactly as narrow as it does defending a cross. Every angle out of
+## the back then ran through the same crowded middle, and the ball that was on
+## was the square one.
+##
+## Applied to the formation's own z, so the proportions of the line survive and
+## only its width changes: a full-back at 23 m goes to 31, a centre-half at 8 m
+## to 11. It is not a tactical switch — the plan's own `width_scale` multiplies
+## on top, so a narrow side still splits less than a wide one.
+const BUILD_UP_WIDTH := 1.35
+## How deep the ball has to be for the whole of it, as a fraction of the half
+## length. Full inside their own third, gone by the halfway line: splitting the
+## back line is a thing a side does while it still has grass behind it, and a
+## back four that stays split at halfway is one about to be played through.
+const BUILD_UP_DEPTH := 0.55
+
 ## Speed a player uses to hold shape, as a fraction of their maximum.
 const SHAPE_SPEED := 0.25
 const RECOVER_SPEED := 0.72
@@ -166,6 +192,9 @@ static func _assign_chasers(ctx: SimContext) -> void:
 	# A ball nobody has is there to be won, and who is closest to it is a
 	# different question from who should leave his station to press a man.
 	var loose := _ball_is_loose(ctx)
+	# A ball over everyone's heads is contested by more than one man a side, and
+	# it is contested at the ball rather than in the lane behind it.
+	var aerial := not ctx.ball.grounded and SimAerial.is_aerial(ctx)
 	for team in 2:
 		var tactics := ctx.tactics(team)
 		var allowed := tactics.press_commitment()
@@ -174,6 +203,8 @@ static func _assign_chasers(ctx: SimContext) -> void:
 		if ctx.possession_team == team:
 			# In possession, only the player nearest the ball goes to it.
 			allowed = 1
+		if aerial:
+			allowed = maxi(allowed, AERIAL_CHASERS)
 		# Two passes. A squared distance to where the ball is heading is enough
 		# to rule out most of the team, and the real interception model -- which
 		# walks the forecast for every candidate -- then runs only for the few
@@ -236,11 +267,81 @@ static func _assign_chasers(ctx: SimContext) -> void:
 			if i == 0:
 				_chase_role[_rank_ids[i]] = CHASE_PRIMARY
 				continue
+			# A ball in the air has no lane behind it to close, so the second and
+			# third men go at the ball as well. This is what makes a near post, a
+			# far post and a second ball exist at all.
+			if aerial:
+				_chase_role[_rank_ids[i]] = CHASE_PRIMARY
+				continue
 			var p := ctx.players[_rank_ids[i]]
 			if p.dist_to(ball_ground) <= tactics.engage_distance():
 				_chase_role[_rank_ids[i]] = CHASE_SUPPORT
 		if carrier >= 0 and ctx.players[carrier].team == team and _chase_role[carrier] == CHASE_NONE:
 			_chase_role[carrier] = CHASE_PRIMARY
+		if loose:
+			_add_nearby_chaser(ctx, team, receiver, ball_ground)
+
+
+## How many men a side sends at a ball in the air.
+##
+## In possession the cap is one, and one is right for a ball at somebody's feet.
+## It is also the whole reason a cross used to arrive at nobody: the man it was
+## aimed at went for it, and the near post, the far post and the second ball were
+## covered by players holding a shape. A ball hung up in the air is the moment a
+## side stops keeping the ball and attacks a space, and the side defending it
+## does the same -- so both get the floor, whatever the plan says about pressing.
+##
+## Two. Two men going up for a cross is a contest; four is the swarm the guard
+## exists to prevent, and the box would empty out behind them.
+const AERIAL_CHASERS := 2
+
+## A loose ball this close in time, and this close in metres, is a man's to go
+## and get whatever the press cap says.
+const NEARBY_SECONDS := 1.1
+const NEARBY_RANGE := 9.0
+## And this is the fastest it may be moving. Past it, the ball is not rolling
+## past him, it is flying past him, and the man it goes by is not the man who
+## wins it — he is the man who gets pulled out of shape by every driven pass in
+## the match.
+const NEARBY_SPEED := 8.0
+## How many men it may add per side. One. Two players going for the same loose
+## ball is football; three is the swarm the guard exists to prevent.
+const NEARBY_EXTRA := 1
+
+
+## The one exception to the press cap: a ball nobody owns, dying within a stride
+## or two of a man who can reach it.
+##
+## The cap in `_assign_chasers` is right about pressing -- a side does not send
+## five men at a carrier -- and wrong about this, because going to a loose ball
+## at your feet is not a decision to leave a station. Measured against the
+## complaint that players ignore balls rolling slowly beside them, the reason was
+## always the same: the man was the second-ranked chaser and `allowed` was one,
+## which in possession it always is.
+##
+## All four conditions carry weight. Loose, or a marker abandons the press to
+## stand over a ball the carrier has under his foot; slow and near, or a driven
+## pass drags whoever it passes out of shape; in time, or this is just a bigger
+## cap by another name. And not for the side a pass is already travelling to,
+## whose man is on his way to meet it -- a second body converging on the same
+## ball is the swarm, not an interception.
+static func _add_nearby_chaser(ctx: SimContext, team: int, receiver: int, ball_ground: Vector3) -> void:
+	if ctx.ball.ground_speed() > NEARBY_SPEED:
+		return
+	if receiver >= 0 and receiver < ctx.players.size() and ctx.players[receiver].team == team:
+		return
+	var added := 0
+	for pid in _rank_ids:
+		if added >= NEARBY_EXTRA:
+			return
+		if _chase_role[pid] != CHASE_NONE:
+			continue
+		if _chase_time[pid] > NEARBY_SECONDS:
+			continue
+		if ctx.players[pid].dist_to(ball_ground) > NEARBY_RANGE:
+			continue
+		_chase_role[pid] = CHASE_PRIMARY
+		added += 1
 
 
 ## Points along the forecast the prefilter measures players against, with the
@@ -466,7 +567,7 @@ static func shape_position(ctx: SimContext, p: SimPlayer, ball_at: Vector3 = SHA
 	# The shape slides with play rather than being pinned to the formation, and
 	# the front of it does not trail back with a ball played behind it.
 	var x := home.x + ball_pull_shift(p.role, ball_c.x)
-	var z := home.z * tactics.width_scale() + ball_c.z * BALL_PULL_Z
+	var z := home.z * tactics.width_scale() * _build_up_width(ctx, p, ball_c.x) + ball_c.z * BALL_PULL_Z
 
 	# Defensive line height. Only the back line and the pivot are anchored to
 	# it; the front line hangs off the shape ahead of them.
@@ -503,6 +604,21 @@ static func shape_position(ctx: SimContext, p: SimPlayer, ball_at: Vector3 = SHA
 	# A defender never positions behind their own goal line.
 	x = clampf(x, -pitch.half_length + 4.0, pitch.half_length - 1.0)
 	return pitch.orient(p.team, Vector3(x, 0.0, z))
+
+
+## The back line's extra width while this side builds out of its own half, as a
+## multiplier on the formation's z. One for everybody else, and one for anybody
+## at any time the ball is not his own team's and in his own half.
+##
+## `ball_x` is the ball in this player's canonical frame, so "his own half" is
+## simply a negative number and the same expression works at either end.
+static func _build_up_width(ctx: SimContext, p: SimPlayer, ball_x: float) -> float:
+	if ctx.possession_team != p.team:
+		return 1.0
+	if p.role != SimRole.CB and p.role != SimRole.FB:
+		return 1.0
+	var depth: float = clampf(-ball_x / maxf(ctx.pitch.half_length * BUILD_UP_DEPTH, 1.0), 0.0, 1.0)
+	return lerpf(1.0, BUILD_UP_WIDTH, depth)
 
 
 ## Canonical X of the formation's own back line, used as the reference the
