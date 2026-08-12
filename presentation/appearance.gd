@@ -65,6 +65,9 @@ const HAIR_COLOURS := [
 
 ## Hair: a shell round the skull, pushed back to open the face. Style 0 is bald.
 const HAIR_STYLES := 14
+## How far apart in brightness a man's hair and his skin have to be. Below this
+## the head reads as one shape and the haircut is only a silhouette.
+const HAIR_SKIN_SEPARATION := 0.16
 ## Beards were here and came out: a sphere on the jaw is a blob whatever size it
 ## is, and it swallowed the mouth, which is half the expression. Facial hair
 ## belongs on the drawn face if it comes back at all.
@@ -124,7 +127,8 @@ static func from_seed(seed_value: int) -> SimAppearance:
 	a.head_height = lerpf(HEAD_HEIGHT_MIN, HEAD_HEIGHT_MAX, rng.unit_float())
 	a.skin = SKIN_TONES[rng.range_int(0, SKIN_TONES.size() - 1)]
 	a.hair_style = rng.range_int(0, HAIR_STYLES - 1)
-	a.hair_colour = HAIR_COLOURS[rng.range_int(0, HAIR_COLOURS.size() - 1)]
+	a.hair_colour = _separate_hair(
+		HAIR_COLOURS[rng.range_int(0, HAIR_COLOURS.size() - 1)], a.skin)
 	a.accessory = ACCESSORIES[rng.range_int(0, ACCESSORIES.size() - 1)]
 	a.brow_style = rng.range_int(0, SimFaceAtlas.BROW_STYLES.size() - 1)
 	a.eye_style = rng.range_int(0, SimFaceAtlas.EYE_STYLES.size() - 1)
@@ -136,6 +140,34 @@ static func from_seed(seed_value: int) -> SimAppearance:
 	a.socks_high = rng.chance(0.8)
 	a.face = Face.NEUTRAL
 	return a
+
+
+## Hair, moved clear of the skin it sits on.
+##
+## The two tables are drawn from independently, so nothing stopped white hair
+## landing on the palest skin or black on the deepest -- and a head whose hair
+## and face are the same brightness is one shape, not two. The hair is pushed
+## further the way it already leans, so black stays black and white stays white
+## and the man keeps the hair he was given; it only flips when that end has run
+## out of room.
+##
+## Brightness, not hue: a dark blond on a mid skin has to separate, and turning
+## it green would separate it.
+static func _separate_hair(hair: Color, skin: Color) -> Color:
+	var on_skin := skin.get_luminance()
+	var lum := hair.get_luminance()
+	if absf(lum - on_skin) >= HAIR_SKIN_SEPARATION:
+		return hair
+	var below := on_skin - HAIR_SKIN_SEPARATION
+	var above := on_skin + HAIR_SKIN_SEPARATION
+	var darker := lum <= on_skin
+	if darker and below < 0.03:
+		darker = false
+	elif not darker and above > 0.98:
+		darker = true
+	if darker:
+		return hair.darkened(clampf(1.0 - below / maxf(lum, 0.001), 0.0, 0.94))
+	return hair.lightened(clampf((above - lum) / maxf(1.0 - lum, 0.001), 0.0, 0.94))
 
 
 ## The nose, a shade off the skin rather than a different colour from it. The

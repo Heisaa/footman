@@ -204,9 +204,10 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 
 	# --- Arms: shoulder pivot, upper arm, elbow pivot, forearm, mitten ------
 	#
-	# The pivot sits high and outside the torso, with a shoulder cap over it. Set
-	# at 0.82 it was inside the capsule, so the arm came out of the ribs and the
-	# figure had no shoulder line at all.
+	# The pivot sits high and outside the torso. Set at 0.82 it was inside the
+	# capsule, so the arm came out of the ribs and the figure had no shoulder line
+	# at all. The line comes from the top of the arm itself, under the shirt: a
+	# ball laid over the joint gives a shoulder pad and an action figure.
 	#
 	# The flare is on the meshes rather than on the pivot, because the animation
 	# layer assigns `rotation` on every joint it poses and would wipe a rest angle
@@ -220,12 +221,6 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		sh.name = "Shoulder" + tag
 		sh.position = Vector3(side * shoulder * 0.64, torso_h * 0.86, 0.0)
 		spine.add_child(sh)
-
-		# The cap over the joint. It is what squares the top of the figure off, and
-		# it hides the socket whatever the arm is doing.
-		var deltoid := _sphere(limb * 1.24, shirt, true)
-		deltoid.position = Vector3(-side * limb * 0.2, 0.0, 0.0)
-		sh.add_child(deltoid)
 
 		var upper_mat := shirt if appearance.sleeves_long else skin
 		var upper := _capsule(limb, upper_len, upper_mat)
@@ -241,11 +236,15 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		# the cuff round it stood wider than the sleeve it was supposed to finish
 		# and read as a bracelet on a bare arm. A cylinder has a hem.
 		if not appearance.sleeves_long:
-			var sleeve_len := upper_len * 0.5
+			# It starts above the joint, not at it. The arm's own rounded end
+			# stands proud of the shoulder, and on a short sleeve that end is bare
+			# skin, so a sleeve that begins at the pivot leaves a crescent of naked
+			# shoulder above it.
+			var sleeve_len := upper_len * 0.5 + limb
+			var sleeve_at := sleeve_len * 0.5 - limb
 			var sleeve := _band(limb * 1.16, sleeve_len, shirt)
 			sleeve.position = Vector3(
-				side * sin(ARM_FLARE) * sleeve_len * 0.5,
-				-cos(ARM_FLARE) * sleeve_len * 0.5, 0.0)
+				side * sin(ARM_FLARE) * sleeve_at, -cos(ARM_FLARE) * sleeve_at, 0.0)
 			sleeve.rotation = Vector3(0.0, 0.0, side * ARM_FLARE)
 			sh.add_child(sleeve)
 
