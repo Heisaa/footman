@@ -625,8 +625,13 @@ player the same size on screen wherever play is.
 
 ### 9.3 Characters
 
-- Six hundred to twelve hundred triangles. Head roughly 35–40 % of total height. Stubby limbs,
-  mitten hands, no separate fingers, no neck.
+- Six hundred to twelve hundred triangles. Head roughly 30–35 % of total height (amended — see
+  `DECISIONS.md`). Stubby limbs, mitten hands, no separate fingers, no neck.
+- **The figure is drawn, not moulded.** Every body mesh carries an ink outline: the same hull grown
+  a little with its front faces culled. It is the cheapest thing that puts a strip panel's line
+  round a flat-coloured toy, and it costs one pass per mesh.
+- **Generation reaches the tails** (§9.7). Height clusters in the middle of a squad list and
+  occasionally draws a giant or a small one, and build follows height.
 - **No facial rig.** The face is two dots and a simple mouth on a small texture atlas, swapped
   wholesale for expression — neutral, effort, delight, despair, anger. Expression swaps deliver an
   enormous amount of character for almost no cost; use them constantly.

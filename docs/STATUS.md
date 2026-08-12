@@ -58,6 +58,16 @@ count, and takes its camera distance from the aspect actually being rendered rat
 than an assumed 16:9. The virtual display hands out 1280x1024, and the sheet had
 been cutting the outer column off both ends of every row.
 
+A look pass over the figures (`DECISIONS.md`, eighth amendment) cut the head to
+30-35% of height, put an ink outline round every body mesh, let generation reach
+the tails on height and build, and added the era's kit detail: collar, cuffs, a
+sock turnover, a sleeve on a short-sleeved shirt, the number on the back, a
+moustache and a pair of glasses. `./run.sh parade --seed N` is the view it is
+judged in: four of that seed's players at reading distance, turning, each
+captioned with number, name, height and appearance seed, with `O` to take the ink
+off and put it back. It is the same squad `view3d --seed N` plays, so a note
+taken in one holds in the other. Not yet judged by the owner.
+
 ## The recovery run
 
 `SimMovement`'s recovery run made the defence able to end a carry, and a carry is

@@ -192,6 +192,31 @@ coming back:
   file has since been folded into `docs/INVARIANTS.md` and the sixth amendment
   above.
 
+### Eighth: smaller heads, and the figure drawn rather than moulded
+
+Made at the owner's direction after a look pass over the players.
+
+| Section | Was | Now | Why |
+|---|---|---|---|
+| §9.3 | Head roughly 35–40 % of total height | 30–35 % | The owner asked for it smaller. Four heads to a figure is a toy; five is a strip panel, and it lengthens the body, which is what carries a stride. Still far above a real footballer's three-and-a-bit, so the five drawn expressions stay legible at match distance. |
+
+Everything else in the pass is §9.7's register applied to the existing spec
+rather than a change to it, and none of it touches `sim/`:
+
+- **The figure is inked.** Every body mesh carries a second pass — the hull grown
+  by 1.1 % of the figure's height with its front faces culled — so a player has a
+  drawn line round him. `presentation/parade_view.gd` toggles it with `O`, which
+  is the honest way to look at the decision.
+- **Generation reaches the tails.** Height was a flat 1.62–1.95; it is now a bell
+  through 1.70–1.88 with a one-in-seven draw into 1.56–2.04, and build follows
+  height so the giant is built like one. §9.7 asks for archetypes, and a flat
+  draw is exactly how you get eleven similar men.
+- **Kit detail from the era**: collar, cuffs on a long sleeve, a sock turnover, a
+  sleeve on a short-sleeved shirt (it read as a vest without one), and the shirt
+  number on the back.
+- **Two accessories the register names.** The moustache, twice-weighted; and
+  glasses, which were in the table and had never been drawn.
+
 ## Design calls made during the build
 
 **Goals and draws are entertainment targets, not simulation targets.** The owner

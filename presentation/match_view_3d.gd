@@ -1268,7 +1268,7 @@ func _build_players() -> void:
 	var kits := _kits
 	for p in _match.ctx.players:
 		var appearance := SimAppearance.from_seed(p.appearance_seed)
-		var node := SimCharacterBuilder.build(appearance, kits[p.team])
+		var node := SimCharacterBuilder.build(appearance, kits[p.team], p.shirt)
 		node.set_meta("appearance", appearance)
 		add_child(node)
 		_players.append(node)

@@ -73,6 +73,8 @@ unwritable here.
 ./run.sh view3d --debug          # the match with the decision overlay on (display)
 ./run.sh view3d --from-bookmark seed7-t34210   # watch a marked moment again, slowly
 ./run.sh shot | poses            # one frame to a PNG via xvfb | the labelled pose sheet
+./run.sh parade --seed 7         # four of that seed's players close up, numbered, turning
+./run.sh parade --shot out.png   # the same rank to a PNG, no display needed
 ./run.sh record-golden           # re-baseline the golden replay hashes
 ```
 
