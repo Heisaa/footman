@@ -39,6 +39,12 @@ const TORSO_FRACTION := 0.27
 const SHOULDER_FRACTION := 0.138
 ## Limb thickness. Thin: this is the difference between the reference and a brick.
 const LIMB_RADIUS := 0.048
+## How far the arms hang off the body, and how far the toes turn out. Both are
+## small and both are only there to open a gap in the silhouette: a figure with
+## its arms against its sides and its feet parallel is one blob at match
+## distance, and stands to attention up close.
+const ARM_FLARE := 0.14
+const TOE_OUT := 0.17
 const SEGMENTS := 12
 const RINGS := 6
 ## The head, the hair and the shoes are rounder than the rest of the figure. A
@@ -46,8 +52,11 @@ const RINGS := 6
 ## thing being looked at.
 const HEAD_SEGMENTS := 24
 const HEAD_RINGS := 12
-## The drawn face, as a fraction of the head radius.
+## The drawn face, as a fraction of the head radius, how far out from the middle
+## of the head it is bent, and how many columns the bend is made of.
 const FACE_QUAD := 1.5
+const FACE_SHELL := 1.02
+const FACE_COLUMNS := 14
 ## Moulded vinyl, not paper: the reference figures carry a soft highlight and it
 ## is most of what makes them read as objects rather than flat shapes. Scenery
 ## keeps the old dead-flat material.
@@ -105,7 +114,11 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	spine.position = Vector3(0.0, leg_h, 0.0)
 	root.add_child(spine)
 
-	var torso := _capsule(shoulder * 0.82, torso_h * 0.9, shirt)
+	# Wide enough at the chest and long enough to have a straight section in the
+	# middle. At 0.82 by 0.9 the capsule's height was barely twice its radius, so
+	# it was a sphere in all but name: widest at the belly, tapering back in at the
+	# chest, which is a pear. The widest part of a man is his shoulders.
+	var torso := _capsule(shoulder * 0.76, torso_h, shirt)
 	torso.position = Vector3(0.0, torso_h * 0.5, 0.0)
 	spine.add_child(torso)
 	# The shorts, in the kit's second colour, so the kit reads in two blocks.
@@ -129,7 +142,7 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		digits.name = "ShirtNumber"
 		digits.text = str(shirt_number)
 		digits.font_size = 128
-		digits.pixel_size = torso_h * 0.0034
+		digits.pixel_size = torso_h * 0.0027
 		digits.modulate = second_colour
 		digits.outline_size = 24
 		digits.outline_modulate = SimPalette.INK
@@ -137,7 +150,9 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		# Cut rather than blended: a blended quad this close to the torso sorts
 		# against it and flickers as the figure turns.
 		digits.alpha_cut = Label3D.ALPHA_CUT_DISCARD
-		digits.position = Vector3(0.0, torso_h * 0.68, -shoulder * 0.78 - 0.01)
+		# Between the shoulder blades. At 0.68 the top of the digit ran into the
+		# collar and the shoulder took a bite out of it.
+		digits.position = Vector3(0.0, torso_h * 0.5, -shoulder * 0.78 - 0.01)
 		spine.add_child(digits)
 
 	# --- Head, on a neck pivot ----------------------------------------------
@@ -162,9 +177,11 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	# rather than placed by hand: the drawn eye row is a little above the middle
 	# of the texture, so the texture sits that much below the middle of the
 	# skull. Brows above, nose and mouth below, all follow from it.
-	var face := _face_quad(head_r, appearance)
+	var face := _face_shell(head_r, appearance)
 	var eye_drop: float = (16.0 - SimFaceAtlas.EYE_ROW) / SimFaceAtlas.GRID * head_r * FACE_QUAD
-	face.position = Vector3(0.0, -eye_drop, head_r * 0.96)
+	# Only down the head. The bend is round the vertical axis, so sliding the
+	# strip down it keeps every part of it the same distance out.
+	face.position = Vector3(0.0, -eye_drop, 0.0)
 	face.name = "Face"
 	head.add_child(face)
 	# The expression swaps at run time and has to keep the man's own face under
@@ -186,34 +203,65 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	_accessory(appearance, head_r, head, kit)
 
 	# --- Arms: shoulder pivot, upper arm, elbow pivot, forearm, mitten ------
+	#
+	# The pivot sits high and outside the torso, with a shoulder cap over it. Set
+	# at 0.82 it was inside the capsule, so the arm came out of the ribs and the
+	# figure had no shoulder line at all.
+	#
+	# The flare is on the meshes rather than on the pivot, because the animation
+	# layer assigns `rotation` on every joint it poses and would wipe a rest angle
+	# the moment a man moved. Hung straight down, arms and hands touch the shorts
+	# and the whole figure is one mass at match distance; a few degrees out is the
+	# cheapest daylight in the silhouette there is.
+	var upper_len := torso_h * 0.52
 	for side in [-1.0, 1.0]:
 		var tag: String = "L" if side < 0.0 else "R"
 		var sh := Node3D.new()
 		sh.name = "Shoulder" + tag
-		sh.position = Vector3(side * shoulder * 0.62, torso_h * 0.82, 0.0)
+		sh.position = Vector3(side * shoulder * 0.64, torso_h * 0.86, 0.0)
 		spine.add_child(sh)
 
+		# The cap over the joint. It is what squares the top of the figure off, and
+		# it hides the socket whatever the arm is doing.
+		var deltoid := _sphere(limb * 1.24, shirt, true)
+		deltoid.position = Vector3(-side * limb * 0.2, 0.0, 0.0)
+		sh.add_child(deltoid)
+
 		var upper_mat := shirt if appearance.sleeves_long else skin
-		var upper := _capsule(limb, torso_h * 0.52, upper_mat)
-		upper.position = Vector3(0.0, -torso_h * 0.26, 0.0)
+		var upper := _capsule(limb, upper_len, upper_mat)
+		upper.position = Vector3(
+			side * sin(ARM_FLARE) * upper_len * 0.5, -cos(ARM_FLARE) * upper_len * 0.5, 0.0)
+		upper.rotation = Vector3(0.0, 0.0, side * ARM_FLARE)
 		sh.add_child(upper)
 
 		# A short sleeve is still a sleeve. Without this the arm is bare to the
 		# shoulder and the shirt reads as a vest.
+		#
+		# A cylinder, not a capsule: a capsule's rounded end tapers to nothing, so
+		# the cuff round it stood wider than the sleeve it was supposed to finish
+		# and read as a bracelet on a bare arm. A cylinder has a hem.
 		if not appearance.sleeves_long:
-			var sleeve := _capsule(limb * 1.15, torso_h * 0.24, shirt)
-			sleeve.position = Vector3(0.0, -torso_h * 0.11, 0.0)
+			var sleeve_len := upper_len * 0.5
+			var sleeve := _band(limb * 1.16, sleeve_len, shirt)
+			sleeve.position = Vector3(
+				side * sin(ARM_FLARE) * sleeve_len * 0.5,
+				-cos(ARM_FLARE) * sleeve_len * 0.5, 0.0)
+			sleeve.rotation = Vector3(0.0, 0.0, side * ARM_FLARE)
 			sh.add_child(sleeve)
 
-		# The cuff at the end of the sleeve, long or short.
-		var cuff_at: float = -torso_h * (0.52 if appearance.sleeves_long else 0.23)
-		var cuff := _band(limb * 1.18, torso_h * 0.035, trim)
-		cuff.position = Vector3(0.0, cuff_at, 0.0)
+		# The trim at the end of the sleeve, long or short. On a long sleeve it
+		# sits short of the elbow, where the arm is still full width.
+		var cuff_at: float = upper_len * (0.85 if appearance.sleeves_long else 0.46)
+		var cuff := _band(limb * (1.14 if appearance.sleeves_long else 1.22), torso_h * 0.035, trim)
+		cuff.position = Vector3(
+			side * sin(ARM_FLARE) * cuff_at, -cos(ARM_FLARE) * cuff_at, 0.0)
+		cuff.rotation = Vector3(0.0, 0.0, side * ARM_FLARE)
 		sh.add_child(cuff)
 
 		var elbow := Node3D.new()
 		elbow.name = "Elbow" + tag
-		elbow.position = Vector3(0.0, -torso_h * 0.52, 0.0)
+		elbow.position = Vector3(
+			side * sin(ARM_FLARE) * upper_len, -cos(ARM_FLARE) * upper_len, 0.0)
 		sh.add_child(elbow)
 
 		var fore := _capsule(limb * 0.92, torso_h * 0.48, skin)
@@ -278,6 +326,9 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		var foot := _sphere(limb * 1.35, boot, true)
 		foot.scale = Vector3(1.0, 0.62, 1.7)
 		foot.position = Vector3(0.0, -limb * 0.1, limb * 0.85)
+		# Turned out, like a man standing rather than a man on parade. On the mesh
+		# and not on the ankle, which the animation layer poses.
+		foot.rotation = Vector3(0.0, side * TOE_OUT, 0.0)
 		ankle.add_child(foot)
 
 	return root
@@ -294,11 +345,19 @@ static func _v_neck(spine: Node3D, shoulder: float, torso_h: float, trim: Materi
 	# Each bar leans its top *outwards*. Leaning them the other way -- which is
 	# what the first version did -- crosses them at the collarbone and the man is
 	# wearing a bow tie.
+	#
+	# Set deep, so that most of each bar is inside the chest and only a sliver of
+	# it stands proud. Laid on the surface they were two tabs hovering in front of
+	# a round torso -- braces rather than a collar -- because a straight box
+	# touching a curve touches it in one place only.
 	for side in [-1.0, 1.0]:
 		var bar := _box(
-			Vector3(torso_h * 0.05, torso_h * 0.3, shoulder * 0.26), trim)
-		bar.position = Vector3(side * shoulder * 0.2, torso_h * 0.76, shoulder * 0.7)
-		bar.rotation = Vector3(0.0, 0.0, -side * 0.55)
+			Vector3(torso_h * 0.042, torso_h * 0.24, shoulder * 0.34), trim)
+		bar.position = Vector3(side * shoulder * 0.18, torso_h * 0.72, shoulder * 0.55)
+		# Pitched back at the top as well as leaned out, because the chest is a
+		# dome and a straight bar on a dome only touches it in the middle. Without
+		# this the top of each bar hangs off the front of the shoulder in the air.
+		bar.rotation = Vector3(-0.4, 0.0, -side * 0.55)
 		spine.add_child(bar)
 	# Closed round the back of the neck.
 	var back := _band(shoulder * 0.46, torso_h * 0.045, trim)
@@ -337,19 +396,20 @@ static func _nose(appearance: SimAppearance, head_r: float) -> MeshInstance3D:
 
 ## A jaw. One sphere is an egg: it tapers to the same point at the bottom as at
 ## the top, and a head does not. This is a second ellipsoid overlapping the lower
-## half, wide enough to stand proud of the skull between the ears and the chin
-## and back inside it above and below, which is cheeks rather than a second head.
+## half, fuller than the skull down the cheeks and the chin and back inside it
+## above, which is a jaw rather than a second head.
 ##
-## It stays behind the face quad at 0.96 of the radius, so the drawn mouth is
-## never buried.
+## It stays inside `FACE_SHELL`, so the drawn mouth is never buried.
 static func _jaw(head: Node3D, head_r: float, skin: Material) -> void:
 	var jaw := _sphere(head_r, skin, true)
 	jaw.name = "Jaw"
-	# Almost tangent to the skull at the equator and progressively fuller below
-	# it. Set squatter than this it crosses the head at an angle and leaves a
-	# crease across the cheek, which reads as a mask rather than a jaw.
-	jaw.position = Vector3(0.0, -head_r * 0.16, 0.0)
-	jaw.scale = Vector3(1.02, 0.9, 0.98)
+	# Tangent to the skull at the equator and progressively fuller below it. The
+	# width was 1.02, which made it stand proud all the way up past the ears and
+	# cross the skull at an angle: two smooth surfaces meeting at an angle leave a
+	# lit crease, and on a bald man that crease ran across his face. At 1.0 it
+	# crosses almost tangentially and the seam goes.
+	jaw.position = Vector3(0.0, -head_r * 0.14, 0.0)
+	jaw.scale = Vector3(1.0, 0.92, 0.99)
 	head.add_child(jaw)
 
 
@@ -359,8 +419,8 @@ static func _jaw(head: Node3D, head_r: float, skin: Material) -> void:
 static func _crown(head: Node3D, head_r: float, skin: Material) -> void:
 	var crown := _sphere(head_r, skin, true)
 	crown.name = "Crown"
-	crown.position = Vector3(0.0, head_r * 0.14, 0.0)
-	crown.scale = Vector3(1.02, 0.88, 0.98)
+	crown.position = Vector3(0.0, head_r * 0.12, 0.0)
+	crown.scale = Vector3(1.0, 0.9, 0.99)
 	head.add_child(crown)
 
 
@@ -422,8 +482,8 @@ static func _moustache(head: Node3D, head_r: float, appearance: SimAppearance) -
 # hanging below a hairline rather than more helmet.
 #
 # The limit on every row is the face. The drawn brows sit about a quarter of a
-# head-radius above the middle of the face and the face quad is at 0.96 of the
-# radius, so no row may reach past about 0.95 at that height. Lifting the shell
+# head-radius above the middle of the face and the face shell is just outside the
+# skull, so no row may reach past about 0.95 at that height. Lifting the shell
 # puts its widest ring at about brow height, so that reach is now `radius - back
 # - HAIR_BACK_EXTRA`, and the rule is `back >= radius - 1.00`.
 
@@ -625,12 +685,56 @@ static func _box(size: Vector3, material: Material) -> MeshInstance3D:
 	return node
 
 
-static func _face_quad(head_r: float, appearance: SimAppearance) -> MeshInstance3D:
-	var mesh := QuadMesh.new()
-	mesh.size = Vector2(head_r * FACE_QUAD, head_r * FACE_QUAD)
+## The drawn face, bent round the skull instead of laid flat against it.
+##
+## A flat plate is right head-on and wrong from anywhere else. At three-quarters
+## -- which is the angle the match camera actually holds -- the features slide
+## towards the near edge of the plate and the far brow drifts off the cheek. One
+## strip of triangles bent round the vertical axis fixes it.
+##
+## Bent one way only. The head yaws far more than it nods, and a vertical bend
+## would have to clear the jaw, which stands proud exactly where the mouth is.
+##
+## The strip sits a little outside the skull, so nothing underneath can poke
+## through the face, and it is drawn on both sides because the back of it is
+## inside the head where nobody can see it.
+static func _face_shell(head_r: float, appearance: SimAppearance) -> MeshInstance3D:
+	var size := head_r * FACE_QUAD
+	var radius := head_r * FACE_SHELL
+	var half := size * 0.5
+	var verts := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var normals := PackedVector3Array()
+	var indices := PackedInt32Array()
+	for i in FACE_COLUMNS + 1:
+		var u := float(i) / float(FACE_COLUMNS)
+		# Arc length, not chord: the eyes stay as far apart on the curve as they
+		# were on the flat plate.
+		var angle: float = (u - 0.5) * size / radius
+		var at := Vector3(sin(angle), 0.0, cos(angle))
+		verts.push_back(at * radius + Vector3(0.0, half, 0.0))
+		verts.push_back(at * radius - Vector3(0.0, half, 0.0))
+		uvs.push_back(Vector2(u, 0.0))
+		uvs.push_back(Vector2(u, 1.0))
+		normals.push_back(at)
+		normals.push_back(at)
+	for i in FACE_COLUMNS:
+		var a := i * 2
+		indices.append_array([a, a + 1, a + 2, a + 2, a + 1, a + 3])
+
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+
 	var node := MeshInstance3D.new()
 	node.mesh = mesh
 	var m := flat_material(Color.WHITE)
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	m.albedo_texture = SimFaceAtlas.texture_for(
 		SimAppearance.Face.NEUTRAL, appearance.brow_style, appearance.eye_style,
 		appearance.mouth_style)
