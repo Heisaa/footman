@@ -19,13 +19,14 @@ const HEAD_FRACTION_MAX := 0.31
 ## How far the head departs from a ball: 1.0 is round, and the two axes are drawn
 ## apart so a squad has long faces and wide ones. The face quad hangs off the
 ## head, so it stretches with it -- which is the Mii trick, and free.
-## Wider than tall, always: the reference heads are broad and slightly squashed,
-## never egg-shaped. The variation inside that is small on purpose -- the shape of
-## a head is supposed to be noticed second, after the man.
-const HEAD_WIDTH_MIN := 1.02
-const HEAD_WIDTH_MAX := 1.14
-const HEAD_HEIGHT_MIN := 0.90
-const HEAD_HEIGHT_MAX := 1.00
+## Taller than wide, always. The long axis of the head runs top to bottom, which
+## is the way round a head actually is; it was the other way and every figure was
+## broad in the face. The variation inside that is small on purpose -- the shape
+## of a head is supposed to be noticed second, after the man.
+const HEAD_WIDTH_MIN := 0.90
+const HEAD_WIDTH_MAX := 1.00
+const HEAD_HEIGHT_MIN := 1.04
+const HEAD_HEIGHT_MAX := 1.16
 ## Heights. A squad wants a giant and a small one in it, so the range reaches
 ## further out than a squad list would and the draw below spends most of its mass
 ## in the middle anyway.

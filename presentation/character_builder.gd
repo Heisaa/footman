@@ -141,8 +141,10 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 
 	var head := _sphere(head_r, skin, true)
 	# Sat down onto the shoulders. The reference figures have no neck at all and
-	# a gap under the chin is the first thing that breaks them.
-	head.position = Vector3(0.0, head_r * 0.78, 0.0)
+	# a gap under the chin is the first thing that breaks them. Lifted by however
+	# much taller than round this head is, so a long head keeps its chin where a
+	# round one has it rather than sinking into the chest.
+	head.position = Vector3(0.0, head_r * (appearance.head_height - 0.22), 0.0)
 	# Not a ball. The face, the hair and the ears are children of it, so one
 	# scale gives a long face or a wide one and everything stretches with it.
 	head.scale = Vector3(appearance.head_width, appearance.head_height, appearance.head_width)
