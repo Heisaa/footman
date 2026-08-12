@@ -14,8 +14,8 @@ extends RefCounted
 ## (see `DECISIONS.md`). It lengthens the body, which is what carries a stride,
 ## and it is still far above the three-heads-plus-a-bit of a real man, so the
 ## face stays legible at match distance.
-const HEAD_FRACTION_MIN := 0.28
-const HEAD_FRACTION_MAX := 0.33
+const HEAD_FRACTION_MIN := 0.27
+const HEAD_FRACTION_MAX := 0.31
 ## How far the head departs from a ball: 1.0 is round, and the two axes are drawn
 ## apart so a squad has long faces and wide ones. The face quad hangs off the
 ## head, so it stretches with it -- which is the Mii trick, and free.
@@ -140,8 +140,8 @@ static func _nose_colour(skin: Color, rng: SimRng) -> Color:
 	var hue: float = fposmod(lerpf(-0.015, 0.045, rng.unit_float()), 1.0)
 	var target := Color.from_hsv(
 		hue,
-		clampf(skin.s * 1.2 + 0.3, 0.0, 0.78),
-		clampf(skin.v * 0.94, 0.0, 1.0))
+		clampf(skin.s * 1.2 + 0.3, 0.38, 0.78),
+		clampf(skin.v * 0.9, 0.0, 1.0))
 	# Enough of the target to read as a different colour from the face. Held just
 	# short of a circus nose: this is a man who has been out in the cold.
 	return skin.lerp(target, rng.range_float(0.5, 0.8))

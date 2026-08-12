@@ -308,6 +308,34 @@ out: the answer was the opposite, roughly a quarter to a third of the head
 between the pupils and the eyes drawn large, with the mouth brought up under the
 nose rather than down at the jaw.
 
+### Tenth: the toy-figure reference, and the trim comes back
+
+The owner supplied a rank of six toy footballers and asked for the figure to be
+closer to it. Two things follow, and one of them reverses part of the eighth
+amendment.
+
+**Proportions.** What made ours look top-heavy was never the head — measured
+against the reference the heads are much the same, a little under a third of
+height. It was a fat torso on short legs with boxing-glove hands. So: legs from
+0.46 of height to 0.50, torso from 0.30 to 0.27, shoulders narrower, limbs
+thinner, hands from half again the arm's radius to a tenth over it, arms longer
+so they hang to the bottom of the shorts, and the boot is a rounded shoe rather
+than a box — the last part of the figure that still read as Lego. The shorts now
+stop at mid-thigh with bare leg below, instead of running to the knee, which was
+a pair of trousers.
+
+**The trim comes back.** The eighth amendment took out a collar, cuffs and a
+sock turnover as eighties dressing. The reference has all three — a neckline in
+the second colour, a cuff at the sleeve, hoops near the top of the sock — so
+they are back, and the reasoning is corrected rather than quietly dropped: that
+trim is not period dressing, it is *how a football kit is drawn*, in blocks of
+two colours. What the eighth amendment was right about is unchanged: no ink
+outline, and the register stays out of the art.
+
+Not taken from the reference: the moustaches on two of its figures, and its
+plain skin-coloured noses. Both are open for the owner to call, and the nose in
+particular was a deliberate instruction two rounds earlier.
+
 ## Design calls made during the build
 
 **Goals and draws are entertainment targets, not simulation targets.** The owner

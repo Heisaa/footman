@@ -72,6 +72,12 @@ tried in the same pass and removed: §9.7's register governs the writing, not th
 art, and §9.7 now says so. Delight and despair had been drawn upside down since
 the atlas was written; the parade is where that became visible.
 
+A second reference — a rank of toy footballers — moved the proportions: longer
+legs, a shorter and narrower torso, thinner limbs, small hands, arms that hang
+to the bottom of the shorts, rounded shoes, and shorts that stop at mid-thigh
+rather than running to the knee. Kit trim came back with it (neckline, cuffs,
+sock hoops), reversing part of the eighth amendment; `DECISIONS.md` records why.
+
 `./run.sh parade --seed N` is the view the figures are judged in: four of that
 seed's players at reading distance, turning, each captioned with number, name,
 height and appearance seed, `1-5` for the expressions and `--turn 180 --still`

@@ -658,6 +658,8 @@ player the same size on screen wherever play is.
 - **Procedural appearance from a seed**, Mii-style: body type, skin tone, hair mesh and colour, face
   atlas index, accessory. A five-hundred-player database therefore has visual identity essentially
   for free — and memorable-looking players are what make the man-management layer land at all.
+- **Kit trim in the second colour**: a neckline, a cuff at the sleeve, hoops near the top of the
+  sock. Not period dressing — it is how a kit is drawn, in blocks of two colours.
 - Kits are flat two- or three-colour materials driven by a palette resource. Define a master palette
   of sixteen to twenty-four colours so the game stays coherent and can be re-skinned per competition.
 

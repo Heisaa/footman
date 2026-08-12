@@ -37,10 +37,13 @@ extends RefCounted
 ## shot with the expression system — five drawn faces, swapped constantly —
 ## invisible. The band itself now lives in `SimAppearance.HEAD_FRACTION_MIN/MAX`,
 ## which the owner cut to 0.30-0.35 for a longer body.
-const LEG_FRACTION := 0.46
-const TORSO_FRACTION := 0.30
+## Long legs, a short narrow torso and a head that sits straight on it. The
+## reference figure is a good deal slimmer than this file used to build: what
+## made ours look top-heavy was never the head, it was a fat torso on short legs.
+const LEG_FRACTION := 0.50
+const TORSO_FRACTION := 0.27
 ## Limb thickness. Thin: this is the difference between the reference and a brick.
-const LIMB_RADIUS := 0.052
+const LIMB_RADIUS := 0.048
 const SEGMENTS := 12
 const RINGS := 6
 ## The head and the hair are rounder than the rest of the figure. A twelve-sided
@@ -72,7 +75,7 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	var head_r := h * appearance.head_fraction * 0.5
 	var leg_h := h * LEG_FRACTION
 	var torso_h := h * TORSO_FRACTION
-	var shoulder := h * 0.155 * appearance.body_width()
+	var shoulder := h * 0.138 * appearance.body_width()
 	# Limbs scale with the man. A constant radius made the giant spindly and the
 	# small one stumpy, which is the wrong way round for both.
 	var limb := LIMB_RADIUS * (h / 1.78) * lerpf(0.9, 1.2, appearance.build)
@@ -89,13 +92,20 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	spine.position = Vector3(0.0, leg_h, 0.0)
 	root.add_child(spine)
 
-	var torso := _capsule(shoulder * 0.78, torso_h * 0.8, shirt)
-	torso.position = Vector3(0.0, torso_h * 0.5, 0.0)
+	var torso := _capsule(shoulder * 0.82, torso_h * 0.86, shirt)
+	torso.position = Vector3(0.0, torso_h * 0.52, 0.0)
 	spine.add_child(torso)
-	# A hint of hips in the shorts colour, so the kit reads in two parts.
-	var hips := _capsule(shoulder * 0.74, torso_h * 0.24, shorts)
+	# The shorts, in the kit's second colour, so the kit reads in two blocks.
+	var hips := _capsule(shoulder * 0.76, torso_h * 0.30, shorts)
 	hips.position = Vector3(0.0, torso_h * 0.06, 0.0)
 	spine.add_child(hips)
+
+	# The neckline. A thin ring of the second colour where the reference has a
+	# V: at this size the trim is a line of colour and the shape of it is below
+	# the resolution of anything but a close-up.
+	var collar := _band(shoulder * 0.5, torso_h * 0.05, flat_material(second_colour))
+	collar.position = Vector3(0.0, torso_h * 0.95, 0.0)
+	spine.add_child(collar)
 
 	# The number on the back. A squad of twenty-two flat-coloured men is hard to
 	# talk about; a number is how a crowd names one, and it is period-correct.
@@ -158,29 +168,36 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		spine.add_child(sh)
 
 		var upper_mat := shirt if appearance.sleeves_long else skin
-		var upper := _capsule(limb, torso_h * 0.42, upper_mat)
-		upper.position = Vector3(0.0, -torso_h * 0.21, 0.0)
+		var upper := _capsule(limb, torso_h * 0.52, upper_mat)
+		upper.position = Vector3(0.0, -torso_h * 0.26, 0.0)
 		sh.add_child(upper)
 
 		# A short sleeve is still a sleeve. Without this the arm is bare to the
 		# shoulder and the shirt reads as a vest.
 		if not appearance.sleeves_long:
-			var sleeve := _capsule(limb * 1.12, torso_h * 0.16, shirt)
-			sleeve.position = Vector3(0.0, -torso_h * 0.07, 0.0)
+			var sleeve := _capsule(limb * 1.15, torso_h * 0.24, shirt)
+			sleeve.position = Vector3(0.0, -torso_h * 0.11, 0.0)
 			sh.add_child(sleeve)
+
+		# The cuff at the end of the sleeve, long or short.
+		var cuff_at: float = -torso_h * (0.52 if appearance.sleeves_long else 0.23)
+		var cuff := _band(limb * 1.18, torso_h * 0.035, flat_material(second_colour))
+		cuff.position = Vector3(0.0, cuff_at, 0.0)
+		sh.add_child(cuff)
 
 		var elbow := Node3D.new()
 		elbow.name = "Elbow" + tag
-		elbow.position = Vector3(0.0, -torso_h * 0.42, 0.0)
+		elbow.position = Vector3(0.0, -torso_h * 0.52, 0.0)
 		sh.add_child(elbow)
 
-		var fore := _capsule(limb * 0.92, torso_h * 0.38, skin)
-		fore.position = Vector3(0.0, -torso_h * 0.19, 0.0)
+		var fore := _capsule(limb * 0.92, torso_h * 0.48, skin)
+		fore.position = Vector3(0.0, -torso_h * 0.24, 0.0)
 		elbow.add_child(fore)
 
-		# Mitten hand: one sphere, no fingers.
-		var hand := _sphere(limb * 1.5, skin)
-		hand.position = Vector3(0.0, -torso_h * 0.4, 0.0)
+		# Mitten hand: one sphere, no fingers, and small. At half again the arm it
+		# was a boxing glove.
+		var hand := _sphere(limb * 1.12, skin)
+		hand.position = Vector3(0.0, -torso_h * 0.5, 0.0)
 		elbow.add_child(hand)
 
 	# --- Legs: hip pivot, thigh, knee pivot, shin, boot ---------------------
@@ -191,9 +208,15 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		hip.position = Vector3(side * shoulder * 0.34, leg_h, 0.0)
 		root.add_child(hip)
 
-		var thigh := _capsule(limb * 1.15, leg_h * 0.46, shorts)
+		# Bare thigh, with the shorts pulled over the top of it. The thigh used to
+		# be shorts-coloured end to end, which is a pair of trousers.
+		var thigh := _capsule(limb * 1.1, leg_h * 0.46, skin)
 		thigh.position = Vector3(0.0, -leg_h * 0.23, 0.0)
 		hip.add_child(thigh)
+
+		var short_leg := _capsule(limb * 1.18, leg_h * 0.2, shorts)
+		short_leg.position = Vector3(0.0, -leg_h * 0.08, 0.0)
+		hip.add_child(short_leg)
 
 		var knee := Node3D.new()
 		knee.name = "Knee" + tag2
@@ -205,6 +228,13 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		shin.position = Vector3(0.0, -leg_h * 0.22, 0.0)
 		knee.add_child(shin)
 
+		# Two hoops near the top of the sock, as the reference has.
+		if appearance.socks_high:
+			for band_at in [0.09, 0.15]:
+				var hoop := _band(limb * 1.04, leg_h * 0.022, flat_material(second_colour))
+				hoop.position = Vector3(0.0, -leg_h * band_at, 0.0)
+				knee.add_child(hoop)
+
 		var ankle := Node3D.new()
 		ankle.name = "Ankle" + tag2
 		# Where the boot already sat, so a zero ankle rotation is the old figure
@@ -212,8 +242,11 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		ankle.position = Vector3(0.0, -leg_h * 0.45, 0.0)
 		knee.add_child(ankle)
 
-		var foot := _box(Vector3(limb * 2.2, limb * 1.6, limb * 4.0), boot)
-		foot.position = Vector3(0.0, 0.0, limb * 1.1)
+		# A rounded shoe rather than a block: the reference boots are domes, and a
+		# box on the end of a round leg is the one part that still read as Lego.
+		var foot := _sphere(limb * 1.35, boot, true)
+		foot.scale = Vector3(1.0, 0.62, 1.7)
+		foot.position = Vector3(0.0, -limb * 0.1, limb * 0.85)
 		ankle.add_child(foot)
 
 	return root

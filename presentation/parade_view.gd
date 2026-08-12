@@ -36,7 +36,7 @@ const BREATH_RATE := 1.3
 const BREATH_DEPTH := 0.006
 ## Arms hang inside the torso on a figure that is not running, so the stand pose
 ## pushes them out and puts a bend in the elbow.
-const ARM_OUT := 0.16
+const ARM_OUT := 0.10
 const ELBOW_BEND := -0.22
 
 var _seed := 7
