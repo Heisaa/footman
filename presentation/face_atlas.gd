@@ -38,6 +38,11 @@ const SIZE := 128
 const GRID := 32.0
 const SCALE := SIZE / GRID
 
+## Where the eyes sit in the unit grid. Every style is within a few tenths of it,
+## and `SimCharacterBuilder` hangs the whole face off this number so the eye row
+## lands exactly on the equator of the head.
+const EYE_ROW := 14.6
+
 const INK := Color(0.13, 0.11, 0.15, 1.0)
 const WHITE := Color(1.0, 1.0, 1.0, 1.0)
 

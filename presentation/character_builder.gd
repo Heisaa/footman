@@ -46,6 +46,8 @@ const RINGS := 6
 ## The head and the hair are rounder than the rest of the figure. A twelve-sided
 ## sphere is a chunky limb and a boxy skull, and the skull is the thing being
 ## looked at.
+## The drawn face, as a fraction of the head radius.
+const FACE_QUAD := 1.5
 const HEAD_SEGMENTS := 24
 const HEAD_RINGS := 12
 
@@ -274,7 +276,7 @@ static func _box(size: Vector3, material: Material) -> MeshInstance3D:
 
 static func _face_quad(head_r: float, appearance: SimAppearance) -> MeshInstance3D:
 	var mesh := QuadMesh.new()
-	mesh.size = Vector2(head_r * 1.5, head_r * 1.5)
+	mesh.size = Vector2(head_r * FACE_QUAD, head_r * FACE_QUAD)
 	var node := MeshInstance3D.new()
 	node.mesh = mesh
 	var m := flat_material(Color.WHITE)
@@ -319,13 +321,16 @@ static func _face_quad(head_r: float, appearance: SimAppearance) -> MeshInstance
 ## Each row is [radius, length, height on the face, how far out, z scale].
 ## Length has to clear twice the radius by a good margin or the capsule collapses
 ## into a sphere -- half these rows did, which is why the shape could not be seen.
+## The heights are measured from the equator, where the eyes now are, and the
+## lengths are cut to fit between them and the mouth at four tenths of a radius
+## down. Sized for the old layout they hung into the mouth like a proboscis.
 const NOSE_LIBRARY := [
-	[0.100, 0.32, -0.07, 1.00, 1.05],  # a small straight one
-	[0.112, 0.32, -0.09, 0.99, 0.95],  # broader
-	[0.092, 0.38, -0.06, 1.01, 1.15],  # long and fine
-	[0.118, 0.44, -0.10, 0.99, 1.00],  # a big one
-	[0.090, 0.28, -0.05, 1.01, 1.00],  # a neat short one, high on the face
-	[0.122, 0.36, -0.08, 0.98, 0.95],  # broad
+	[0.090, 0.26, -0.14, 1.00, 1.05],  # a small straight one
+	[0.100, 0.28, -0.15, 0.99, 0.95],  # broader
+	[0.082, 0.24, -0.13, 1.01, 1.15],  # short and fine
+	[0.105, 0.32, -0.17, 0.99, 1.00],  # a big one
+	[0.080, 0.22, -0.12, 1.01, 1.00],  # a neat short one, high on the face
+	[0.110, 0.30, -0.16, 0.98, 0.95],  # broad
 ]
 
 

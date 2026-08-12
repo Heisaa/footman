@@ -293,6 +293,14 @@ that is what a capsule collapses to. They now stand fully proud of the skull at
 skin at the same time, and the drawn features moved a little lower and a little
 wider apart.
 
+The face is now **hung off the eye row** rather than positioned by eye. The owner
+asked for the eyes on the equator of the head, and nudging the quad up and down
+kept missing it, so the builder computes the offset from
+`SimFaceAtlas.EYE_ROW`: the drawn eye row sits a little above the middle of the
+texture, so the texture sits that much below the middle of the skull, and the
+eyes land on the equator exactly. Brows above and nose and mouth below follow
+from it, and the nose lengths were cut to fit the space that leaves.
+
 The spacing of the features is the part that took two goes. Pulling the eyes in
 to a fifth of a head-width apart made every man look pinched, and it is recorded
 here because it looks like the obvious fix for a face that reads as too spread
