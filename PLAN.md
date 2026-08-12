@@ -632,13 +632,19 @@ player the same size on screen wherever play is.
 - **Variety comes from proportion and face**, not from detail: head size, head shape (the head is
   scaled on two axes, and the face stretches with it), height, build, skin, hair, and the brows,
   eyes, mouth and nose a player was born with.
+- **The nose is geometry, not a drawn mark**: a small skin-coloured bump on the front of the head,
+  from a library of shapes. At this size an inked nose is a smudge between the eyes, and a bump
+  catches the light and does the whole job for one sphere.
+- **Hair colours are colours hair comes in** — black, browns, blonds, ginger, grey, white.
 - **Hair is a sphere slightly larger than the skull, pushed back.** Radius is how much hair there
   is; the push back is where the hairline lands. Nothing is perched on the crown — a squashed
   ellipsoid sitting on top of a head is a hat, and reads as one every time.
 - **Generation reaches the tails.** Height clusters in the middle of a squad list and occasionally
   draws a giant or a small one, and build follows height.
-- **No facial rig.** The face is two dots and a simple mouth on a small texture atlas, swapped
-  wholesale for expression — neutral, effort, delight, despair, anger. Expression swaps deliver an
+- **No facial rig.** The face is drawn on a texture and swapped
+  wholesale for expression — neutral, effort, delight, despair, anger. It is generated at a
+  resolution the close-up view can stand and anti-aliased from the shapes' own distance functions,
+  so a curve is a curve rather than a staircase. Expression swaps deliver an
   enormous amount of character for almost no cost; use them constantly. The *shape* of the eyes and
   the mouth is per-player and independent of the expression: the neutral face a man wears for almost
   the whole match is his own, and the expression is drawn over it. The **brows carry the

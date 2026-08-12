@@ -62,9 +62,11 @@ A look pass over the figures (`DECISIONS.md`, eighth and ninth amendments) cut
 the head to 30-35% of height and widened what a seed can produce: height and
 build reach the tails, the head is scaled on two axes so a squad has long faces
 and wide ones, hair is fourteen styles built from a shell pushed back off the
-skull, and the brows, eyes, mouth and nose are per-player and independent of the
+skull in colours hair comes in, the nose is a bump on the head from a library of
+six, and the brows, eyes and mouth are per-player and independent of the
 expression — with the brows carrying the expression, which is where a Mii gets
-its range. An ink outline, a set of eighties kit details and the beards were
+its range. The face texture is drawn at four times the old resolution and
+anti-aliased, and the head is built at twice the body's polygon count. An ink outline, a set of eighties kit details and the beards were
 tried in the same pass and removed: §9.7's register governs the writing, not the
 art, and §9.7 now says so. Delight and despair had been drawn upside down since
 the atlas was written; the parade is where that became visible.

@@ -258,6 +258,22 @@ well back shows as a **rim round the silhouette**, which is a swimming cap; and
 fixing that by giving every style volume produces **eleven afros**. Volume
 belongs to the two styles that want it, and the hairline does the rest.
 
+A second round on the same note, again at the owner's direction:
+
+- **The nose is a bump on the head**, as in the reference art, not a mark on the
+  texture. Six shapes. A drawn nose at this size is a smudge; a bump catches the
+  light.
+- **The face texture is drawn at four times the resolution and anti-aliased**
+  from each shape's own distance function. The style tables are unchanged: they
+  are written in a 32-square unit grid and scaled, so the resolution is one
+  constant. It costs about 4.5 ms to generate a face and they are cached, which
+  is a fraction of a frame the first time a player pulls a new expression.
+- **Hair colours are colours hair comes in.** The table carried a teal and a
+  violet, and half a squad looked like a bag of sweets.
+- The head and the hair are built at twice the polygon count of the body. The
+  head is the thing being looked at, and at the new face resolution a
+  twelve-sided sphere was the roughest edge in the frame.
+
 ## Design calls made during the build
 
 **Goals and draws are entertainment targets, not simulation targets.** The owner

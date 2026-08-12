@@ -43,6 +43,11 @@ const TORSO_FRACTION := 0.30
 const LIMB_RADIUS := 0.052
 const SEGMENTS := 12
 const RINGS := 6
+## The head and the hair are rounder than the rest of the figure. A twelve-sided
+## sphere is a chunky limb and a boxy skull, and the skull is the thing being
+## looked at.
+const HEAD_SEGMENTS := 24
+const HEAD_RINGS := 12
 
 
 
@@ -114,7 +119,7 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	neck.position = Vector3(0.0, torso_h * 0.98, 0.0)
 	spine.add_child(neck)
 
-	var head := _sphere(head_r, skin)
+	var head := _sphere(head_r, skin, true)
 	head.position = Vector3(0.0, head_r * 0.86, 0.0)
 	# Not a ball. The face and the hair are children of it, so one scale gives a
 	# long face or a wide one and the drawn features stretch with it.
@@ -134,7 +139,8 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	root.set_meta("brow_style", appearance.brow_style)
 	root.set_meta("eye_style", appearance.eye_style)
 	root.set_meta("mouth_style", appearance.mouth_style)
-	root.set_meta("nose_style", appearance.nose_style)
+
+	head.add_child(_nose(appearance, head_r))
 
 	var hair := _hair(appearance, head_r)
 	if hair != null:
@@ -226,12 +232,12 @@ static func _capsule(radius: float, height: float, material: Material) -> MeshIn
 	return node
 
 
-static func _sphere(radius: float, material: Material) -> MeshInstance3D:
+static func _sphere(radius: float, material: Material, smooth := false) -> MeshInstance3D:
 	var mesh := SphereMesh.new()
 	mesh.radius = radius
 	mesh.height = radius * 2.0
-	mesh.radial_segments = SEGMENTS
-	mesh.rings = RINGS
+	mesh.radial_segments = HEAD_SEGMENTS if smooth else SEGMENTS
+	mesh.rings = HEAD_RINGS if smooth else RINGS
 	var node := MeshInstance3D.new()
 	node.mesh = mesh
 	node.material_override = material
@@ -269,7 +275,7 @@ static func _face_quad(head_r: float, appearance: SimAppearance) -> MeshInstance
 	var m := flat_material(Color.WHITE)
 	m.albedo_texture = SimFaceAtlas.texture_for(
 		SimAppearance.Face.NEUTRAL, appearance.brow_style, appearance.eye_style,
-		appearance.mouth_style, appearance.nose_style)
+		appearance.mouth_style)
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	node.material_override = m
@@ -292,6 +298,33 @@ static func _face_quad(head_r: float, appearance: SimAppearance) -> MeshInstance
 ## radius. Hair reaching into that corner covers the brows, and the brows are
 ## where the expression lives. Every row below is checked against it.
 ##
+## Noses, in the flesh. The reference art gives every figure a small bump on the
+## front of the head and no drawn nose at all, and it is right: at this size an
+## inked nose is a smudge between the eyes, while a bump catches the light and
+## does the whole job for one sphere.
+##
+## Each row is [radius, height on the face, how far out, y scale, z scale].
+const NOSE_LIBRARY := [
+	[0.14, -0.06, 0.96, 0.90, 1.15],  # a button
+	[0.17, -0.08, 0.94, 0.75, 1.00],  # broad and flat
+	[0.12, -0.05, 0.98, 1.15, 1.45],  # small and pointed
+	[0.16, -0.10, 0.95, 0.85, 1.20],  # heavy, and low on the face
+	[0.13, -0.03, 0.97, 1.00, 1.05],  # neat, and high
+	[0.19, -0.07, 0.93, 0.80, 1.10],  # a big one
+]
+
+
+static func _nose(appearance: SimAppearance, head_r: float) -> MeshInstance3D:
+	var row: Array = NOSE_LIBRARY[posmod(appearance.nose_style, NOSE_LIBRARY.size())]
+	# Skin, not a shade of it: the form comes from the light, the way every other
+	# part of the figure works.
+	var nose := _sphere(head_r * float(row[0]), flat_material(appearance.skin), true)
+	nose.name = "Nose"
+	nose.position = Vector3(0.0, head_r * float(row[1]), head_r * float(row[2]))
+	nose.scale = Vector3(1.0, float(row[3]), float(row[4]))
+	return nose
+
+
 ## Two numbers do the work. The **radius** is how much hair there is: a few per
 ## cent over the skull is hair lying on the head, a fifth over is an afro. The
 ## **push back** is the hairline: the two spheres meet in a circle, and shoving
@@ -335,7 +368,7 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Hair"
 
-	var shell := _sphere(head_r * float(row[0]), mat)
+	var shell := _sphere(head_r * float(row[0]), mat, true)
 	shell.position = Vector3(
 		head_r * float(row[3]), head_r * float(row[1]), -head_r * float(row[2]))
 	shell.scale = Vector3(1.0, float(row[4]), 1.0)
@@ -346,7 +379,7 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 		# of a long style.
 		# Behind the head rather than beside it: a mass as wide as the skull turns
 		# a long style into a hood.
-		var back := _sphere(head_r * 0.78, mat)
+		var back := _sphere(head_r * 0.78, mat, true)
 		back.position = Vector3(0.0, -head_r * 0.34, -head_r * 0.5)
 		back.scale = Vector3(0.85, 1.15, 0.72)
 		root.add_child(back)
@@ -393,5 +426,4 @@ static func set_expression(player_root: Node3D, face: int) -> void:
 		face,
 		player_root.get_meta("brow_style", 0),
 		player_root.get_meta("eye_style", 0),
-		player_root.get_meta("mouth_style", 0),
-		player_root.get_meta("nose_style", 0))
+		player_root.get_meta("mouth_style", 0))

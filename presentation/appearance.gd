@@ -45,10 +45,14 @@ const SKIN_TONES := [
 	Color("9c5f38"), Color("6f4227"), Color("4a2c1b"), Color("fae3cd"),
 ]
 
+## Hair a person could have: black, browns, dark and light blond, ginger, grey
+## and white. The table used to carry a teal and a violet, which made half a
+## squad look like a bag of sweets.
 const HAIR_COLOURS := [
-	Color("221d26"), Color("3a2a1e"), Color("6b4423"), Color("a8703a"),
-	Color("d9a441"), Color("e8e0d0"), Color("8a8f98"), Color("c4523f"),
-	Color("5b4a8a"), Color("3fa88a"),
+	Color("1c1a1d"), Color("2b2118"), Color("3f2d1e"), Color("5a3a22"),
+	Color("6b4423"), Color("8a5a2b"), Color("a8703a"), Color("c08a45"),
+	Color("d9b871"), Color("b5561f"), Color("8c3b16"), Color("7a7a7d"),
+	Color("b0b0b2"), Color("e3ded3"),
 ]
 
 ## Hair: a shell round the skull, pushed back to open the face. Style 0 is bald.
@@ -70,8 +74,10 @@ var face := Face.NEUTRAL
 ## Head shape, as scales on the head sphere. Round is 1, 1.
 var head_width := 1.0
 var head_height := 1.0
-## The face he was born with: his brows, his eyes, his mouth, his nose. The
-## expression is drawn over the top of them rather than replacing them, so a
+## The face he was born with: his brows, his eyes, his mouth -- drawn -- and his
+## nose, which is a bump on the head rather than a mark on the texture, because
+## that is what the reference art does and a drawn nose reads as a smudge. The
+## expression is drawn over the top of the rest rather than replacing it, so a
 ## heavy-browed man still has heavy brows when he is delighted.
 var brow_style := 0
 var eye_style := 0
@@ -107,7 +113,7 @@ static func from_seed(seed_value: int) -> SimAppearance:
 	a.brow_style = rng.range_int(0, SimFaceAtlas.BROW_STYLES.size() - 1)
 	a.eye_style = rng.range_int(0, SimFaceAtlas.EYE_STYLES.size() - 1)
 	a.mouth_style = rng.range_int(0, SimFaceAtlas.MOUTH_STYLES.size() - 1)
-	a.nose_style = rng.range_int(0, SimFaceAtlas.NOSE_STYLES.size() - 1)
+	a.nose_style = rng.range_int(0, SimCharacterBuilder.NOSE_LIBRARY.size() - 1)
 	a.sleeves_long = rng.chance(0.75)
 	a.socks_high = rng.chance(0.8)
 	a.face = Face.NEUTRAL
