@@ -1,0 +1,416 @@
+class_name SimPlayer
+extends RefCounted
+## A player in the simulation. Not a scene-tree node, not a physics body: a
+## kinematic point with a capsule used only for soft separation (PLAN.md §3.2).
+
+## How far sideways a player will let a change of direction carry him, in metres,
+## before he would rather shed the speed and turn tighter.
+##
+## This and `TURN_GRIP` between them replaced a floor on the speed carried
+## through a hairpin, which could not be made to work at any value. The floor was
+## a function of the angle *still to be turned*, and it therefore gave the pace
+## back as the turn progressed: measured tick by tick, a man reversing braked from
+## 6.8 m/s to 3.5 and then began accelerating again thirty-five degrees into the
+## turn, because at that point the remaining angle had released forty per cent of
+## his speed budget. He came out of a 180 faster than he went in, having drawn a
+## circle three and a half metres across, and lowering the floor from 0.3 to 0.08
+## barely moved it -- the floor was never what he was sitting on.
+##
+## The honest constraint is not an angle at all, it is the ground the turn costs.
+## An arc of radius R through the angle he owes carries him R * (1 - cos theta)
+## off his line, and grip fixes R at v^2 / g, so the speed that keeps that inside
+## his budget is sqrt(g * L / (1 - cos theta)). It does the right thing at both
+## ends without being asked: a twenty-degree correction is unrestricted, because
+## the arc is nearly straight, while a full turn-round is capped near two metres a
+## second however fast he arrived. And it does not release early -- at ninety
+## degrees still to make, he is still held to about three -- so the shape that
+## comes out is brake, pivot, go, rather than a circle run at pace.
+const TURN_SWING := 1.0
+## How much of a turn a player will finish before he starts driving out of it,
+## in radians. Sixty degrees is about the point at which he can see where he is
+## going and put his foot down.
+const TURN_COMMIT := 1.05
+## Below this speed a player is pivoting rather than turning, and none of the
+## momentum rules above apply to him.
+const TURN_PIVOT := 1.5
+## Sideways acceleration a player can hold while turning, in m/s^2 -- what the
+## studs will take before he is skating rather than turning.
+##
+## This is the constraint that makes braking matter, and without it the hairpin
+## speed ceiling below could not bite however low it was set. Turning a velocity
+## needs lateral acceleration of `v * omega`, so at seven metres a second the
+## agility turn rate of about 2.6 rad/s was asking for 18 m/s^2 -- getting on for
+## two g, sideways, from a man already running flat out. He could therefore spin
+## his whole velocity vector round in half a second, which is quicker than the
+## 8 m/s^2 of braking can shed the pace, so the turn finished while he was still
+## travelling at speed and the path it drew was a circle three and a half metres
+## across. Measured: reversing from 7 m/s swung him 3.65 m sideways and he came
+## out of it faster than he went in, having never once slowed down.
+##
+## Capped, the order of events is the one a footballer uses. At pace he can
+## barely turn at all, so the angle he still owes stays large, so the ceiling
+## holds his target speed near zero and he brakes in something close to a
+## straight line; as the speed comes off, `v * omega` buys a rapidly tightening
+## turn, and the last ninety degrees happen almost on the spot. Plant, pivot, go.
+const TURN_GRIP := 9.0
+
+var id := -1
+var team := SimConsts.TEAM_HOME
+## Formation slot this player occupies. Cached because the movement layer asks
+## for it ten times a second per player.
+var slot := 0
+var shirt := 0
+var player_name := ""
+var role := SimRole.CM
+var attrs := SimAttributes.new()
+var is_keeper := false
+## Seed for the procedural appearance (PLAN.md §9.3). The simulation never reads
+## it; it travels with the player so presentation can rebuild the same face.
+var appearance_seed := 0
+
+# --- Kinematic state --------------------------------------------------------
+
+var pos := Vector3.ZERO
+var vel := Vector3.ZERO
+## Facing, in radians, as atan2(dir.z, dir.x). Players face where they run
+## unless something (shielding, a set piece) says otherwise.
+var facing := 0.0
+
+# --- Condition --------------------------------------------------------------
+
+var stamina := 1.0
+## The match's clock rate, copied here by `SimMatch.setup`.
+##
+## Fatigue is the one physical quantity that is denominated in match time rather
+## than in seconds. Everything else a player does — how fast he accelerates, how
+## sharply he turns, how far the ball goes — is a fact about a body and must not
+## know the clock is compressed. Tiredness is a fact about a *match*: "he has
+## nothing left after eighty minutes" has to stay true when eighty minutes is
+## two and a half minutes of football, or a compressed match has no fatigue arc
+## at all and substitutions stop meaning anything. Drain, recovery and the
+## per-action cost all scale together, so the stamina a given workload settles
+## at is unchanged and only the time taken to get there compresses.
+var clock_rate := 1.0
+## Match sharpness and morale come from the world layer and scale output
+## slightly. 1.0 is neutral.
+var sharpness := 1.0
+var morale := 0.5
+
+# --- Per-tick intent, written by the movement and decision layers ------------
+
+var desired_vel := Vector3.ZERO
+## Where the movement layer last decided this player should be, and how fast
+## they are willing to get there. Recomputed on the off-ball cadence and held
+## between recomputes.
+var move_target := Vector3.ZERO
+var move_speed_cap := INF
+## How close counts as "there". Wider for shape-holding than for chasing.
+var move_deadband := 0.4
+## Set when the movement layer has this player timing a run in behind. Such a
+## run has to be made precisely -- a striker who is four metres short of the
+## shoulder is not making a run, they are standing still.
+var making_run := false
+## Cached gradient-ascent offset and the tick it was computed on. The value
+## field is a 5 Hz quantity (PLAN.md §2.5); recomputing it on the 10 Hz movement
+## cadence was doing the work twice.
+var value_offset := Vector3.ZERO
+var value_offset_tick := -1000
+var touch_cooldown := 0.0
+## Tick at which this player last won the ball back from the opposition. For a
+## second or two afterwards his priority is to secure it rather than to advance
+## it; `SimDecision.regain_urgency` reads it and decays it.
+var regain_tick := -100000
+## Tick at which the ball was last taken off this player by an opponent. Read by
+## the chase assignment: a man who has just been beaten is not the one who
+## should be leading the press back.
+var dispossessed_tick := -100000
+## Ticks until this player next re-evaluates off-ball movement. Staggered at
+## kickoff so no single tick evaluates every player.
+var next_decision_tick := 0
+var marking_target := -1
+var anim := SimConsts.Anim.IDLE
+var anim_hold := 0.0
+
+# --- Availability -----------------------------------------------------------
+
+var on_pitch := true
+var sent_off := false
+var yellow_cards := 0
+## Ticks remaining before the player can act again (after a fall or a foul).
+var recovery_ticks := 0
+
+# --- Match accumulators (mirrored into telemetry) ---------------------------
+
+var distance_run := 0.0
+var touches := 0
+var passes_attempted := 0
+var passes_completed := 0
+var shots := 0
+var minutes_played := 0.0
+
+
+func configure(p_id: int, p_team: int, p_role: int, p_attrs: SimAttributes, p_name: String = "") -> void:
+	id = p_id
+	team = p_team
+	role = p_role
+	attrs = p_attrs
+	is_keeper = p_role == SimRole.GK
+	player_name = p_name if p_name != "" else "P%d" % p_id
+	refresh_caps()
+
+
+## Output multiplier from fatigue: 1.0 above the knee, falling linearly to
+## STAMINA_FLOOR_OUTPUT at zero stamina.
+func fatigue_factor() -> float:
+	if stamina >= SimConsts.STAMINA_FATIGUE_KNEE:
+		return 1.0
+	return lerpf(SimConsts.STAMINA_FLOOR_OUTPUT, 1.0, maxf(stamina, 0.0) / SimConsts.STAMINA_FATIGUE_KNEE)
+
+
+## Derived caps, recomputed once per tick rather than on every one of the
+## hundreds of arrival-time estimates that ask for them.
+var _nominal_speed := 7.5
+var _cap_speed := 7.5
+var _cap_accel := 4.5
+var _cap_decel := 8.1
+## Reaction delay before acting on new information. Constant for a match.
+var reaction := 0.26
+var _caps_countdown := 1
+
+
+## Recomputes the per-tick derived caps. Called once per player per tick, and
+## whenever attributes or condition change outside a match.
+func refresh_caps() -> void:
+	_nominal_speed = lerpf(SimConsts.SPEED_MIN, SimConsts.SPEED_MAX, attrs.pace)
+	var f := fatigue_factor()
+	_cap_speed = _nominal_speed * f * sharpness
+	_cap_accel = lerpf(SimConsts.ACCEL_MIN, SimConsts.ACCEL_MAX, attrs.acceleration) * f
+	_cap_decel = _cap_accel * SimConsts.DECEL_FACTOR
+	reaction = lerpf(0.36, 0.16, attrs.awareness)
+
+
+func nominal_max_speed() -> float:
+	return _nominal_speed
+
+
+func max_speed() -> float:
+	return _cap_speed
+
+
+func max_accel() -> float:
+	return _cap_accel
+
+
+func max_decel() -> float:
+	return _cap_decel
+
+
+## Turn rate falls off with speed. This single line is why fast players overrun
+## the ball and why a sharp change of direction beats a quicker opponent
+## (PLAN.md §3.2) -- do not simplify it away.
+func turn_rate(speed: float) -> float:
+	var base: float = SimConsts.TURN_BASE * lerpf(0.8, 1.25, attrs.agility)
+	return base / (1.0 + speed * SimConsts.TURN_SPEED_FALLOFF)
+
+
+func heading_dir() -> Vector3:
+	return Vector3(cos(facing), 0.0, sin(facing))
+
+
+func speed() -> float:
+	return vel.length()
+
+
+## Sets the intent for this tick: run toward `target` at up to `speed_cap`.
+##
+## `deadband` is the radius inside which the player is close enough and simply
+## stops. Without it, players chase a target that moves every time the ball does
+## and end a match having run twice as far as a real footballer.
+func steer_to(target: Vector3, speed_cap: float = INF, deadband: float = 0.4) -> void:
+	var dx := target.x - pos.x
+	var dz := target.z - pos.z
+	var dist := sqrt(dx * dx + dz * dz)
+	if dist < deadband:
+		desired_vel = Vector3.ZERO
+		return
+	var cap: float = minf(speed_cap, max_speed())
+	# Ease off over the last stride so players settle onto a spot instead of
+	# oscillating around it.
+	var wanted: float = cap * clampf((dist - deadband) / 1.6, 0.15, 1.0)
+	var scale := wanted / dist
+	desired_vel = Vector3(dx * scale, 0.0, dz * scale)
+
+
+## Integrates locomotion for one step. Turn-rate limiting comes first, so a
+## player cannot instantly reverse at speed.
+func locomote(dt: float) -> void:
+	# Stamina moves slowly, so the derived caps do not need recomputing sixty
+	# times a second. Staggered by id so the cost is spread across ticks.
+	_caps_countdown -= 1
+	if _caps_countdown <= 0:
+		_caps_countdown = 6
+		refresh_caps()
+	if recovery_ticks > 0:
+		recovery_ticks -= 1
+		vel = vel.move_toward(Vector3.ZERO, max_decel() * 2.0 * dt)
+		pos += vel * dt
+		return
+
+	# Hand-rolled 2D rotation. Vector3.rotated() builds a Basis, which is far
+	# too much machinery for twenty-two players sixty times a second.
+	var cur_speed := sqrt(vel.x * vel.x + vel.z * vel.z)
+	if cur_speed < 0.02 and desired_vel.x == 0.0 and desired_vel.z == 0.0:
+		# Standing still and asked to stay there. Half the squad is in this
+		# state at any moment, so it is worth the early exit.
+		vel = Vector3.ZERO
+		_update_stamina(dt, 0.0)
+		_update_anim(0.0, false)
+		if touch_cooldown > 0.0:
+			touch_cooldown = maxf(0.0, touch_cooldown - dt)
+		return
+	var dir_x := 0.0
+	var dir_z := 0.0
+	if cur_speed > 0.05:
+		dir_x = vel.x / cur_speed
+		dir_z = vel.z / cur_speed
+	else:
+		dir_x = cos(facing)
+		dir_z = sin(facing)
+	var desired_speed := sqrt(desired_vel.x * desired_vel.x + desired_vel.z * desired_vel.z)
+	var want_x := dir_x
+	var want_z := dir_z
+	if desired_speed > 1e-4:
+		want_x = desired_vel.x / desired_speed
+		want_z = desired_vel.z / desired_speed
+
+	# Signed angle from current heading to desired heading, about +Y.
+	var cross := dir_x * want_z - dir_z * want_x
+	var dot: float = clampf(dir_x * want_x + dir_z * want_z, -1.0, 1.0)
+	var turn_needed := atan2(cross, dot)
+	# What his body will do, and then what the ground will let him do with it.
+	var max_turn: float = minf(turn_rate(cur_speed), TURN_GRIP / maxf(cur_speed, 0.35)) * dt
+	var applied_turn: float = clampf(turn_needed, -max_turn, max_turn)
+	var ca := cos(applied_turn)
+	var sa := sin(applied_turn)
+	var new_dir := Vector3(dir_x * ca - dir_z * sa, 0.0, dir_x * sa + dir_z * ca)
+
+	# A player cannot hold top speed through a hairpin: the sharper the turn still
+	# to be made, the lower the speed he can carry. Priced as the sideways ground
+	# the turn would cost him at this pace -- see `TURN_SWING`.
+	var swing := 1.0 - cos(turn_needed)
+	var speed_ceiling := max_speed()
+	if swing > 1e-3:
+		speed_ceiling = minf(speed_ceiling, sqrt(TURN_GRIP * TURN_SWING / swing))
+	var target_speed: float = minf(desired_speed, speed_ceiling)
+	# And he does not drive out of a turn he has not finished yet. The ceiling
+	# above is read off the angle still owed, so it lifts steadily as he comes
+	# round, and left to itself he starts accelerating about a third of the way
+	# through -- the remaining two thirds are then made at a rising speed, and
+	# since grip fixes the radius at v^2/g, that is precisely how an arc widens
+	# into a circle. He may still shed speed at any point; he simply may not add
+	# it while he is pointing the wrong way.
+	#
+	# Only once he is actually travelling. A man at a standstill has no momentum
+	# to fight and turns on the spot, and applying it to him deadlocks the
+	# locomotion outright: he may not accelerate until he has turned, `vel` is
+	# `new_dir * cur_speed` so a speed of zero cannot express a turn, and `facing`
+	# is only written when he is moving -- so he stands still facing the wrong way
+	# for the rest of the match. Measured with the guard missing, mean speed over
+	# the whole match fell from 2.4 m/s to 0.6 and the touch count with it.
+	if cur_speed > TURN_PIVOT and absf(turn_needed) > TURN_COMMIT:
+		target_speed = minf(target_speed, cur_speed)
+
+	var was_speed := cur_speed
+	if target_speed > cur_speed:
+		cur_speed = minf(target_speed, cur_speed + max_accel() * dt)
+	else:
+		cur_speed = maxf(target_speed, cur_speed - max_decel() * dt)
+
+	vel = new_dir * cur_speed
+	pos += vel * dt
+	pos.y = 0.0
+	if cur_speed > 0.05:
+		facing = atan2(new_dir.z, new_dir.x)
+	distance_run += cur_speed * dt
+
+	_update_stamina(dt, cur_speed)
+	_update_anim(cur_speed, absf(applied_turn) > max_turn * 0.9 and absf(was_speed - cur_speed) > 0.0)
+
+	if touch_cooldown > 0.0:
+		touch_cooldown = maxf(0.0, touch_cooldown - dt)
+
+
+func _update_stamina(dt: float, cur_speed: float) -> void:
+	var ratio: float = cur_speed / maxf(nominal_max_speed(), 1e-3)
+	# Endurance scales the drain; a high work rate means a player chooses to run
+	# more, which the movement layer expresses, not this function.
+	var endurance: float = lerpf(1.4, 0.7, attrs.stamina)
+	# Match time, not wall time: see `clock_rate` above.
+	var elapsed := dt * clock_rate
+	if ratio < 0.15:
+		stamina = minf(1.0, stamina + SimConsts.STAMINA_RECOVERY * elapsed / maxf(endurance, 0.1))
+	else:
+		stamina -= (SimConsts.STAMINA_SPRINT_DRAIN * ratio * ratio + SimConsts.STAMINA_BASE_DRAIN) * elapsed * endurance
+		stamina = maxf(0.0, stamina)
+
+
+## Charges the per-action stamina cost of a touch, a tackle or a jump.
+##
+## Scaled by the clock rate for the same reason the drain is: a compressed match
+## contains proportionally fewer actions, so an unscaled cost would leave a side
+## as fresh at full time as it was at kick-off.
+func spend_action(cost_scale: float = 1.0) -> void:
+	var cost := SimConsts.STAMINA_ACTION_COST * cost_scale * clock_rate * lerpf(1.4, 0.7, attrs.stamina)
+	stamina = maxf(0.0, stamina - cost)
+
+
+func _update_anim(cur_speed: float, turning: bool) -> void:
+	if anim_hold > 0.0:
+		anim_hold -= SimConsts.DT
+		return
+	var nominal := nominal_max_speed()
+	if stamina < 0.18 and cur_speed < 1.0:
+		anim = SimConsts.Anim.EXHAUSTED
+	elif turning and cur_speed > nominal * 0.4:
+		anim = SimConsts.Anim.TURN
+	elif cur_speed < 0.4:
+		anim = SimConsts.Anim.IDLE
+	elif cur_speed < nominal * 0.45:
+		anim = SimConsts.Anim.JOG
+	elif cur_speed < nominal * 0.8:
+		anim = SimConsts.Anim.RUN
+	else:
+		anim = SimConsts.Anim.SPRINT
+
+
+## Plays a one-shot animation for `hold` seconds; the sim never reads it back.
+func play_anim(which: int, hold: float = 0.25) -> void:
+	anim = which
+	anim_hold = hold
+
+
+func touch_cooldown_length() -> float:
+	return lerpf(SimConsts.TOUCH_COOLDOWN_BASE, SimConsts.TOUCH_COOLDOWN_MIN, attrs.technique)
+
+
+func can_touch() -> bool:
+	return touch_cooldown <= 0.0 and recovery_ticks <= 0 and on_pitch
+
+
+## Horizontal distance from this player to a point.
+func dist_to(p: Vector3) -> float:
+	var dx := pos.x - p.x
+	var dz := pos.z - p.z
+	return sqrt(dx * dx + dz * dz)
+
+
+func dist_sq_to(p: Vector3) -> float:
+	var dx := pos.x - p.x
+	var dz := pos.z - p.z
+	return dx * dx + dz * dz
+
+
+## Highest ball this player can reach, standing. Jumping is resolved separately
+## in the header contest.
+func reach_height() -> float:
+	return lerpf(SimConsts.FOOT_REACH_HEIGHT, SimConsts.HEAD_REACH_HEIGHT, 0.0)

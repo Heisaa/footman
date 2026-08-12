@@ -8,8 +8,31 @@ extends RefCounted
 ## leaving the ball loose is a feature: 50/50 balls, deflections and scrambles
 ## come out of it for free.
 
-## Deceleration of a dribbled ball relative to a player running alongside it.
-const DRIBBLE_RELATIVE_DECEL := 1.25
+# How fast a dribbled ball pulls away from the man running alongside it is
+# `SimEnv.roll_decel` and nothing else, which is why there is no constant for it
+# here any more.
+#
+# There was one, at 1.25, and it was the same physics carrying a different
+# number. A carrier holding his pace *is* a stationary frame for the ball, so the
+# rate the gap closes at is the rate the ball slows at -- the rolling resistance
+# of the grass, which the engine already knows. Two numbers for one quantity is a
+# thing that drifts, and this one had:
+#
+#   - The touch never opened the gap it was struck to open. `dribble` picks the
+#     strike speed from the constant and the grass then does the arithmetic, so
+#     at 1.25 against a real 1.6 a touch played to sit 4.5 m in front actually
+#     sat 3.5 m in front -- 78% of it, and the same 78% at every size. Every term
+#     the decision layer read off `ahead` was describing a touch that did not
+#     happen.
+#   - Pitch conditions never reached the carry at all. `roll_decel` is set by
+#     grass length and wetness; a constant is set by nothing. On long grass the
+#     ball was known to be slow everywhere in the engine except at the feet of
+#     the man carrying it, where the same touch opened barely half the gap.
+#
+# Sharing the one value fixes both, and makes `SimDecision.carry_room` and
+# `carry_travel` exact inverses of each other rather than nearly so.
+
+
 ## Base aim error for a dribble touch, in radians before skill, pressure and
 ## the rest are applied. Named because the decision layer has to ask the same
 ## question the execution will answer.
@@ -59,6 +82,17 @@ const DRIBBLE_AHEAD_FLOOR := SimConsts.CONTROL_RANGE * 1.2
 ## second touch, which is what taking it on the half-turn means.
 const TURN_MIN := 1.15
 const TURN_MAX := 2.55
+## The most pace a first touch can leave on the ball however hard it arrived, in
+## m/s, from a player who cannot control it at all to one who can take anything
+## down dead. See `first_touch`: this is what makes killing a driven ball
+## possible, which a purely proportional residual cannot express at any setting.
+##
+## The best figure is deliberately not zero. A ball stopped stone dead under the
+## sole is a thing footballers do and mostly do not want -- the touch that gets
+## used is the one that leaves it rolling into the next stride, and `settle`
+## above pushes it there. This is the ceiling on what survives, not the target.
+const CUSHION_WORST := 6.0
+const CUSHION_BEST := 0.8
 ## The hardest a ball can be to take down: struck as firmly as anyone strikes
 ## one, dropping out of the air, arriving with a man on you, and needing to be
 ## turned back the way it came. Everything in `first_touch` is measured as a
@@ -312,7 +346,24 @@ static func _perturb(ctx: SimContext, vel: Vector3, sigma_rad: float, weight_sig
 ## nobody is challenging. It changes nothing about the touch and is carried only
 ## so the log can tell turning away from a challenger apart from taking another
 ## touch into him -- from outside, the two are the same event.
-static func dribble(ctx: SimContext, player: SimPlayer, dir: Vector3, space: float, push: float = 0.0, away: float = 0.0, max_ahead: float = INF) -> void:
+## `settle` is the frame `ahead` is measured in, and it is the difference between
+## a carry and a hold. A carry is struck to sit `ahead` metres in front of a man
+## who *keeps running*, so his own pace goes into the strike and the ball's
+## journey over the grass is two or three times `ahead` -- which is right, and is
+## what `carry_room` and `carry_travel` price. A settling touch is the same
+## distance measured against the pitch: the ball ends up `ahead` metres from
+## where it was struck, whoever struck it and however fast he was going.
+##
+## Without this a hold was the one and the other at once. `SimDecision._add_hold`
+## reads its gain and its loss at the player's own position -- a pitch-frame
+## claim, "the ball stays here" -- and the touch was then struck at his own speed
+## plus the 2.3 m/s that opens a metre of daylight. Measured on seed 2 at
+## 1.0 v 1.0, that closes a loop: the man is chase-primary for his own touch, so
+## he runs to catch a ball he struck harder than he meant to, arrives quicker,
+## and strikes the next one harder still. Four holds in a row took #7 from 1.1 to
+## 7.6 m/s without a single decision to run anywhere, and the last "settling
+## touch" left his foot at 10.7 m/s and ran eleven metres into nobody.
+static func dribble(ctx: SimContext, player: SimPlayer, dir: Vector3, space: float, push: float = 0.0, away: float = 0.0, max_ahead: float = INF, settle: bool = false) -> void:
 	var d := SimConsts.horizontal(dir)
 	if d.length_squared() < 1e-6:
 		d = player.heading_dir()
@@ -327,9 +378,10 @@ static func dribble(ctx: SimContext, player: SimPlayer, dir: Vector3, space: flo
 	# itself about its own option.
 	ahead = minf(ahead, max_ahead)
 	# Relative speed that puts the ball `ahead` metres in front before friction
-	# hands it back to the runner.
-	var delta := sqrt(2.0 * DRIBBLE_RELATIVE_DECEL * ahead)
-	var along: float = maxf(player.vel.dot(d), 0.0)
+	# hands it back to the runner -- and, for a settling touch, the whole of the
+	# strike, because there the runner is not going anywhere with it.
+	var delta := sqrt(2.0 * maxf(ctx.env.roll_decel, 0.1) * ahead)
+	var along: float = 0.0 if settle else maxf(player.vel.dot(d), 0.0)
 	var speed: float = clampf(along + delta, 1.2, 16.0)
 
 	var sigma := aim_sigma(ctx, player, player.attrs.dribbling, ahead, DRIBBLE_AIM_BASE, d)
@@ -339,6 +391,16 @@ static func dribble(ctx: SimContext, player: SimPlayer, dir: Vector3, space: flo
 	# up-cross-direction is topspin; negative is backspin.
 	var spin := Vector3.UP.cross(vel.normalized()) * (vel.length() / SimConsts.BALL_RADIUS * 1.15)
 	apply(ctx, player, SimTelemetry.Touch.DRIBBLE, vel, spin, -1, {"ahead": ahead, "away": away})
+
+
+## A settling touch: the ball comes to rest `ahead` metres away *on the pitch*,
+## whatever pace the man playing it is going. `dribble`'s `settle` says why that
+## is a different act from a carry rather than a smaller one.
+##
+## It is still a `dribble` touch in the log, which `docs/GLOSSARY.md` warns about
+## and nothing here changes: a hold is an action, not a touch kind.
+static func settle(ctx: SimContext, player: SimPlayer, dir: Vector3, ahead: float) -> void:
+	dribble(ctx, player, dir, 0.0, 0.0, 0.0, ahead, true)
 
 
 ## Ground pass toward a point, arriving at roughly `arrive_pace` m/s.
@@ -414,10 +476,23 @@ static func shot(ctx: SimContext, player: SimPlayer, aim_point: Vector3, power: 
 	ctx.active_shot_tick = ctx.tick_index
 
 
-## A damping impulse opposing the incoming ball. What is left over is the loose
-## ball -- and a large share of the game's drama comes from here, so it is never
-## clamped away.
-static func first_touch(ctx: SimContext, player: SimPlayer, intent_dir: Vector3) -> void:
+## What a first touch is going to be, before it is played: the direction he can
+## actually turn the ball in, and how well he takes it. Written into three
+## statics rather than returned, so the decision layer can ask the question
+## without allocating and without a second copy of the model.
+##
+## The decision layer has to ask it. `SimDecision._add_hold` scores a first touch
+## as keeping the ball, and where the ball ends up decides what that is worth --
+## so the two layers have to agree about where that is. `docs/PITFALLS.md` has
+## the general case: the layer that scores an action and the layer that performs
+## it holding separate opinions of it is this engine's most persistent bug, and
+## the shared function is the only fix that stays fixed.
+static var _ft_dir := Vector3.ZERO
+static var _ft_wanted := Vector3.ZERO
+static var _ft_quality := 0.0
+
+
+static func _resolve_first_touch(ctx: SimContext, player: SimPlayer, intent_dir: Vector3) -> void:
 	var incoming := ctx.ball.vel
 	var incoming_speed := incoming.length()
 	var dir := SimConsts.horizontal(intent_dir)
@@ -488,7 +563,21 @@ static func first_touch(ctx: SimContext, player: SimPlayer, intent_dir: Vector3)
 			angle_penalty = 0.5 * (1.0 - cos(applied))
 			difficulty = clampf(incoming_speed / 18.0 + angle_penalty + ctx.ball.pos.y * 0.22 + ctx.pressure_on(player) * 0.15, 0.0, DIFFICULTY_MAX)
 			quality = clampf(skill * (1.0 - difficulty / DIFFICULTY_MAX), 0.0, 1.0)
-	quality *= player.fatigue_factor()
+	_ft_dir = dir
+	_ft_wanted = wanted
+	_ft_quality = quality * player.fatigue_factor()
+
+
+## A damping impulse opposing the incoming ball. What is left over is the loose
+## ball -- and a large share of the game's drama comes from here, so it is never
+## clamped away.
+static func first_touch(ctx: SimContext, player: SimPlayer, intent_dir: Vector3) -> void:
+	_resolve_first_touch(ctx, player, intent_dir)
+	var incoming := ctx.ball.vel
+	var incoming_speed := incoming.length()
+	var dir := _ft_dir
+	var wanted := _ft_wanted
+	var quality := _ft_quality
 	var residual: float = lerpf(0.55, 0.06, quality) * (1.0 + ctx.rng.gauss_clamped(0.0, 0.28, 2.5))
 	residual = clampf(residual, 0.02, 0.95)
 
@@ -513,6 +602,30 @@ static func first_touch(ctx: SimContext, player: SimPlayer, intent_dir: Vector3)
 	var settle: float = lerpf(0.4, 1.9, quality)
 	var kept := incoming * residual
 	var horiz := SimConsts.horizontal(kept)
+	# And a touch is a cushion as well as a brake.
+	#
+	# `residual` is purely proportional, and proportional alone cannot express
+	# the act. It says a ball arriving twice as fast leaves twice as fast however
+	# well it is controlled, so a driven ball taken down by the best receiver on
+	# the pitch still ran away from him: at a good quality of 0.4 a 15 m/s ball
+	# left his foot at 5.4, which is faster than he can run. There is no value of
+	# `residual` that fixes that without also making a bad touch gentle, and a bad
+	# touch on a firm ball *should* spray it -- that is where the loose balls come
+	# from.
+	#
+	# What is missing is the other half of the physics. A footballer does not
+	# scale the ball's pace down, he absorbs it: the foot, thigh or chest gives
+	# way with the ball and takes the sting out, and how much sting a man can take
+	# out is a fact about his technique, not about how hard it arrived. So the two
+	# models are each half right, and the touch keeps the *lesser* of them --
+	# proportional for an ordinary ball, absorbed for a fierce one.
+	#
+	# It is a cushion and not a clamp: it is keyed on `quality`, so it barely
+	# exists for a poor touch, and `quality` carries the skill, the difficulty and
+	# the noise on `residual` before it. Nothing is clamped away.
+	var cushion: float = lerpf(CUSHION_WORST, CUSHION_BEST, quality)
+	if horiz.length() > cushion:
+		horiz *= cushion / horiz.length()
 	var vel := horiz.lerp(dir * horiz.length(), quality)
 	vel.y = kept.y
 	vel += dir * settle
@@ -533,6 +646,40 @@ static func first_touch(ctx: SimContext, player: SimPlayer, intent_dir: Vector3)
 		"quality": quality, "residual": residual, "set": set_dot, "pace": flat.length(),
 		"in": incoming_speed,
 	})
+
+
+## Where a first touch here would leave the ball, as a displacement from where it
+## is struck.
+##
+## `first_touch` with the dice taken out: the same direction, the same quality,
+## the mean residual rather than a sample of it, and no aim error. What comes
+## back is the ball's own journey from his foot to where it stops rolling.
+##
+## Two things it is not. It is not where the ball will be when he next plays it
+## -- he chases it and touches it again well before it stops -- so this is the
+## far end of the range rather than the middle of it. And it is not a promise: a
+## first touch is the one act in the engine whose whole point is that it
+## sometimes gets away from a man, and the spread around this is wide by design.
+##
+## It exists because `SimDecision._add_hold` scores a first touch as *not moving
+## the ball*, which was true of nothing: measured on seed 7 at ten minutes, an
+## ordinary one leaves 2.6 to 3.5 m/s on it, which is one to two and a half
+## metres of grass. The same frame confusion the settling touch had, a quarter
+## the size, and with a real model underneath it rather than an accident.
+static func first_touch_drift(ctx: SimContext, player: SimPlayer, intent_dir: Vector3) -> Vector3:
+	_resolve_first_touch(ctx, player, intent_dir)
+	var dir := _ft_dir
+	var quality := _ft_quality
+	var residual: float = lerpf(0.55, 0.06, quality)
+	var horiz := SimConsts.horizontal(ctx.ball.vel) * residual
+	var cushion: float = lerpf(CUSHION_WORST, CUSHION_BEST, quality)
+	if horiz.length() > cushion:
+		horiz *= cushion / horiz.length()
+	var vel := horiz.lerp(dir * horiz.length(), quality) + dir * lerpf(0.4, 1.9, quality)
+	var speed := vel.length()
+	if speed < 0.05:
+		return Vector3.ZERO
+	return vel / speed * (speed * speed / (2.0 * maxf(ctx.env.roll_decel, 0.1)))
 
 
 ## High and away from goal. Wide by nature: it is a panic action.

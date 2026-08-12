@@ -60,6 +60,12 @@ const BURST_PACE := 3.5
 ## `_play_hold` -- and note that it is a *rate* only for the carry, deliberately
 ## not here. A hold does not grow with his pace, because a man who wants the ball
 ## to stay where it is does not push it further for running faster.
+##
+## The constant never did grow with his pace. The strike did, for as long as the
+## hold went out through `SimTouch.dribble`, which adds the carrier's own speed
+## to every touch because a carry is a distance measured against a moving man.
+## `SimTouch.settle` is the same distance measured against the grass, which is
+## the frame `_add_hold` scores in.
 const HOLD_AHEAD := SimTouch.DRIBBLE_AHEAD_FLOOR
 ## Where a touch stops being a way of covering ground and starts being a way of
 ## setting yourself: the distance from the goal at which touches begin to shorten,
@@ -117,12 +123,23 @@ static var _candidates: Array[Dictionary] = []
 static var _weights := PackedFloat32Array()
 static var _aim_weights := PackedFloat32Array()
 
+## What the last softmax did, for the debug sink alone. Three stores per
+## decision, read by nothing in the simulation: `SimDebug` is a one-way tap and
+## the pick itself has already happened by the time these are looked at.
+static var _last_pick := -1
+static var _last_temp := 0.0
+static var _last_spread := 0.0
+
 
 ## Called when `player` is in contact with the ball and may act.
 static func choose_and_execute(ctx: SimContext, player: SimPlayer) -> void:
 	if player.is_keeper:
 		SimKeeper.decide_with_ball(ctx, player)
 		return
+
+	# Cleared on every decision and set again by `_play_hold`, so it describes the
+	# touch just played rather than any earlier one.
+	player.settling = false
 
 	_candidates.clear()
 	var incoming := ctx.ball.vel.length()
@@ -144,6 +161,10 @@ static func choose_and_execute(ctx: SimContext, player: SimPlayer) -> void:
 		return
 
 	var chosen := _softmax_pick(ctx, player)
+	if SimDebug.enabled:
+		SimDebug.capture_decision(
+			ctx, player, _candidates, _last_pick, _weights, _last_temp, _last_spread, regain
+		)
 	_execute(ctx, player, chosen, uncontrolled)
 
 
@@ -379,7 +400,13 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 					"gain": ctx.value.xt_at(player.team, target, ctx.pitch) * tactics.focus_at(target.z, ctx.pitch)
 						+ _arrival_gain(ctx, player.team, target, believed, mate, t_travel),
 					"loss": ctx.value.xt_at(SimConsts.other_team(player.team), target, ctx.pitch),
-					"pace": 6.0,
+					# The pace it was scored at. This was a flat 6.0 while
+					# `t_travel` -- and through it `t_success` and the arrival
+					# gain -- were computed from `t_pace`, so the ball that got
+					# struck was not the ball the race had been judged on. The
+					# same mismatch the carry had between its scored touch and
+					# its played one, in the other half of the decision layer.
+					"pace": t_pace,
 					"bias": tactics.direct_bias() * _call_bias(ctx, mate),
 				})
 
@@ -472,8 +499,33 @@ static func _shortlist(ctx: SimContext, player: SimPlayer, from: Vector3) -> Pac
 
 ## Pace a ground pass should arrive at, in m/s. A short ball is rolled in; a
 ## long one has to be driven or the defence gets there first.
+##
+## The slope was 0.35 off a floor of 3.5, which puts an ordinary fourteen-metre
+## ball into a man's feet at 9.2 m/s. That is not a pass, it is a drive, and it
+## was the single biggest reason the ball read as running away from people:
+## measured over two seeds, every ground pass in the match arrived at 8.7 m/s,
+## and the `Taking it down` block then showed the ball arriving at 9.5 and
+## leaving at 4.2 -- a first touch failing at a ball nobody should have hit that
+## hard.
+##
+## It is also the one thing rolling resistance cannot reach.
+## `SimBallistics.ground_pass_speed` solves the launch speed *against*
+## `roll_decel` to hit the pace asked for here, so a grabbier pitch strikes the
+## ball harder and it still arrives at 8.7. Arrival pace is invariant to friction
+## by construction, and this function is the only place it is decided.
+##
+## The new curve is a footballer's: about 3.5 m/s at five metres, 4.7 at ten,
+## 5.6 at fourteen, 7 at twenty, and just under 10 at the length where a ground
+## pass stops being offered at all. The docstring's original point survives in
+## the slope -- a long ball is still driven -- it is the intercept that was
+## wrong.
+##
+## What it costs is on the books rather than hidden: a slower ball is longer in
+## flight, `_pass_success` prices interception off exactly that, and the softmax
+## will stop choosing the long ground passes that can now be cut out. A slow pass
+## being easier both to control and to intercept is the trade football makes.
 static func arrival_pace(distance: float, tactics: SimTactics) -> float:
-	return clampf(3.5 + distance * 0.35, 3.5, 13.5) * lerpf(0.9, 1.2, tactics.tempo)
+	return clampf(2.2 + distance * 0.21, 2.5, 12.0) * lerpf(0.9, 1.2, tactics.tempo)
 
 
 ## Pulls a target point far enough inside the pitch that a ball played to it has
@@ -727,7 +779,7 @@ static func _room_ahead(ctx: SimContext, player: SimPlayer, dir: Vector3) -> flo
 	var delta: float = sqrt(2.0 * decel * maxf(room, 0.0)) - along
 	if delta <= 0.0:
 		return 0.0  # Running this fast, the ball is out of play before he is.
-	return minf(BURST_DISTANCE, delta * delta / (2.0 * SimTouch.DRIBBLE_RELATIVE_DECEL))
+	return minf(BURST_DISTANCE, delta * delta / (2.0 * decel))
 
 
 ## How big a touch this direction has room for, capped at `wanted`.
@@ -766,7 +818,7 @@ static func carry_room(ctx: SimContext, player: SimPlayer, dir: Vector3, wanted:
 	var delta: float = sqrt(along * along + 2.0 * decel * maxf(room, 0.0)) - along
 	if delta <= 0.0:
 		return 0.0
-	return minf(wanted, delta * delta / (2.0 * SimTouch.DRIBBLE_RELATIVE_DECEL))
+	return minf(wanted, delta * delta / (2.0 * decel))
 
 
 ## How big a touch this direction is worth at the pace he is going.
@@ -812,7 +864,7 @@ static func close_control(ctx: SimContext, player: SimPlayer, wanted: float) -> 
 static func carry_travel(ctx: SimContext, player: SimPlayer, dir: Vector3, ahead: float) -> float:
 	var along: float = maxf(player.vel.dot(dir), 0.0)
 	var decel: float = maxf(ctx.env.roll_decel, 0.1)
-	var delta: float = sqrt(2.0 * SimTouch.DRIBBLE_RELATIVE_DECEL * maxf(ahead, 0.0))
+	var delta: float = sqrt(2.0 * decel * maxf(ahead, 0.0))
 	return (2.0 * along * delta + delta * delta) / (2.0 * decel)
 
 
@@ -1029,9 +1081,34 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 	push = minf(push, stride_room(player, burst_dir, BURST_SECONDS))
 	if push < BURST_DISTANCE * 0.55:
 		return  # Not enough grass for this to be the knock it was scored as.
-	var burst := ctx.pitch.clamp_to_pitch(player.pos + burst_dir * push, 1.0)
-	var burst_escape := _escape_value(challenger, player, burst)
-	var burst_success := ctx.value.control_at(ctx, burst, player.team, challenger.id if challenger != null else -1)
+	# And every term below is read where the ball ends up, which is a long way
+	# past where the gap opens.
+	#
+	# `push` is a distance between two moving things: the daylight left between
+	# the ball and a man who keeps running. The ball's own journey is that plus
+	# every metre he covers while it is still faster than him --
+	# `travel = push + along * delta / decel`, which is `carry_travel`. At a
+	# roll of 2.4 and a nine-metre knock the ball is out in front for 2.7 s, and
+	# a carrier at 6 m/s runs 16 of the 25 metres it covers. Two and a half to
+	# three and a half times `push`, rising with his pace.
+	#
+	# The ordinary carry has the same geometry and does not have the problem,
+	# because he plays it again every third of a second and the gap never opens.
+	# The burst is the one touch in the engine that runs to completion -- not
+	# re-touching *is* the act -- so it is the only candidate whose ball really
+	# travels the whole distance, and scoring it at `push` asked who owned the
+	# grass, who won the race and what it was worth a third of the way there.
+	# The touchline half of this was already converted, in `_room_ahead`; these
+	# four terms sat four lines below it and were not.
+	#
+	# `carry_travel` is where the ball has slowed to his pace, which is the
+	# moment he starts closing rather than the moment he arrives. The contest is
+	# near there, and it is the last point on the journey the engine can name
+	# without modelling the chase itself.
+	var arrival := ctx.pitch.clamp_to_pitch(
+		ctx.ball.ground_pos() + burst_dir * carry_travel(ctx, player, burst_dir, push), 1.0)
+	var burst_escape := _escape_value(challenger, player, arrival)
+	var burst_success := ctx.value.control_at(ctx, arrival, player.team, challenger.id if challenger != null else -1)
 	burst_success *= skill * burst_escape
 	# The same question the carry above is asked. `_room_ahead` shortens the knock
 	# to fit the grass, which stops him aiming it off the pitch, and says nothing
@@ -1052,13 +1129,16 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 	# patch. Left unmodelled rather than papered over with a coefficient.
 	_candidates.append({
 		"action": Action.DRIBBLE,
-		"point": burst,
+		# Where he runs, too. `_execute` hands this to the movement layer, and a
+		# man who has knocked it twenty-five metres past a defender should not be
+		# setting off toward the nine-metre mark.
+		"point": arrival,
 		"dir": burst_dir,
 		"escape": burst_escape,
 		"away": _awayness(challenger, player, burst_dir),
 		"success": clampf(burst_success, 0.0, 0.98),
-		"gain": ctx.value.xt_at(player.team, burst, ctx.pitch) * tactics.focus_at(burst.z, ctx.pitch),
-		"loss": ctx.value.xt_at(SimConsts.other_team(player.team), burst, ctx.pitch),
+		"gain": ctx.value.xt_at(player.team, arrival, ctx.pitch) * tactics.focus_at(arrival.z, ctx.pitch),
+		"loss": ctx.value.xt_at(SimConsts.other_team(player.team), arrival, ctx.pitch),
 		"space": 1.0,
 		# The execution has to push it as far as the score assumed it would. A
 		# candidate scored on a nine-metre knock and then played as a four-metre
@@ -1068,11 +1148,41 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 	})
 
 
+## Where the ball ends up if he holds it, which is two different places.
+##
+## A settling touch leaves it a metre in front of him on the grass -- that is
+## what `SimTouch.settle` is for -- so his own feet are the right place to read
+## it, to within a stride.
+##
+## A ball arriving with pace on it is not that act at all. `_play_hold` sends it
+## to `SimTouch.first_touch`, which is a cushion and not a stop: an ordinary one
+## leaves 2.6 to 3.5 m/s on the ball, one to two and a half metres of it, in a
+## direction the receiver only partly chooses. Scored at his feet, that was the
+## settling touch's bug in miniature -- the option said the ball stays here and
+## the engine then moved it. `SimTouch.first_touch_drift` is the execution's own
+## model asked in advance, so the two layers cannot drift apart again.
+##
+## What this deliberately does not do is grade the *option* on how well he will
+## take it. `success` is the chance his side still has the ball afterwards, and
+## measured it is already about right: 86-92% kept three seconds later across all
+## three bands of `Taking it down`, against the 0.72-0.97 this reads off the
+## attribute. The known cost is that a poorer receiver is credited with the extra
+## ground his worse touch runs, since gain is read where the ball stops. Both
+## terms move together, and it is second-order beside scoring it at a standstill.
+static func _hold_rest_point(ctx: SimContext, player: SimPlayer, uncontrolled: bool) -> Vector3:
+	if not uncontrolled:
+		return player.pos
+	var dir := _safe_direction(ctx, player, HOLD_AHEAD)
+	var drift := SimTouch.first_touch_drift(ctx, player, dir)
+	return ctx.pitch.clamp_to_pitch(ctx.ball.ground_pos() + drift, 1.0)
+
+
 static func _add_hold(ctx: SimContext, player: SimPlayer, uncontrolled: bool, regain: float) -> void:
 	var tactics := ctx.tactics(player.team)
-	var here := ctx.value.xt_at(player.team, player.pos, ctx.pitch)
+	var rest := _hold_rest_point(ctx, player, uncontrolled)
+	var here := ctx.value.xt_at(player.team, rest, ctx.pitch)
 	# Holding is safe but goes nowhere. Taking a first touch out of a moving
-	# ball is the same candidate: it keeps the ball without advancing it.
+	# ball is the same candidate: it keeps the ball without advancing it much.
 	#
 	# Except with a man arriving, when it is neither safe nor nowhere: standing
 	# over the ball as a challenge comes in is how the ball is lost, and it is
@@ -1084,7 +1194,7 @@ static func _add_hold(ctx: SimContext, player: SimPlayer, uncontrolled: bool, re
 		"action": Action.HOLD,
 		"success": clampf(success, 0.05, 0.98),
 		"gain": here * 0.92,
-		"loss": ctx.value.xt_at(SimConsts.other_team(player.team), player.pos, ctx.pitch),
+		"loss": ctx.value.xt_at(SimConsts.other_team(player.team), rest, ctx.pitch),
 		"bias": tactics.retention_bias() * (1.5 if uncontrolled else 1.0) * lerpf(1.0, 0.5, regain),
 	})
 
@@ -1269,6 +1379,9 @@ static func _softmax_pick(ctx: SimContext, player: SimPlayer) -> Dictionary:
 	var idx: int = ctx.rng.weighted_index(_weights)
 	if idx < 0:
 		idx = 0
+	_last_pick = idx
+	_last_temp = temp
+	_last_spread = spread
 	return _candidates[idx]
 
 
@@ -1332,7 +1445,8 @@ static func _play_hold(ctx: SimContext, player: SimPlayer, uncontrolled: bool) -
 	if uncontrolled:
 		SimTouch.first_touch(ctx, player, dir)
 		return
-	SimTouch.dribble(ctx, player, dir, 0.0, 0.0, 0.0, carry_room(ctx, player, dir, HOLD_AHEAD))
+	player.settling = true
+	SimTouch.settle(ctx, player, dir, carry_room(ctx, player, dir, HOLD_AHEAD))
 
 
 ## Where to take a settling touch: forward if the way is clear and there is grass

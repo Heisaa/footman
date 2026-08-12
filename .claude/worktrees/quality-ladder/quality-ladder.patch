@@ -1,0 +1,213 @@
+--- a/presentation/match_view_3d.gd
++++ b/presentation/match_view_3d.gd
+@@ -150,6 +150,22 @@
+ ## which is where the work goes instead.
+ @export var pitch_scale := 1.0
+ 
++## The squad quality each match in a session is played at, home then away, walked
++## one step by N. Three matches: two even sides at 0.6, two even sides at 1.0,
++## then a mismatch. Watching them back to back is the only way to see whether
++## quality reads on the grass — whether the good side keeps it better, and
++## whether the mismatch looks like one. The list wraps, so a fourth N is the
++## first match again on a new seed.
++##
++## Overridden for the whole session by `--home` and `--away`, which pin one pair
++## and turn the walk off.
++const QUALITY_LADDER := [Vector2(0.6, 0.6), Vector2(1.0, 1.0), Vector2(1.0, 0.6)]
++## Which rung this match is on. Advanced by N, kept by R: R is this match again,
++## and the same seed at a different quality is a different match.
++var _quality_step := 0
++## The pair pinned by `--home`/`--away`, or a negative x if the ladder is live.
++var _quality_pinned := Vector2(-1.0, -1.0)
++
+ var _match: SimMatch
+ ## The pitch's surface. Held separately from the match because the world — the
+ ## ground mesh above all — is built before the match is started, and it is the
+@@ -332,6 +348,12 @@
+ 		elif args[i] == "--clock-rate" and i + 1 < args.size():
+ 			clock_rate = float(args[i + 1])
+ 			_clock_rate_given = true
++		# Either one pins both: a session watching one mismatch wants that
++		# mismatch on every N, not the ladder walking away from it.
++		elif args[i] == "--home" and i + 1 < args.size():
++			_pin_quality(float(args[i + 1]), -1.0)
++		elif args[i] == "--away" and i + 1 < args.size():
++			_pin_quality(-1.0, float(args[i + 1]))
+ 		elif args[i] == "--debug":
+ 			_debug = true
+ 		# The annotation layers are keyed, and a screenshot cannot press a key.
+@@ -408,9 +430,42 @@
+ 	opts.clock_rate = clock_rate
+ 	opts.small_sided = small_sided
+ 	opts.pitch_scale = pitch_scale
++	var quality := _quality()
++	opts.home_quality = quality.x
++	opts.away_quality = quality.y
+ 	return opts
+ 
+ 
++## This match's squad quality, home then away.
++func _quality() -> Vector2:
++	if _quality_pinned.x >= 0.0:
++		return _quality_pinned
++	return QUALITY_LADDER[_quality_step % QUALITY_LADDER.size()]
++
++
++## Pins one pair for the session. A negative side is the one that was not given
++## on the command line, and keeps whatever the first rung has for it.
++func _pin_quality(home: float, away: float) -> void:
++	var current: Vector2 = _quality_pinned if _quality_pinned.x >= 0.0 else QUALITY_LADDER[0]
++	_quality_pinned = Vector2(
++		home if home >= 0.0 else current.x,
++		away if away >= 0.0 else current.y,
++	)
++
++
++func _quality_text() -> String:
++	var quality := _quality()
++	return "quality %.2f v %.2f" % [quality.x, quality.y]
++
++
++## What N is about to play, for the full-time board.
++func _next_quality_text() -> String:
++	if _quality_pinned.x >= 0.0:
++		return ""
++	var next: Vector2 = QUALITY_LADDER[(_quality_step + 1) % QUALITY_LADDER.size()]
++	return "%.2f v %.2f" % [next.x, next.y]
++
++
+ ## Kicks off a match, and clears everything the last one left behind.
+ ##
+ ## Everything below the match itself is state carried on this node or on a tool
+@@ -461,7 +516,7 @@
+ 	if _debug_world != null:
+ 		_debug_world.env = _env
+ 	_debug_kits()
+-	print("kick-off: seed %d" % seed_value)
++	print("kick-off: seed %d, %s" % [seed_value, _quality_text()])
+ 
+ 
+ ## The next match: the seed after this one, so the sequence is still reproducible
+@@ -470,7 +525,12 @@
+ ##
+ ## The mark state goes with the old match. A bookmark is a tick of one seed, and
+ ## seeking to it in a different one lands somewhere unrelated.
+-func _go_to_match(seed_value: int) -> void:
++##
++## `quality_step` walks the quality ladder with it. N takes the next rung, R
++## stays on this one: the point of R is the same football again.
++func _go_to_match(seed_value: int, quality_step: int = -1) -> void:
++	if quality_step >= 0:
++		_quality_step = quality_step
+ 	_mark_tick = -1
+ 	_seek_target = -1
+ 	_seek_is_rewind = false
+@@ -1409,12 +1469,17 @@
+ 	if not _match.finished or _full_time:
+ 		return
+ 	_full_time = true
+-	print("full time: seed %d, %s %d - %d %s" % [
++	print("full time: seed %d, %s %d - %d %s, %s" % [
+ 		match_seed, _match.ctx.teams[0].short_name,
+ 		_curr.score[0], _curr.score[1], _match.ctx.teams[1].short_name,
++		_quality_text(),
+ 	])
+ 	if _scoreboard != null:
+-		_scoreboard.prompt = "N  NEXT MATCH   R  AGAIN"
++		# The board names what N is about to show, because the next match is a
++		# different pair of squads and that is the reason to press it. Pinned,
++		# there is nothing to name: every match is the pair on the command line.
++		var next := _next_quality_text()
++		_scoreboard.prompt = "N  NEXT MATCH%s   R  AGAIN" % ("  " + next if next != "" else "")
+ 
+ 
+ func _maybe_shoot() -> void:
+@@ -1530,9 +1595,13 @@
+ 	# The seed belongs on the line the moment there is more than one match in a
+ 	# session: every bookmark and replay command names one, and by the third match
+ 	# nobody remembers which they are watching.
+-	return ("seed %d   %sx%.2f   space pause   [ ] speed   . step   , back   < > jump"
++	# The quality is on the line for the same reason the seed is: three matches
++	# into a session the sides have changed twice and nothing else on screen says
++	# which pair is playing.
++	return ("seed %d   %s   %sx%.2f   space pause   [ ] speed   . step   , back   < > jump"
+ 		+ "   M mark   N next   R again   click pin   F1 off%s%s") % [
+-		match_seed, "PAUSED  " if _paused else "", _speed, mark, compressed,
++		match_seed, _quality_text(), "PAUSED  " if _paused else "",
++		_speed, mark, compressed,
+ 	]
+ 
+ 
+@@ -1780,6 +1849,10 @@
+ 				_clock_rate_given = true
+ 			elif words[i] == "--pitch-scale" and i + 1 < words.size():
+ 				pitch_scale = float(words[i + 1])
++			elif words[i] == "--home" and i + 1 < words.size():
++				_pin_quality(float(words[i + 1]), -1.0)
++			elif words[i] == "--away" and i + 1 < words.size():
++				_pin_quality(-1.0, float(words[i + 1]))
+ 			elif words[i] == "--small":
+ 				small_sided = true
+ 		break
+@@ -1819,6 +1892,11 @@
+ 		extra += " --pitch-scale %g" % pitch_scale
+ 	if small_sided:
+ 		extra += " --small"
++	# The squads are part of the match too: the same seed at another quality is
++	# eleven other men, and the tick lands somewhere unrelated.
++	var quality := _quality()
++	if quality.x != 0.6 or quality.y != 0.6:
++		extra += " --home %g --away %g" % [quality.x, quality.y]
+ 	return "./run.sh replay --seed %d --tick %d --around 6%s" % [match_seed, tick, extra]
+ 
+ 
+@@ -2750,7 +2828,7 @@
+ 		# The next match and this one again. Both work at any point, but full time
+ 		# is where they are wanted: the board asks for them there.
+ 		KEY_N:
+-			_go_to_match(match_seed + 1)
++			_go_to_match(match_seed + 1, _quality_step + 1)
+ 		KEY_R:
+ 			_go_to_match(match_seed)
+ 		KEY_F11, KEY_F:
+--- a/run.sh
++++ b/run.sh
+@@ -42,6 +42,7 @@
+   view3d [--seed N]         open the 3D match view (needs a display).
+       [--speed X] [--step-fps N]
+       [--small] [--clock-rate R] [--pitch-scale F]
++      [--home Q] [--away Q]
+       [--debug] [--layers 1,3] [--bookmark S]
+       [--from-bookmark seed7-t34210]
+                             --debug turns on the overlay: what the man on the
+@@ -60,6 +61,10 @@
+                             re-simulates to it and carries on from there.
+                             At full time the board asks for N: the view keeps
+                             running and the overlay carries over.
++                            N also walks the squad quality: match one is 0.60 v
++                            0.60, two is 1.00 v 1.00, three is 1.00 v 0.60, then
++                            it wraps. R keeps this match's pair. --home Q /
++                            --away Q pin one pair for the session instead.
+                             F1 opens the same overlay in a match that was
+                             started without it — including the main scene —
+                             but cannot un-compress that match's clock.
+--- a/docs/DIAGNOSTICS.md
++++ b/docs/DIAGNOSTICS.md
+@@ -272,6 +272,17 @@
+ is on the help line from here, since by the third match nobody remembers which
+ match they are looking at.
+ 
++**`N` also walks the squad quality.** Match one is 0.60 v 0.60, two is 1.00 v
++1.00, three is 1.00 v 0.60, and a fourth `N` wraps to the first pair on a new
++seed. Two even matches at different levels and then a mismatch is what makes
++quality visible by eye: whether the better side keeps the ball, and whether the
++uneven one looks uneven. `R` stays on this match's pair — the same seed at
++another quality is eleven other men, not the same match again. The pair is on
++the help line beside the seed, the full-time board names what `N` will play, and
++the replay command a bookmark writes carries `--home` and `--away` when they are
++not the 0.60 default. `--home Q` / `--away Q` pin one pair for the whole session
++and turn the walk off.
++
+ **The players wear their numbers** while the overlay is up (layer `8`). Every
+ panel, bookmark and replay line names men by shirt, and the 3D players otherwise
+ carry only kits and faces — which made every one of those names unusable.

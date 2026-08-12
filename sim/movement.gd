@@ -72,6 +72,25 @@ static var _chase_role := PackedInt32Array()
 static var _chase_time := PackedFloat32Array()
 
 
+## Read-only views of the assignment, for the debug overlay. The anti-swarm guard
+## lives in `_assign_chasers` and nowhere else; these two say what it decided and
+## are read by nothing in `sim/`.
+static func chase_role_of(id: int) -> int:
+	return _chase_role[id] if id >= 0 and id < _chase_role.size() else CHASE_NONE
+
+
+static func chase_time_of(id: int) -> float:
+	return _chase_time[id] if id >= 0 and id < _chase_time.size() else INF
+
+
+
+
+## Clears the chase assignment, for the same reason `SimOffBall.reset` exists: it
+## is static, it outlives the context that made it, and the first ticks of a new
+## match read it before the first assignment has run.
+static func reset() -> void:
+	_chase_role = PackedInt32Array()
+	_chase_time = PackedFloat32Array()
 
 
 static func update(ctx: SimContext) -> void:
@@ -317,7 +336,16 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 		# speed that just reaches his own next touch, so the man behind him has
 		# only to match a jog. Being challenged is the one case where the point
 		# is not to arrive but to arrive first.
-		var escaping := _escape_pace(ctx, p)
+		#
+		# The floors below ask a man on the ball for more than the pace that just
+		# reaches it, and each is about a man going somewhere: away from a
+		# challenge, or down the pitch. A man who has just settled the ball is
+		# going nowhere by his own decision, and floored at 60-100% of his top
+		# speed he sprints straight past a ball sitting a metre in front of him.
+		# The race floor between the two needs no such gate: it is only ever
+		# non-zero for a ball nobody owns.
+		var settling := p.settling and ctx.ball.last_touch_player == p.id
+		var escaping := 0.0 if settling else _escape_pace(ctx, p)
 		if escaping > 0.0:
 			p.move_speed_cap = maxf(p.move_speed_cap, p.max_speed() * lerpf(0.6, 1.0, escaping))
 		# And the same rule again, for the other way a chase stops being about
@@ -331,7 +359,7 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 		# And once more, for the man in possession with nobody in front of him.
 		# He is not trying to catch his own touch, he is trying to get down the
 		# pitch, and the touch he takes next is sized off the pace he is at.
-		var driving := _carry_pace(ctx, p)
+		var driving := 0.0 if settling else _carry_pace(ctx, p)
 		if driving > 0.0:
 			p.move_speed_cap = maxf(p.move_speed_cap, p.max_speed() * driving)
 		p.move_deadband = 0.25

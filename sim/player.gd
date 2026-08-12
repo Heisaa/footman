@@ -124,6 +124,15 @@ var regain_tick := -100000
 ## the chase assignment: a man who has just been beaten is not the one who
 ## should be leading the press back.
 var dispossessed_tick := -100000
+## Whether this player's last touch was a settling one -- he put the ball down in
+## front of himself and is not going anywhere with it until he decides again.
+##
+## Written by `SimDecision` and read by `SimMovement`, because the two floors
+## that ask a man on the ball for more than "fast enough to arrive" -- driving at
+## the space in front of him, and escaping a challenge -- are both about a man
+## going somewhere, and a man who has just settled it is not. Without this he
+## sprints straight past a ball he has just stopped.
+var settling := false
 ## Ticks until this player next re-evaluates off-ball movement. Staggered at
 ## kickoff so no single tick evaluates every player.
 var next_decision_tick := 0
