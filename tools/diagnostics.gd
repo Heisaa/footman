@@ -1104,6 +1104,87 @@ const OWN_BALL := 2.5
 const RETREAT_REPORT := 8.0
 
 
+## Where each team's lines sit, and whether they move with the ball.
+##
+## The question is one the engine cannot answer about itself. `shape_position`
+## slides every station with play by construction, so the code always looks as
+## though the shape responds; what it cannot say is by how much, once the ball
+## pull, the tactical line height, the phase shift and the pitch clamp have all
+## been applied on top of each other and the players have run at the result with
+## a deadband and a speed cap.
+##
+## Read off the trace, so it owes the sim nothing. The defensive line is the
+## second-deepest outfielder, because the deepest is often a full-back who has
+## not got back yet and taking the minimum reads one straggler as the whole line.
+## `highest` is the furthest man up. Both are metres from that team's own goal,
+## and each sample counts once for each team, bucketed by where the ball was for
+## that team.
+##
+## What football does, for the eye that has not got a metre stick: with the ball
+## in your own third the line sits around 20 to 25 m out, in the middle third
+## around 30 to 35, and with the ball in theirs a side that is pressing plays it
+## at 40 to 50. The team is 30 to 40 m long through most of that and stretches
+## further only in transition. A line that reads the same number in all three
+## rows is a shape that is not responding to anything, whatever the code says.
+static func _team_lines(ctx: SimContext) -> void:
+	var trace := ctx.telemetry.trace
+	if trace.size() < 2:
+		return
+	var swap_tick := 1 << 30
+	for e in ctx.telemetry.events:
+		if e["ev"] == SimTelemetry.Ev.PERIOD and int(e.get("period", -1)) == SimConsts.Period.SECOND_HALF:
+			swap_tick = int(e["t"])
+			break
+	var full := ctx.pitch.half_length * 2.0
+	var n := PackedFloat32Array()
+	var line_sum := PackedFloat32Array()
+	var high_sum := PackedFloat32Array()
+	n.resize(3)
+	line_sum.resize(3)
+	high_sum.resize(3)
+	for i in trace.size():
+		var sample := trace[i]
+		if sample.size() != ctx.players.size() + 1:
+			continue
+		var flip: float = 1.0 if i * SimConsts.TRACE_TICKS >= swap_tick else -1.0
+		for team in 2:
+			var dir := ctx.pitch.attack_dir(team) * flip
+			var deepest := INF
+			var line := INF
+			var high := -INF
+			for pid in ctx.players.size():
+				var p := ctx.players[pid]
+				if p.is_keeper or not p.on_pitch or p.team != team:
+					continue
+				var up: float = sample[pid + 1].x * dir + ctx.pitch.half_length
+				high = maxf(high, up)
+				if up < deepest:
+					line = deepest
+					deepest = up
+				elif up < line:
+					line = up
+			if is_inf(line) or is_inf(high):
+				continue
+			var ball_up: float = sample[0].x * dir + ctx.pitch.half_length
+			var third: int = clampi(int(ball_up / full * 3.0), 0, 2)
+			n[third] += 1.0
+			line_sum[third] += line
+			high_sum[third] += high
+	var total := n[0] + n[1] + n[2]
+	if total <= 0.0:
+		return
+	print("\nThe lines  (off the trace, both teams, metres from their own goal)")
+	print("  %-14s %8s %10s %9s %10s" % ["ball in", "line", "highest", "length", "of play"])
+	var names := ["own third", "middle third", "their third"]
+	for t in 3:
+		if n[t] <= 0.0:
+			continue
+		print("  %-14s %7.0f m %9.0f m %8.0f m %9.0f%%" % [
+			names[t], line_sum[t] / n[t], high_sum[t] / n[t],
+			(high_sum[t] - line_sum[t]) / n[t], 100.0 * n[t] / total,
+		])
+
+
 static func _giving_up_ground(ctx: SimContext) -> void:
 	var trace := ctx.telemetry.trace
 	if trace.size() < 2:
@@ -2297,6 +2378,7 @@ static func report(m: SimMatch) -> void:
 	_why_it_lost()
 	_why_the_pass_lost(events)
 	_safe_options(ctx)
+	_team_lines(ctx)
 	_giving_up_ground(ctx)
 
 	# --- Pass attempts by kind, with completion -----------------------------

@@ -34,7 +34,7 @@ const BALL_PULL_Z := 0.30
 ## every time a centre-half plays it square. It holds against the opponent's last
 ## man and waits, which is what makes the side long when the ball is deep and is
 ## the whole point of the change.
-const BALL_PULL_X_HOLD := 0.12
+const BALL_PULL_X_HOLD := 0.25
 
 
 ## How far the station slides for a ball at `ball_x`, in the canonical attacking
@@ -475,9 +475,27 @@ static func shape_position(ctx: SimContext, p: SimPlayer, ball_at: Vector3 = SHA
 	x += line_shift * anchor
 
 	# Phase of play: push up in possession, drop off out of it.
+	#
+	# In possession a side squeezes, and it squeezes from the back. The push is
+	# largest for the line that has grass behind it to give up and smallest for
+	# the man already standing on the last defender, who has nowhere to go.
+	#
+	# It used to be the other way round -- 1.4 for the attackers and 1.0 for
+	# everyone else -- so the engine *stretched* at the moment it should have been
+	# closing up. Measured off the trace, the side was 46 to 53 m from its own back
+	# line to its furthest man against a real team's 30 to 40, and worst with the
+	# ball in its own third: a defensive line on 19 m and the highest man on 68,
+	# forty-nine metres of pitch with ten players spread over it. That is a team
+	# with no bands, and it is the shape behind a carrier who has nothing on but a
+	# square pass -- every option is a long way away, so every lane is long.
 	var phase_shift := 0.0
 	if ctx.possession_team == p.team:
-		phase_shift = lerpf(3.0, 9.0, tactics.tempo) * (1.4 if SimRole.is_attacking(p.role) else 1.0)
+		var squeeze: float = 0.7
+		if SimRole.is_defensive(p.role):
+			squeeze = 1.6
+		elif not SimRole.is_attacking(p.role):
+			squeeze = 1.0
+		phase_shift = lerpf(3.0, 9.0, tactics.tempo) * squeeze
 	elif ctx.possession_team >= 0:
 		phase_shift = -lerpf(4.5, 0.5, tactics.press_intensity)
 	x += phase_shift
