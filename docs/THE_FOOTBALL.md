@@ -51,6 +51,7 @@ When one is built, move the row and put the account in `docs/STATUS.md`.
 | Hold shape, slide with play | built | `SimMovement.shape_position` |
 | Split the back line to build out | built | `SimMovement._build_up_width` |
 | Overlap, underlap, third man, switch of play | built | `SimPatterns`, as named patterns |
+| Break on the counter | built | `SimDecision.break_on` prices the ball forward, `SimOffBall` sends the runners, both off the same measurement |
 | Attack a cross — near post, far post, the pull-back | partial | `SimMovement` sends `AERIAL_CHASERS` men at a ball in the air instead of the one the possession cap allows, and they go at the ball; the near post and the far post are not authored positions |
 | Check away and come back | absent | |
 | Drop into the pocket between the lines | absent | |

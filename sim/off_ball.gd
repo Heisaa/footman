@@ -377,6 +377,20 @@ static func is_running_in_behind(ctx: SimContext, p: SimPlayer) -> bool:
 ## prices his return ball over.
 const GIVE_AND_GO_RUN := 1.5
 
+## The same idea for the break, and stronger, because it is the whole side
+## rather than one man and because it lasts two seconds rather than a window.
+## `SimDecision.break_bias` is the pass half; this is the run half, and neither
+## does anything without the other -- lifting the pass alone moved through balls
+## from 39 to 40 on seed 7, because a through ball is only generated for a mate
+## already moving in behind and two seconds after a regain nobody is.
+const BREAK_RUN := 3.0
+## And what the pressure gate below relaxes to while it is on. A regain happens
+## in the most crowded pocket on the pitch, so `BEHIND_MAX_PRESSURE` refuses the
+## run at exactly the moment football makes it. The gate is right in settled
+## play -- a striker peeling off under pressure with no way of reaching him is a
+## man lost -- and the counter is the case it was not written for.
+const BEHIND_MAX_PRESSURE_BREAK := 2.2
+
 
 ## 1 at the moment this player laid the ball off, 0 once the window has run out.
 static func _just_passed(ctx: SimContext, p: SimPlayer) -> float:
@@ -489,7 +503,8 @@ static func _consider(ctx: SimContext, p: SimPlayer, team: int, carrier: int, ba
 		_scores[SPACE] = _value_of(ctx, p, team, ball, base + space, 0.5, SPACE_LANE_POWER)
 		_points[SPACE] = space
 
-	var behind := _behind_point(ctx, p, team, ball, urgency)
+	var breaking := _break_lift(ctx, team, carrier)
+	var behind := _behind_point(ctx, p, team, ball, urgency, breaking)
 	if behind != Vector3.INF:
 		# Not scored through _value_of: pitch control asks who owns that space
 		# now, and the answer for a point nine metres beyond the last defender
@@ -516,6 +531,16 @@ static func _consider(ctx: SimContext, p: SimPlayer, team: int, carrier: int, ba
 			_scores[BEHIND] *= lift
 		if not is_inf(_scores[SPACE]):
 			_scores[SPACE] *= lift
+
+	# And the break, which is the same shape applied to the whole side. Both
+	# options are non-negative here too, so the lift cannot turn a bad idea into
+	# a good one -- it decides who gets the quota, not whether running is on.
+	if breaking > 0.0:
+		var blift: float = lerpf(1.0, BREAK_RUN, breaking)
+		if not is_inf(_scores[BEHIND]):
+			_scores[BEHIND] *= blift
+		if not is_inf(_scores[SPACE]):
+			_scores[SPACE] *= blift
 
 	# Softmax, never argmax, and the temperature is relative to the spread of
 	# the scores rather than absolute -- they are goal probabilities and often
@@ -670,16 +695,31 @@ static func _space_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3
 	return best - base
 
 
+## How much of a break is on for this side, read off the man who won the ball.
+##
+## `SimDecision.break_on` is the one measurement, so the pass and the run cannot
+## disagree about whether the counter is available: it is the regain window
+## times how far up the pitch the side that just lost it had committed. Nobody
+## exposed, no break, and the whole thing is a no-op.
+static func _break_lift(ctx: SimContext, team: int, carrier: int) -> float:
+	if carrier < 0 or carrier >= ctx.players.size():
+		return 0.0
+	var c := ctx.players[carrier]
+	if c.team != team:
+		return 0.0
+	return SimDecision.break_on(ctx, c, SimDecision.regain_urgency(ctx, c))
+
+
 ## Setting off past the last defender.
 ##
 ## The line is taken as this player believes it to be, not as it is, which is
 ## where being caught offside comes from. He must start from onside; the target
 ## is beyond the line, so whether he is onside when the ball is actually struck
 ## is a question about the release, and the referee answers it.
-static func _behind_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3, urgency: float) -> Vector3:
+static func _behind_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3, urgency: float, breaking: float = 0.0) -> Vector3:
 	if not SimRole.is_attacking(p.role) and p.role != SimRole.CM:
 		return Vector3.INF
-	if urgency > BEHIND_MAX_PRESSURE:
+	if urgency > lerpf(BEHIND_MAX_PRESSURE, BEHIND_MAX_PRESSURE_BREAK, breaking):
 		return Vector3.INF
 	if p.dist_to(ball) > BEHIND_RANGE:
 		return Vector3.INF

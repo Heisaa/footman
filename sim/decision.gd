@@ -469,7 +469,8 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 	# the ground pass is lifted: securing possession means finding a man, not
 	# hitting the same forty-metre ball you would have looked for in settled
 	# play, so the through ball and the lofted pass keep their standing prices.
-	var secure: float = lerpf(1.0, 1.7, regain)
+	var secure: float = lerpf(1.0, 1.7, regain * (1.0 - break_on(ctx, player, regain)))
+	var brk := break_bias(ctx, player, regain)
 	var from := ctx.ball.pos
 	var attack_dir := ctx.pitch.attack_dir(player.team)
 	# Nobody plays a measured pass off a ball that is still bouncing. This is
@@ -611,7 +612,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 					# same mismatch the carry had between its scored touch and
 					# its played one, in the other half of the decision layer.
 					"pace": t_pace,
-					"bias": tactics.direct_bias() * _call_bias(ctx, mate),
+					"bias": tactics.direct_bias() * _call_bias(ctx, mate) * brk,
 				})
 				_keep_parts()
 
@@ -647,7 +648,10 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				"loss": ctx.value.xt_at(SimConsts.other_team(player.team), lofted_target, ctx.pitch),
 				"flight": flight,
 				"bias": tactics.direct_bias() * LOFTED_BIAS * (1.0 / (1.0 + raw_distance * 0.055))
-					* SimPatterns.pass_bias(ctx, player, mate_id, lofted_target) * _call_bias(ctx, mate),
+					* SimPatterns.pass_bias(ctx, player, mate_id, lofted_target) * _call_bias(ctx, mate)
+					# Only the ball that actually goes somewhere: a lofted ball played
+					# square or back is not a counter, it is a reset.
+					* (brk if (lofted_target - from).x * attack_dir > 4.0 else 1.0),
 			})
 			_keep_parts()
 
@@ -1913,6 +1917,39 @@ static func regain_urgency(ctx: SimContext, player: SimPlayer) -> float:
 	if elapsed < 0.0 or elapsed >= REGAIN_WINDOW:
 		return 0.0
 	return 1.0 - elapsed / REGAIN_WINDOW
+
+
+## How much the ball forward is worth in the seconds after winning it back.
+##
+## `secure` in `_add_passes` is the settled answer and it is the right one when
+## the side that lost the ball is behind it: securing possession means finding a
+## man. It is exactly wrong when they are not. A regain with their back line on
+## the halfway line is the most dangerous ball in football, and the engine was
+## lifting the square pass by seventy per cent and the ball in behind by nothing
+## — a hundred and thirty-nine times in ten minutes, which is the most frequent
+## trigger in the match wired against the attack.
+##
+## Whether the break is on is not a new measurement. It is `turnover_exposure`
+## read from the other end: that function already prices what *we* lose by being
+## stretched when we give it away, and a counter is the same fact from the side
+## that just won it. Their line high, the break is on. Their line deep, it is
+## not, and `secure` carries exactly as it did — which is why this cannot become
+## a side that hits it long every time it wins a tackle in its own box.
+static func break_on(ctx: SimContext, player: SimPlayer, regain: float) -> float:
+	if regain <= 0.0:
+		return 0.0
+	var exposed := turnover_exposure(ctx, SimConsts.other_team(player.team))
+	return regain * clampf((exposed - 1.0) / maxf(EXPOSURE_MAX - 1.0, 0.01), 0.0, 1.0)
+
+
+## What a ball played forward on the break is multiplied by. Applied to the
+## through ball and to a lofted ball that actually goes somewhere, never to the
+## square one, which is what `secure` is for.
+const BREAK_BIAS := 2.6
+
+
+static func break_bias(ctx: SimContext, player: SimPlayer, regain: float) -> float:
+	return lerpf(1.0, BREAK_BIAS, break_on(ctx, player, regain))
 
 
 ## `delay` is one further step of waiting, and only the hold passes anything but

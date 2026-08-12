@@ -1112,3 +1112,62 @@ could be seen otherwise: a whole compressed match has about five shots in it and
 `diagnose`'s shot table needs a population. `./run.sh diagnose --minutes 10
 --urgency 1` is ten minutes of the compressed match's football at the length the
 instruments were built for.
+
+## The counter-attack, which was scored backwards
+
+Found by asking the conceptual question rather than the measured one: what are
+the ways a chance gets made in football, does the engine have each, and is it
+scored highly enough to ever be chosen? Six routes, and the engine's only two in
+good supply were the long shot and the rebound — football's two cheapest
+chances. The counter was the worst of the rest, because the mechanism was there
+and pointing the wrong way.
+
+`_add_passes` lifted the ground pass by up to 70% in the seconds after a regain
+(`secure`) and lifted the ball in behind by nothing. The comment was right about
+settled play — securing possession means finding a man, not hitting the same
+forty-metre ball — and exactly wrong about a transition, which is the most
+dangerous moment in football. **It fires more often than anything else in the
+engine: 139 regains in ten minutes on seed 7**, against two crosses and three
+give-and-goes.
+
+Whether the break is on is not a new measurement. `turnover_exposure` already
+prices what *we* lose by being stretched when we give the ball away, and a
+counter is the same fact read from the side that just won it: their line high,
+the break is on; their line deep, it is not, and `secure` carries as before. So
+`break_on` is that function from the other end, times the regain window, and
+both halves of the mechanic read it — which is what stops the pass and the run
+disagreeing about whether a counter exists.
+
+**Two halves, and the first one alone did nothing.** Lifting the pass moved
+through balls from 39 to 40 on seed 7. A through ball is only generated for a
+mate already moving in behind, and two seconds after a regain nobody is — the
+whole side is still in defensive shape. The pass had no candidate to be applied
+to. `SimOffBall` is the other half: `BEHIND` and `SPACE` are lifted by
+`BREAK_RUN` for the side that has just won it, the same non-negative shape the
+give-and-go already used, and `BEHIND_MAX_PRESSURE` relaxes while it lasts —
+that gate refuses the run in a crowded pocket, which is right in settled play
+and describes exactly the moment a counter starts.
+
+**Three seeds, ten minutes, `clock_rate` 1.**
+
+| seed | shots | box touches | goals |
+|---|---|---|---|
+| 3 | 19 → 24 | 24 → 32 | 2 → 1 |
+| 7 | 14 → 21 | 21 → 33 | 1 → 3 |
+| 11 | 15 → 16 | 9 → 20 | 0 → 3 |
+
+Shots and touches in the box are up on **every** seed, +27% and +57% in total,
+and those are the two figures a three-seed sample can actually carry. Goals went
+3 to 7, which is the right direction and far too few events to be evidence on
+its own.
+
+**The compressed match saw almost none of it: 1.22 to 1.30 goals, with shots
+per team flat at 2.24.** The football got a quarter more shots and the
+three-minute format got none of them, and the likeliest reason is worth writing
+down because it affects everything else aimed at this format. **Fatigue is one
+of the three things that scales with `clock_rate`**, so a player at the end of a
+compressed match carries ninety minutes of tiredness having played three — and a
+break in behind is the most pace-hungry thing in the game. The mechanics that
+create chances are exactly the ones a tired squad cannot execute. That is a
+guess with an obvious test behind it and it is the first thing to look at before
+any further work on the compressed scoreline.
