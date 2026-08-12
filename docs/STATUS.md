@@ -58,15 +58,16 @@ count, and takes its camera distance from the aspect actually being rendered rat
 than an assumed 16:9. The virtual display hands out 1280x1024, and the sheet had
 been cutting the outer column off both ends of every row.
 
-A look pass over the figures (`DECISIONS.md`, eighth amendment) cut the head to
-30-35% of height and widened what a seed can produce: height and build reach the
-tails, the head is scaled on two axes so a squad has long faces and wide ones,
-hair is fourteen styles from four smooth pieces, and the eyes and the mouth are
-per-player and independent of the expression. An ink outline and a set of
-eighties kit details were tried in the same pass and removed — §9.7's register
-governs the writing, not the art, and §9.7 now says so. Delight and despair had
-been drawn upside down since the atlas was written; the parade is where that
-became visible.
+A look pass over the figures (`DECISIONS.md`, eighth and ninth amendments) cut
+the head to 30-35% of height and widened what a seed can produce: height and
+build reach the tails, the head is scaled on two axes so a squad has long faces
+and wide ones, hair is fourteen styles built from a shell pushed back off the
+skull, and the brows, eyes, mouth and nose are per-player and independent of the
+expression — with the brows carrying the expression, which is where a Mii gets
+its range. An ink outline, a set of eighties kit details and the beards were
+tried in the same pass and removed: §9.7's register governs the writing, not the
+art, and §9.7 now says so. Delight and despair had been drawn upside down since
+the atlas was written; the parade is where that became visible.
 
 `./run.sh parade --seed N` is the view the figures are judged in: four of that
 seed's players at reading distance, turning, each captioned with number, name,

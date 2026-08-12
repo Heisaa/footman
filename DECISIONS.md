@@ -228,6 +228,36 @@ delight and despair were drawn upside down (arched-down eyes and a frowning
 "grin" on the delighted face, a smile on the despairing one), and the headband
 accessory was a disc across the face rather than a band round the head.
 
+### Ninth: the reference is the toy game and the Mii
+
+Made at the owner's direction, with two reference images: a Sokpop-style
+five-a-side game for the figures, and the Mii "choose a look-alike" grid for the
+faces. The note was that the hair looked like hats and the beards looked bad.
+
+Both were geometry problems with the same cause — a lump sitting on a head reads
+as a lump sitting on a head:
+
+- **Hair is now a sphere slightly larger than the skull, pushed back**, plus an
+  optional mass down the back. Two numbers do all of it: the radius is how much
+  hair there is, the push back is where the hairline lands. The previous version
+  built an ellipsoid from a hairline and sat it on the crown, which is a hat by
+  construction. Fourteen styles, from cropped to a big afro.
+- **Beards are gone**, and `PLAN.md` §9.3 no longer lists them. A sphere on the
+  jaw is a blob at any size and it covers the mouth, which is half the
+  expression. If facial hair comes back it belongs on the drawn face.
+- **The face got the Mii's range**: brows, eyes with whites and pupils as well as
+  plain dots, noses, and more mouths — all per-player and independent of the
+  expression. The **brows carry the expression**: lowered and driven in for
+  effort, raised for delight, outer ends dropped for despair, driven down hard
+  for anger. That is how a Mii gets range out of a face with no rig in it, and it
+  costs a two-pixel line.
+
+Two intermediate versions were wrong in instructive ways and are recorded so
+nobody tries them again: a shell only a few per cent over the skull and pushed
+well back shows as a **rim round the silhouette**, which is a swimming cap; and
+fixing that by giving every style volume produces **eleven afros**. Volume
+belongs to the two styles that want it, and the hairline does the rest.
+
 ## Design calls made during the build
 
 **Goals and draws are entertainment targets, not simulation targets.** The owner

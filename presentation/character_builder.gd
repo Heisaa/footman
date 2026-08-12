@@ -116,21 +116,25 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 
 	var head := _sphere(head_r, skin)
 	head.position = Vector3(0.0, head_r * 0.86, 0.0)
-	# Not a ball. Everything hanging off the head -- face, hair, beard -- is a
-	# child of it, so one scale gives a long face or a wide one and the drawn
-	# features stretch with it.
+	# Not a ball. The face and the hair are children of it, so one scale gives a
+	# long face or a wide one and the drawn features stretch with it.
 	head.scale = Vector3(appearance.head_width, appearance.head_height, appearance.head_width)
 	head.name = "Head"
 	neck.add_child(head)
 
 	var face := _face_quad(head_r, appearance)
-	face.position = Vector3(0.0, 0.02, head_r * 0.94)
+	# Just proud of the skull. At 0.94 the quad sits inside a sphere this size and
+	# only shows because the sphere is faceted, which leaves no room for hair to
+	# come down the forehead without swallowing the brows.
+	face.position = Vector3(0.0, 0.02, head_r * 0.96)
 	face.name = "Face"
 	head.add_child(face)
-	# The expression swaps at run time and has to keep the man's own eyes and
-	# mouth, so the two style indices ride on the figure.
+	# The expression swaps at run time and has to keep the man's own face under
+	# it, so the style indices ride on the figure.
+	root.set_meta("brow_style", appearance.brow_style)
 	root.set_meta("eye_style", appearance.eye_style)
 	root.set_meta("mouth_style", appearance.mouth_style)
+	root.set_meta("nose_style", appearance.nose_style)
 
 	var hair := _hair(appearance, head_r)
 	if hair != null:
@@ -264,41 +268,61 @@ static func _face_quad(head_r: float, appearance: SimAppearance) -> MeshInstance
 	node.mesh = mesh
 	var m := flat_material(Color.WHITE)
 	m.albedo_texture = SimFaceAtlas.texture_for(
-		SimAppearance.Face.NEUTRAL, appearance.eye_style, appearance.mouth_style)
+		SimAppearance.Face.NEUTRAL, appearance.brow_style, appearance.eye_style,
+		appearance.mouth_style, appearance.nose_style)
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	node.material_override = m
 	return node
 
 
-## Hair, from four smooth pieces: a cap over the crown, a mass down the back, a
-## fringe over the forehead and a tuft on top. Fourteen recognisably different
-## heads out of one small function, and every piece is a squashed sphere -- the
-## look is the toy, so nothing here is line work or texture.
+## Hair: a sphere a little larger than the skull, pushed back and up, plus an
+## optional mass down the back. Nothing else.
 ##
-## The cap is built from a **hairline** rather than a scale, because the number
-## that matters is where the hair stops on the forehead. The drawn eyes sit at
-## about a tenth of a head-radius above the middle of the face, and a cap whose
-## lower edge crosses them reads as a blindfold. Deriving the ellipsoid from the
-## hairline puts that edge exactly where the row asks for it.
+## The previous version built an ellipsoid from a hairline and it read as a hat,
+## every time -- because a squashed sphere sitting on the crown *is* a hat, and
+## its lower edge is a brim. A sphere concentric with the head cannot be: it is
+## the head, slightly inflated, so the head shows through wherever the sphere is
+## pushed away from. Pushing it back by `back_off` is what opens the face, and
+## the amount of push is what makes the difference between a bowl cut and a
+## receding one. That is how the reference art does it.
 ##
-## Each row is [hairline, back, fringe, tuft].
-const HAIR_CROWN := 1.12
+## The one number to respect: the drawn brows sit about a quarter of a
+## head-radius above the middle of the face, and the face quad is at 0.94 of the
+## radius. Hair reaching into that corner covers the brows, and the brows are
+## where the expression lives. Every row below is checked against it.
+##
+## Two numbers do the work. The **radius** is how much hair there is: a few per
+## cent over the skull is hair lying on the head, a fifth over is an afro. The
+## **push back** is the hairline: the two spheres meet in a circle, and shoving
+## the hair sphere backwards drags that circle up the forehead. Push a small
+## shell far back and all that is left is a rim round the silhouette, which is a
+## swimming cap; push it a little and the hair comes down the forehead.
+##
+## Making every style voluminous to avoid the rim was the other failure -- a
+## squad of eleven afros. Volume belongs to the two styles that want it.
+##
+## The limit on every row is the face. The drawn brows sit about a quarter of a
+## head-radius above the middle of the face and the face quad is at 0.96 of the
+## radius, so no row may reach past about 0.95 at that height: that is
+## `back >= radius - 0.95` at the worst point.
+##
+## Each row is [radius, up, back, side, height scale, mass down the back].
 const HAIR_LIBRARY := [
-	[0.00, 0, 0, 0],  # bald
-	[0.44, 0, 0, 0],  # receding
-	[0.30, 0, 0, 0],  # cropped
-	[0.30, 0, 1, 0],  # cropped with a fringe
-	[0.20, 0, 0, 0],  # thick on top
-	[0.20, 0, 1, 0],  # thick with a fringe
-	[0.26, 0, 0, 1],  # a tuft
-	[0.20, 0, 1, 1],  # fringe and tuft
-	[0.26, 1, 0, 0],  # collar length
-	[0.22, 1, 1, 0],  # collar length with a fringe
-	[0.16, 1, 0, 0],  # long
-	[0.16, 1, 1, 0],  # long with a fringe
-	[0.24, 1, 0, 1],  # long with a tuft
-	[0.34, 0, 1, 0],  # a fringe and not much else
+	[0.00, 0.00, 0.00, 0.00, 1.00, 0],  # bald
+	[1.04, 0.08, 0.22, 0.00, 1.00, 0],  # cropped
+	[1.05, 0.06, 0.16, 0.00, 1.00, 0],  # short back and sides
+	[1.09, 0.05, 0.13, 0.00, 1.00, 0],  # a bowl cut
+	[1.11, 0.04, 0.16, 0.00, 1.00, 0],  # a heavy bowl cut
+	[1.06, 0.14, 0.16, 0.00, 1.18, 0],  # tall on top
+	[1.26, 0.12, 0.32, 0.00, 0.96, 0],  # an afro
+	[1.38, 0.16, 0.44, 0.00, 0.92, 0],  # a big afro
+	[1.06, 0.05, 0.13, 0.05, 1.00, 0],  # swept to one side
+	[1.06, 0.05, 0.13, 0.00, 1.00, 1],  # collar length
+	[1.07, 0.04, 0.12, 0.04, 1.00, 1],  # long, with a parting
+	[1.02, 0.12, 0.30, 0.00, 1.00, 0],  # receding
+	[1.03, 0.10, 0.24, 0.00, 0.92, 0],  # thin on top
+	[1.20, 0.10, 0.26, 0.00, 1.00, 1],  # a big head of hair
 ]
 
 
@@ -307,40 +331,25 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 	if style == 0:
 		return null
 	var row: Array = HAIR_LIBRARY[style]
-	var hairline: float = row[0]
 	var mat := flat_material(appearance.hair_colour)
 	var root := Node3D.new()
 	root.name = "Hair"
 
-	# An ellipsoid whose bottom lands on the hairline and whose top clears the
-	# crown, gripping the skull a little wider than the skull itself.
-	var half := (HAIR_CROWN - hairline) * 0.5
-	var cap := _sphere(head_r * 1.04, mat)
-	cap.position = Vector3(0.0, head_r * (HAIR_CROWN - half), -head_r * 0.05)
-	cap.scale = Vector3(1.0, half / 1.04, 1.0)
-	root.add_child(cap)
+	var shell := _sphere(head_r * float(row[0]), mat)
+	shell.position = Vector3(
+		head_r * float(row[3]), head_r * float(row[1]), -head_r * float(row[2]))
+	shell.scale = Vector3(1.0, float(row[4]), 1.0)
+	root.add_child(shell)
 
-	if int(row[1]) == 1:
-		# The mass down the back, which is what the high match camera actually
-		# sees of a long style.
-		var back := _sphere(head_r * 0.8, mat)
-		back.position = Vector3(0.0, -head_r * 0.16, -head_r * 0.56)
-		back.scale = Vector3(1.05, 1.05, 0.62)
+	if int(row[5]) == 1:
+		# Down the back of the neck, which is most of what the match camera sees
+		# of a long style.
+		# Behind the head rather than beside it: a mass as wide as the skull turns
+		# a long style into a hood.
+		var back := _sphere(head_r * 0.78, mat)
+		back.position = Vector3(0.0, -head_r * 0.34, -head_r * 0.5)
+		back.scale = Vector3(0.85, 1.15, 0.72)
 		root.add_child(back)
-
-	if int(row[2]) == 1:
-		# A patch on the forehead, standing proud of it. Narrower than the head so
-		# it cannot close into a band round the whole skull.
-		var fringe := _sphere(head_r * 0.62, mat)
-		fringe.position = Vector3(0.0, head_r * (hairline + 0.12), head_r * 0.5)
-		fringe.scale = Vector3(0.95, 0.34, 0.5)
-		root.add_child(fringe)
-
-	if int(row[3]) == 1:
-		var tuft := _sphere(head_r * 0.3, mat)
-		tuft.position = Vector3(0.0, head_r * 1.02, -head_r * 0.08)
-		tuft.scale = Vector3(0.8, 1.2, 0.8)
-		root.add_child(tuft)
 
 	return root
 
@@ -352,18 +361,14 @@ static func _accessory(
 	kit: PackedColorArray
 ) -> void:
 	match appearance.accessory:
-		"beard", "beard_full":
-			# Under the drawn mouth, not over it. The mouth is half the expression
-			# and a beard centred on the jaw swallowed it.
-			var beard := _sphere(head_r * 0.82, flat_material(appearance.hair_colour))
-			beard.position = Vector3(0.0, -head_r * 0.48, head_r * 0.2)
-			beard.scale = Vector3(0.92, 0.62 if appearance.accessory == "beard" else 0.82, 0.82)
-			head.add_child(beard)
 		"headband":
 			# A band round the forehead. It was a capsule turned on its side, which
 			# is a disc across the face rather than a band round the head.
-			var band := _band(head_r * 1.02, head_r * 0.15, flat_material(kit[0]))
-			band.position = Vector3(0.0, head_r * 0.3, 0.0)
+			# Above the brows, which sit at about four tenths of a radius, and only
+			# just wider than the head is at that height -- a band cut to the
+			# equator and raised to the forehead is a brim.
+			var band := _band(head_r * 0.98, head_r * 0.13, flat_material(kit[0]))
+			band.position = Vector3(0.0, head_r * 0.5, 0.0)
 			head.add_child(band)
 		"cap":
 			var cap := _sphere(head_r * 1.05, flat_material(kit[0]))
@@ -384,6 +389,9 @@ static func set_expression(player_root: Node3D, face: int) -> void:
 	var mat := quad.material_override as StandardMaterial3D
 	if mat == null:
 		return
-	var eyes: int = player_root.get_meta("eye_style", 0)
-	var mouth: int = player_root.get_meta("mouth_style", 0)
-	mat.albedo_texture = SimFaceAtlas.texture_for(face, eyes, mouth)
+	mat.albedo_texture = SimFaceAtlas.texture_for(
+		face,
+		player_root.get_meta("brow_style", 0),
+		player_root.get_meta("eye_style", 0),
+		player_root.get_meta("mouth_style", 0),
+		player_root.get_meta("nose_style", 0))

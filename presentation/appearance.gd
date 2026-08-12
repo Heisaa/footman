@@ -51,9 +51,12 @@ const HAIR_COLOURS := [
 	Color("5b4a8a"), Color("3fa88a"),
 ]
 
-## Hair, assembled from a cap, a back mass, a fringe and a tuft. Style 0 is bald.
+## Hair: a shell round the skull, pushed back to open the face. Style 0 is bald.
 const HAIR_STYLES := 14
-const ACCESSORIES := ["none", "none", "none", "headband", "cap", "beard", "beard_full"]
+## Beards were here and came out: a sphere on the jaw is a blob whatever size it
+## is, and it swallowed the mouth, which is half the expression. Facial hair
+## belongs on the drawn face if it comes back at all.
+const ACCESSORIES := ["none", "none", "none", "none", "headband", "cap"]
 
 var height := 1.78
 var head_fraction := 0.37
@@ -67,11 +70,13 @@ var face := Face.NEUTRAL
 ## Head shape, as scales on the head sphere. Round is 1, 1.
 var head_width := 1.0
 var head_height := 1.0
-## Which drawn eyes and which drawn mouth this player wears. The expression
-## swaps on top of them: a delighted man has the grin whoever he is, and the
-## neutral face he spends the match in is his own.
+## The face he was born with: his brows, his eyes, his mouth, his nose. The
+## expression is drawn over the top of them rather than replacing them, so a
+## heavy-browed man still has heavy brows when he is delighted.
+var brow_style := 0
 var eye_style := 0
 var mouth_style := 0
+var nose_style := 0
 ## Sleeve length, socks pulled up, and so on: tiny variations that make a squad
 ## look like a group of individuals rather than a clone army.
 var sleeves_long := false
@@ -99,8 +104,10 @@ static func from_seed(seed_value: int) -> SimAppearance:
 	a.hair_style = rng.range_int(0, HAIR_STYLES - 1)
 	a.hair_colour = HAIR_COLOURS[rng.range_int(0, HAIR_COLOURS.size() - 1)]
 	a.accessory = ACCESSORIES[rng.range_int(0, ACCESSORIES.size() - 1)]
+	a.brow_style = rng.range_int(0, SimFaceAtlas.BROW_STYLES.size() - 1)
 	a.eye_style = rng.range_int(0, SimFaceAtlas.EYE_STYLES.size() - 1)
 	a.mouth_style = rng.range_int(0, SimFaceAtlas.MOUTH_STYLES.size() - 1)
+	a.nose_style = rng.range_int(0, SimFaceAtlas.NOSE_STYLES.size() - 1)
 	a.sleeves_long = rng.chance(0.75)
 	a.socks_high = rng.chance(0.8)
 	a.face = Face.NEUTRAL
