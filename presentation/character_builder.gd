@@ -496,6 +496,10 @@ static func _moustache(head: Node3D, head_r: float, appearance: SimAppearance) -
 ## How flat the shell is, how far up it sits, and how much further back it goes
 ## to pay for the lift. The three move together: flattening alone bares the
 ## crown, lifting alone drags the front hairline down over the brows.
+## The grid of lobes a quiff is filled with, back to front and side to side.
+const QUIFF_ROWS := 4
+const QUIFF_ACROSS := 5
+
 const HAIR_SQUASH := 0.72
 const HAIR_LIFT := 0.24
 ## Raising the shell drags the hairline down the forehead, and this is what pays
@@ -590,22 +594,25 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 		# Each lobe is placed by where its top should come, not by where its middle
 		# goes: the back row is set flush with the shell so the fill starts
 		# invisibly, and every row after it stands that much prouder.
-		for row in 3:
-			var along := float(row) * 0.5
-			var z := lerpf(-0.46, 0.42, along)
-			var radius := lerpf(0.26, 0.36, along)
+		# Four rows of five, small and heavily overlapped. Nine bigger ones covered
+		# the same shape but each was its own bump: it is the count that makes a
+		# mass, not the size, and stretching a few lobes wide enough to touch only
+		# turns nine bumps into nine ridges.
+		for row in QUIFF_ROWS:
+			var along := float(row) / float(QUIFF_ROWS - 1)
+			var z := lerpf(-0.50, 0.44, along)
+			var radius := lerpf(0.20, 0.28, along)
 			var top := lerpf(1.16, 1.26, along)
-			for i in 3:
-				var across := float(i) - 1.0
+			var half := lerpf(0.42, 0.36, along)
+			for i in QUIFF_ACROSS:
+				var across := float(i) - float(QUIFF_ACROSS - 1) * 0.5
 				var off := absf(across)
-				var lobe := _sphere(head_r * radius * (1.0 - off * 0.12), mat, true)
+				var lobe := _sphere(head_r * radius * (1.0 - off * 0.06), mat, true)
 				lobe.position = Vector3(
-					across * head_r * lerpf(0.40, 0.34, along),
-					head_r * (top - radius * 0.9 - off * 0.06),
+					across * head_r * half * 2.0 / float(QUIFF_ACROSS - 1),
+					head_r * (top - radius * 0.9 - off * 0.03),
 					head_r * z)
-				# Wide and deep enough to run into their neighbours. Left round they
-				# are nine separate balls, which is the curly head two rows up.
-				lobe.scale = Vector3(1.25, 0.9, 1.05)
+				lobe.scale = Vector3(1.1, 0.9, 1.05)
 				root.add_child(lobe)
 
 	# Swept back instead: a low wide dome over the crown, running to the back of
