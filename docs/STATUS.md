@@ -1240,3 +1240,65 @@ block. It is the same root: a corner is a shot or a cross that a defender or the
 keeper puts *behind*, and in this engine nothing goes behind, because the keeper
 catches it in front. The capped conversion and the missing set-piece goals are
 one bug.
+
+## The keeper stops picking up shots that missed
+
+The fix for the finding above, and it is two changes plus one that turned out to
+be the instrument's own fault.
+
+**`_try_gather` may not have a live shot.** A shot belongs to the save model
+from the moment it is struck until it resolves. `_goal_line_crossing` had always
+refused a ball that was not going in — its own comment says a keeper who dives
+at everything near the goal manufactures saves — and `_try_gather` then picked
+those balls up anyway, because proximity was its only test.
+
+**One predicate for "is this going in".** `SimReferee.crosses_goal` is public
+now and the keeper calls it instead of re-deriving the frame, which it had been
+doing with a ball radius of slack at each post and over the bar. Two
+implementations of one event, the failure `docs/PITFALLS.md` is largely made of.
+
+**And the shot has to be closed at the line.** This one was the instrument
+misreading its own subject, and it hid the result for three measurements.
+`_track_shot` runs out of `SimReferee.update`, which the tick loop only calls
+while the ball is in play — so a shot gone wide stayed open through the dead
+ball and was charged to the next man to touch it, which at a goal kick is the
+keeper. The table read `keeper saved, wide` for balls he never went near, and
+reported nothing going out of play at the exact moment the gather gate had
+started sending shots out. `SimMatch._check_ball_out_of_play` closes it now.
+
+**Three seeds, ten minutes, 58 shots.**
+
+| fate | after | before |
+|---|---|---|
+| wide, out of play | 33% | 0% |
+| goal | 24% | 11% |
+| keeper saved | 16% | 39% |
+| defender deflected it wide | 14% | — |
+| keeper gathered | 5% | 36% |
+| blocked | 5% | 5% |
+| curled away | 3% | 0% |
+
+A third of shots miss, which is football's own figure. Goals doubled, 7 to 14.
+Goal kicks on seed 7 went 5 to 11 and a corner appeared, which is the supply
+line the audit found starved — it is one corner rather than five, so this opens
+the door rather than walking through it.
+
+**The compressed match hits the target: 2.76 goals, from 1.30.**
+
+**And two things are now wrong that were hidden before.** The first is the
+scoring fit. Its keeper knobs were fitted against a keeper who was quietly
+compensating with `_try_gather`, so with the gather gone they are far too
+aggressive: the three-minute match converts 73% of its shots and puts 79% on
+target, against football's tenth and third. It hits 2.7 because a compressed
+match cannot have more than about four shots in it and 2.7 goals out of four
+shots is what that arithmetic demands (`DECISIONS.md`, the owner's call). The
+knobs are the place to trade goals back for realism, and they should be re-fitted
+now rather than left at values chosen around a bug.
+
+The second is more interesting and is not about compression. **At `clock_rate` 1
+the keeper now saves about 44% of the shots that were going in**, against the
+`save_chance` comment's own claim of two thirds to three quarters — and the real
+engine went to roughly 42 goals per ninety minutes of football. The gather was
+propping up the whole defensive balance, and with it gone the modelled save is
+visibly under-delivering against its own calibration. That is the next thread,
+and it is a football question rather than a format one.

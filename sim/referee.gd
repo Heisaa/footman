@@ -65,7 +65,7 @@ static func _track_shot(ctx: SimContext) -> void:
 	# whole of what this block could not see: a shot briefly goal-bound that then
 	# curls or drops away keeps the flag for ever, so the engine's accuracy read
 	# high and the shots that quietly died were invisible.
-	var bound := _crosses_goal(ctx, int(ctx.active_shot["team"]))
+	var bound := crosses_goal(ctx, int(ctx.active_shot["team"]))
 	ctx.active_shot["bound"] = bound
 	if bound:
 		ctx.active_shot["on_target"] = true
@@ -99,7 +99,11 @@ static func close_shot(ctx: SimContext, touched: bool) -> void:
 			# stopped being this shot.
 			fate = "own player"
 		elif p.is_keeper:
-			fate = "keeper" if bound else "keeper, wide"
+			# Which of the keeper's two paths took it. They are different models
+			# and conflating them is what hid `_try_gather` doing the save's job.
+			var how := "gathered" if ctx.ball.last_touch_kind == SimTelemetry.Touch.KEEPER_CATCH else "saved"
+			var ever := " (was on target)" if bool(shot["on_target"]) else " (never on target)"
+			fate = ("keeper %s" % how) if bound else ("keeper %s, wide%s" % [how, ever])
 		elif bound:
 			fate = "blocked"
 			shot["blocked"] = true
@@ -114,8 +118,8 @@ static func close_shot(ctx: SimContext, touched: bool) -> void:
 
 
 ## True if the forecast has the ball crossing the goal `team` is attacking,
-## between the posts and under the bar.
-static func _crosses_goal(ctx: SimContext, team: int) -> bool:
+## between the posts and under the bar. The predicate half of `goal_crossing`.
+static func crosses_goal(ctx: SimContext, team: int) -> bool:
 	var goal := ctx.pitch.target_goal(team)
 	var side := signf(goal.x)
 	if ctx.ball.vel.x * side <= 0.5:

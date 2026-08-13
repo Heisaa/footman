@@ -298,6 +298,20 @@ func _separate_players() -> void:
 
 func _check_ball_out_of_play() -> void:
 	var b := ctx.ball
+	if b.over_goal_line(ctx.pitch) or b.over_touch_line(ctx.pitch):
+		# The ball has left the field, so whatever shot was live ended here and
+		# ended by missing. It has to be closed from this side: `_track_shot`
+		# runs out of `SimReferee.update`, which the tick loop only calls while
+		# the ball is in play, so a shot gone wide stayed open through the dead
+		# ball and was charged to the next man to touch it -- which at a goal
+		# kick is the keeper. That is what made the fate table read "keeper
+		# saved, wide" for balls the keeper never went near, and it hid the goal
+		# kicks the gather gate had just given back.
+		# A goal crosses the same line: `_score_goal` below stamps its own fate
+		# and clears the record, so close only what is not one.
+		if not (b.over_goal_line(ctx.pitch) and absf(b.pos.z) <= ctx.pitch.goal_half_width \
+				and b.pos.y <= ctx.pitch.goal_height):
+			SimReferee.close_shot(ctx, false)
 	if b.over_goal_line(ctx.pitch):
 		# Goal, corner, or goal kick.
 		var crossing_z := b.pos.z

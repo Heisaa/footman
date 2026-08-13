@@ -570,7 +570,7 @@ static func _closest_approach(ctx: SimContext, k: SimPlayer, crossing_index: int
 static func _goal_line_crossing(ctx: SimContext, k: SimPlayer) -> Dictionary:
 	var goal := ctx.pitch.own_goal(k.team)
 	var side := signf(goal.x)
-	if ctx.ball.vel.x * side <= 1.0:
+	if ctx.ball.vel.x * side <= 0.5:
 		return {}
 	var traj := ctx.trajectory_now()
 	var prev := ctx.ball.pos
@@ -583,8 +583,16 @@ static func _goal_line_crossing(ctx: SimContext, k: SimPlayer) -> Dictionary:
 			# Only balls that are actually going in. A keeper who dives at
 			# everything near the goal manufactures saves out of shots that were
 			# always going wide, and the statistics stop meaning anything.
-			if absf(point.z) > ctx.pitch.goal_half_width + SimConsts.BALL_RADIUS \
-					or point.y > ctx.pitch.goal_height + SimConsts.BALL_RADIUS:
+			#
+			# The frame is the referee's, to the millimetre. This used to allow a
+			# ball radius of slack at each post and over the bar, and
+			# `SimReferee._crosses_goal` does not -- so a ball passing just
+			# outside the post was a shot the keeper saved and a shot the match
+			# record called wide. Two implementations of "is this going in", and
+			# the disagreement was worth half of every shot in a match:
+			# `keeper saved, wide` ran at 23% and 52% on two seeds before these
+			# two lines agreed. `docs/PITFALLS.md`, two models of the same event.
+			if not SimReferee.crosses_goal(ctx, SimConsts.other_team(k.team)):
 				return {}
 			return {"point": point, "index": i, "time": traj.time_of_index(i) - SimConsts.FORECAST_DT * (1.0 - f)}
 		prev = p
@@ -600,10 +608,40 @@ static func _resolve_pass_of_shot(ctx: SimContext, _k: SimPlayer) -> void:
 # --- Contact rules ----------------------------------------------------------
 
 
+## True while an opponent's attempt on goal is still live and unresolved.
+##
+## Read off `ctx.active_shot`, which is the same record the referee fills in and
+## the shot log carries, so there is one answer to "is this ball a shot" rather
+## than two that can disagree.
+static func _shot_in_flight(ctx: SimContext, k: SimPlayer) -> bool:
+	if ctx.active_shot.is_empty():
+		return false
+	return int(ctx.active_shot.get("team", -1)) != k.team
+
+
 ## A keeper gathers a slow ball inside their own area, or takes a high one out of
 ## the air above it.
 static func _try_gather(ctx: SimContext, k: SimPlayer) -> void:
 	if not k.can_touch():
+		return
+	# A shot belongs to the save model from the moment it is struck until it
+	# resolves, and this function may not have it.
+	#
+	# Without the gate the catch roll below quietly did the whole job.
+	# `_goal_line_crossing` deliberately ignores a ball that is not going in --
+	# its own comment says a keeper who dives at everything near the goal
+	# manufactures saves out of shots that were always going wide -- and then
+	# this picked those balls up regardless, three metres from a post, because
+	# proximity was the only test. Measured across three seeds: three quarters of
+	# every shot ended with the keeper touching the ball, better than a third of
+	# them after they had already missed the target, and *nothing* went out of
+	# play. The reach envelope, the reaction time and the dive were being
+	# bypassed; seed 7 had fifteen shots end at the keeper and zero logged saves.
+	#
+	# It resolves the moment he touches it, so the parry, the rebound and the
+	# loose ball afterwards are all still his -- `SimReferee.close_shot` clears
+	# the record on any touch, and this is a gather again on the next tick.
+	if _shot_in_flight(ctx, k):
 		return
 	if not ctx.pitch.in_own_penalty_area(k.team, k.pos):
 		# Outside the area a keeper is just a player with bad feet.
