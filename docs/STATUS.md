@@ -1959,3 +1959,94 @@ setting — barely moved between seeds. Read the through-ball columns, which are
 same population measured directly; do not read shots off three seeds.
 
 **The goldens moved again and were re-recorded.**
+
+## Four things the through-ball work uncovered on the way past
+
+Each one was found by an instrument built for something else, which is the point of
+having them.
+
+### The engine believed every pass was 9% quicker than it is
+
+`ground_travel_time` solved a single blended deceleration. `blended_decel` is the
+`a` that reproduces the slide-then-roll *range*, which is what it was written for
+and all it is good for: matching the total distance to a stop says nothing about
+how long the ball takes to reach anywhere short of it. Rolled against the real
+integrator:
+
+| pass | integrated | two-phase | blended |
+|---|---|---|---|
+| 8 m | 1.383 s | 1.369 s | 1.266 s |
+| 15 m | 2.200 s | 2.195 s | 2.018 s |
+| 25 m | 3.150 s | 3.134 s | 2.873 s |
+| 35 m | 3.950 s | 3.917 s | 3.586 s |
+
+Within 1% at every distance against 8–9% fast everywhere, and the residual is air
+drag, which neither closed form models. `_pass_success` prices every interception
+in the match off this number, so **every pass in the engine was being charged for a
+journey quicker than the one it makes.** It is the same class of error
+`blended_decel`'s own note records being fixed once before, surviving in the half of
+the model nobody had checked.
+
+Solved in two phases now. Three seeds: through balls 207 to 182, shots 45 to 32.
+The engine got more careful because it was finally told how long the ball is
+actually in transit.
+
+**`_pass_success` is left underconfident and that is now the open question.** On the
+balls it played it says 0.57 against 87% completed. The travel time was wrong and is
+fixed; the model built on it is calibrated badly in the other direction, and this
+change made that worse before anything else can make it better.
+
+### A gate tally whose population excluded the broken case
+
+`_open_behind_gates` opened on `is_running_in_behind` — a *committed* run. A
+committed man passes `moving_on` by construction, so `not moving forward yet` could
+never fire; and the whole projected branch of the candidate, which is the branch
+this thread found aiming a flat 12.6 m ahead of a man whatever he was doing, was
+invisible to the one instrument built to explain a missing ball in behind. Broken
+and unmeasurable in the same place.
+
+It opens on football now: an outfield teammate ahead of the ball. Pure
+instrumentation, and the three seeds it was checked against moved by not one pass.
+**The rule: a gate tally's population has to be wider than every gate it measures,
+or a gate reads 0% because it cannot fire.**
+
+### Nothing checked that a through ball went in behind anybody
+
+The gates were all about the receiver — is he a runner, is he moving, is he close
+enough — and not one of them looked at the defence he was supposed to be running
+past. So the candidate fired for any attacking man drifting forward in midfield, and
+a "through ball" to a man going beyond nobody is a forward pass, which the ground
+pass beside it already offers at a weight suited to feet and priced as the safer
+ball it is.
+
+The aim point now has to reach the passer's believed offside line, less
+`BEHIND_BREAK`. Three seeds: through balls 182 to 76, **their share of all passes
+6.1%**, shots 32 to 37, penalty-area touches 37 to 45. That is `docs/BACKLOG.md`
+(22) answered, and it was football rather than a bias — the two things tried on the
+bias, a length term and a level cut, moved the count by 2% and 0.2 points of share
+respectively.
+
+### The ball over the top was not over anything
+
+The lofted pass aimed at `believed + mate.vel * flight * 0.55` — dead reckoning on
+the velocity a man happens to have, the exact defect `_lead_point` was written for
+and which the ground pass and the through ball had both already been fixed of. It
+fails in the one case a ball over the top exists for: a man who has just committed
+to a run has not accelerated into it, so his velocity is small and the ball is
+dropped on his head. Measured, it was aimed **4.3 m in front of its receiver against
+3.1 m for a square pass to feet.**
+
+It goes through `_lead_point` now, which falls back to the same dead reckoning for a
+man who has committed to nothing, so only the ball worth moving moves. Aim went to
+5.1 m.
+
+**And it cost the outcome**: lofted completion 51% to 43%, reaching the intended man
+40% to 19%. That is honest rather than surprising — the aim is now correct and the
+execution cannot deliver it, because a 33 m ball in the air landing on a spot 12 m
+in front of a moving man is a hard ball. **The half not looked at is the weight.**
+A ball over the top should land *short* of where the runner is going and roll on to
+him; this one is still solved to land *on* the aim point, which is the same mistake
+the through ball's arrival pace was, in the air instead of on the grass.
+`docs/BACKLOG.md` (23).
+
+**Goldens re-recorded after each of the three that changed behaviour.**

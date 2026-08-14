@@ -73,20 +73,29 @@ because it is the attack working rather than the run failing — and it was most
 number, which rose every time the engine got better at reaching the box. What is left
 in `cut short` is a real turnover mid-stride.
 
-**`A man was running in behind`** — the gates in front of the one pass the whole
-counter is built around, and the population is a **runner rather than a decision**:
-every teammate making the run at the moment somebody is deciding, filed under the
-first gate that refused him, in the order the gates are applied. `Chains` can say the
-run existed three times more often than the pass was offered and cannot say why, and
-the answer picks the layer — `_shortlist` keeping six of ten is a different job from a
+**`A man could be played in behind`** — the gates in front of the one pass the whole
+counter is built around, and the population is a **man rather than a decision**: every
+outfield teammate ahead of the ball when somebody is deciding, filed under the first
+gate that refused him, in the order the gates are applied. `Chains` can say the run
+existed three times more often than the pass was offered and cannot say why, and the
+answer picks the layer — `_shortlist` keeping six of ten is a different job from a
 body-orientation range clamp, and both are upstream of everything the pass is worth.
 
-It has already caught one proxy and left one piece of football standing: `not moving
-forward yet` was 21% and is now 0%, because a man a stride into a committed run is not
-yet at 1.2 m/s and the ball wants playing exactly then; `out of striking range` is 41–62%
-and stays, because it is `SimTouch.strike_range` saying the carrier is facing the wrong
-way. **A value knob cannot reach a candidate that was never generated**, and this is
-the third time the project has been caught by that.
+**The population has to be wider than the gates it measures.** It used to open on
+`is_running_in_behind`, a *committed* run — and a committed man passes `moving_on` by
+construction, so `not moving forward yet` could never fire, and the entire projected
+branch of the candidate was invisible to the one instrument built to explain a missing
+ball in behind. That branch was simultaneously the broken one. Read a gate tally by
+asking first what its denominator excludes.
+
+It has caught three things. `not moving forward yet` is the largest refusal at 41% and
+is a live football question — a striker standing on the shoulder is arguably exactly
+who you slide one past. `not in behind anybody` is the gate that was missing entirely:
+nothing checked that a through ball went past a defender, so the candidate fired for
+any attacking man drifting forward in midfield. `out of striking range` stays, because
+it is `SimTouch.strike_range` saying the carrier is facing the wrong way. **A value
+knob cannot reach a candidate that was never generated**, and this is the third time
+the project has been caught by that.
 
 **`The two seconds after a regain`** — the same three questions asked of the window
 instead of the match. `secure`, `break_bias` and `SimOffBall.BREAK_RUN` all fire
@@ -340,7 +349,10 @@ absolute numbers.
 
 The row marked `to feet` is the ordinary ground pass on the same columns, and it is
 there so the numbers above it can be read at all: a figure is only high against
-something.
+something. `over the top` is the lofted ball, which is the *other* ball in behind and
+is aimed by a different rule — only `aimed ahead` and `reached him` mean anything for
+a ball in the air, and `aimed ahead` is the one that matters: at 4.3 m against 3.1 m
+for a square pass to feet it was a ball over the top that was not over anything.
 
 Every quantity comes off the strike itself — `struck`, `lead` and `rmax` on the pass
 attempt — rather than being reconstructed from the 5 Hz trace, which at 16 m/s moves

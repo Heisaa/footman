@@ -733,8 +733,25 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				going = believed + mate.vel * 0.4 \
 					+ Vector3(attack_dir, 0.0, 0.0) * lerpf(7.0, 16.0, tactics.directness)
 			var target := _behind_aim(ctx, mate, from, believed, going, tactics)
+			# A ball in behind has to go in behind somebody, and nothing here ever
+			# asked. The gates in front of this are all about the receiver -- is he
+			# a runner, is he moving, is he close enough -- and none of them looks
+			# at the defence he is supposed to be running past, so the candidate
+			# fired for any attacking man drifting forward in midfield. A through
+			# ball to a man who is not going beyond anyone is a forward pass, which
+			# the ground pass beside it already offers, at a weight suited to feet
+			# and priced as the safer ball it is. That is most of why one pass in
+			# seven in the match was a through ball.
+			#
+			# The line is the one the *passer* believes in, so playing a man in
+			# against a line that has stepped up since he last looked is a mistake
+			# he is allowed to make -- the same belief `would_be_offside` is judged
+			# against a few lines below.
+			var line := SimReferee.believed_offside_line(ctx, player) * attack_dir
 			var t_distance := SimConsts.horizontal_length(target - from)
-			if t_distance > 4.0 and t_distance <= SimTouch.strike_range(player, target - from, MAX_GROUND_PASS + 6.0):
+			if target.x * attack_dir < line - BEHIND_BREAK:
+				_note_behind_gate(mate_id, BEHIND_SHORT)
+			elif t_distance > 4.0 and t_distance <= SimTouch.strike_range(player, target - from, MAX_GROUND_PASS + 6.0):
 				_note_behind_gate(mate_id, BEHIND_OFFERED)
 				var t_pace := behind_pace(t_distance, tactics, mate)
 				var t_speed := ctx.ballistics.ground_pass_speed(t_distance, t_pace, ctx.env)
@@ -804,7 +821,21 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 			# 0.75 + 0.032 d, a quarter of a second of hang above the knee at
 			# every distance a lofted pass is actually played over.
 			var flight: float = clampf(0.2 + raw_distance * 0.045, 0.7, 2.25)
-			var lofted_target := _keep_in_play(ctx, believed + mate.vel * flight * 0.55)
+			# Where he is going, not where he is pointing. This was
+			# `believed + mate.vel * flight * 0.55` -- dead reckoning on the
+			# velocity he happens to have, which is the exact defect `_lead_point`
+			# was written for and which the ground pass and the through ball have
+			# both been fixed of. It fails in the case a ball over the top exists
+			# for: a man who has committed to a run has not accelerated into it
+			# yet, so his velocity is small and the ball is dropped on his head.
+			# Measured, the lofted ball was aimed 4.3 m in front of its receiver
+			# against 3.1 m for a square pass to feet -- a ball over the top that
+			# was not over anything.
+			#
+			# `_lead_point` falls back to the same dead reckoning when he has no
+			# destination, so the man who has committed to nothing is unaffected
+			# and this only moves the ball that was worth moving.
+			var lofted_target := _keep_in_play(ctx, _lead_point(ctx, mate, believed, flight))
 			lofted_target.y = 0.0
 			var lofted_success := _lofted_success(ctx, player, lofted_target, flight, mate)
 			var l_xt := ctx.value.xt_at(player.team, lofted_target, ctx.pitch)
@@ -1138,6 +1169,12 @@ const BEHIND_ARRIVE := 0.8
 const BEHIND_FREE := 24.0
 const BEHIND_LENGTH := 0.16
 const BEHIND_WORTH := 1.0
+
+## How far short of the last defender a ball can still be aimed and count as one
+## played in behind. A metre, because the line is not a wall: a ball rolled into
+## the channel level with the last man is played in behind by anybody's eye, and
+## the defender is turning while the runner is not.
+const BEHIND_BREAK := 1.0
 
 
 static func behind_length_bias(distance: float) -> float:
@@ -2507,10 +2544,10 @@ static var break_hist := PackedInt32Array()
 ## The order is the order the gates are applied in, and each runner is filed under
 ## the first one he fails. `not on his list` is `_shortlist`, which keeps six of
 ## ten; the rest are the conditions on the candidate itself.
-enum { BEHIND_UNSEEN, BEHIND_FAR, BEHIND_STILL, BEHIND_ROLE, BEHIND_REACH, BEHIND_OFFERED }
+enum { BEHIND_UNSEEN, BEHIND_FAR, BEHIND_STILL, BEHIND_ROLE, BEHIND_SHORT, BEHIND_REACH, BEHIND_OFFERED }
 const BEHIND_GATES := [
 	"not on his list", "over 45 m away", "not moving forward yet", "not a runner",
-	"out of striking range", "offered",
+	"not in behind anybody", "out of striking range", "offered",
 ]
 static var behind_gate := PackedFloat32Array()
 ## Per player, for the decision being built. -1 is a man who is not making the run
@@ -2518,8 +2555,24 @@ static var behind_gate := PackedFloat32Array()
 static var _behind_state := PackedInt32Array()
 
 
-## Opens the population for one decision: every teammate who is running in behind
-## right now, filed as unseen until the pass loop reaches him.
+## Opens the population for one decision: every teammate who could be played in
+## behind, filed as unseen until the pass loop reaches him.
+##
+## **The population has to be wider than the gates it measures, and it was not.**
+## It opened on `is_running_in_behind`, which is a *committed* run — and a
+## committed man passes `moving_on` by construction, so `not moving forward yet`
+## could never fire, and the whole projected branch of the candidate was invisible
+## to the one instrument built to explain a missing ball in behind. That branch is
+## the one this thread found aiming a flat 12.6 m ahead of a man whatever he was
+## doing: broken, and unmeasurable, in the same place.
+##
+## So it opens on football instead of on a flag: an outfield teammate ahead of the
+## ball is a man who could be played in behind, whatever the off-ball layer has
+## decided about him. A committed runner joins whatever his position, because a run
+## can begin from level with the ball. `not a runner` is the big bucket that
+## results and that is the honest answer for most of them — a full-back ahead of
+## the ball is not who a through ball is for, and the gates are ordered so the
+## interesting ones still read underneath it.
 static func _open_behind_gates(ctx: SimContext, player: SimPlayer) -> void:
 	if _behind_state.size() != ctx.players.size():
 		_behind_state.resize(ctx.players.size())
@@ -2527,8 +2580,15 @@ static func _open_behind_gates(ctx: SimContext, player: SimPlayer) -> void:
 		behind_gate.resize(BEHIND_GATES.size())
 	for i in _behind_state.size():
 		_behind_state[i] = -1
+	var dir := ctx.pitch.attack_dir(player.team)
 	for mate_id in ctx.teammate_ids(player.team):
-		if mate_id != player.id and SimOffBall.is_running_in_behind(ctx, ctx.players[mate_id]):
+		if mate_id == player.id:
+			continue
+		var mate := ctx.players[mate_id]
+		if mate.is_keeper:
+			continue
+		var ahead := (mate.pos.x - ctx.ball.pos.x) * dir > 0.0
+		if ahead or SimOffBall.is_running_in_behind(ctx, mate):
 			_behind_state[mate_id] = BEHIND_UNSEEN
 
 

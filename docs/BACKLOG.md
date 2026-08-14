@@ -112,23 +112,31 @@ omission in a table rather than a design choice.
 | 12 | Check the passer can perceive the option at all | `SimPerception` | ? |
 | 13 | What losing it costs the shape, not just the ball | `SimDecision.score_of` | - |
 | 21 | ~~A ball in behind has no length term~~ built — `SimDecision.behind_length_bias` | `SimDecision._add_passes` | ? |
-| 22 | The ball in behind is a seventh of every pass, and it is not the length | `SimDecision`, `SimOffBall._behind_point` | ? |
+| 22 | ~~The ball in behind is a seventh of every pass~~ answered — `SimDecision.BEHIND_BREAK` | `SimDecision._add_passes` | ? |
+| 23 | A ball over the top should land short of the runner, not on him | `SimDecision._add_passes` | + |
 
-**(22) is what (21) did not answer, and it was measured rather than assumed.**
-The length term reshaped the pass exactly as it was meant to — through balls over
-thirty metres halved — and left the *count* alone, 207 against 211 over three
-seeds. So the frequency does not come from the length.
+**(22) was neither the length nor the level, and both were tried.** The length term
+reshaped the pass and left the count alone, 207 against 211 over three seeds.
+`BEHIND_WORTH` at 0.75 took the count to 161 and the share from 14.3% to 14.1%,
+because the passing game shrank with it. The answer was football: nothing checked
+that the ball went *in behind anybody*, so the candidate fired for any attacking man
+drifting forward in midfield. Through balls are 6.1% of passes now.
+`docs/STATUS.md`, "Nothing checked that a through ball went in behind anybody".
 
-The level does, and cutting it is not the answer either. `BEHIND_WORTH` at 0.75
-took through balls from 207 to 161 and moved their share of all passes from 14.3%
-to 14.1%, because the whole passing game shrank with it — 479 passes a match to
-383. A fifth of the football for two tenths of a percentage point.
+**(23) is the other half of the ball over the top.** Its aim was fixed — it goes
+through `_lead_point` and is put where the man is going rather than where he is
+pointing — and the outcome got worse: completion 51% to 43%, reaching the intended
+man 40% to 19%. The aim is right and the delivery cannot serve it, because the ball
+is still solved to land *on* the point it is aimed at. A ball over the top lands
+short of where the runner is going and rolls on to him; the receiver then has the
+flight *and* the roll to get there, instead of having to be standing on the spot
+when it drops.
 
-Which leaves the two places that have not been looked at: how many men are put on
-a run in behind in the first place (`SimOffBall._behind_point` and its quota), and
-whether `_shortlist` should be offering the carrier a through ball to more than one
-of them at a time. Neither is a bias, and neither has an instrument yet — `The ball
-in behind, as a strike` counts the balls played, not the candidates behind them.
+That is the same mistake `behind_pace` fixed on the grass — a ball in behind is not
+aimed at a man, so its weight is a fact about how fast he runs — moved into the air.
+`flight` is the knob (`clampf(0.2 + d * 0.045, 0.7, 2.25)`) and the landing point is
+what wants separating from the aim point. `The ball in behind, as a strike` already
+carries the `over the top` row that would measure it.
 
 **(8b) is half built.** `_arrival_gain` credits a pass with the threat the
 receiver builds carrying it on, and it now asks how far he actually gets: a man

@@ -15,8 +15,9 @@ var _scratch := SimBall.new()
 ## Sliding then rolling deceleration constants, derived once from the sphere
 ## slip factor. A struck ball with no spin slides until it has lost 2/7 of its
 ## speed, then rolls.
-const _SLIDE_FRACTION := 1.0 - (5.0 / 7.0) * (5.0 / 7.0)  # 1 - (5/7)^2
-const _ROLL_FRACTION := (5.0 / 7.0) * (5.0 / 7.0)
+const _SLIP := 5.0 / 7.0
+const _SLIDE_FRACTION := 1.0 - _SLIP * _SLIP
+const _ROLL_FRACTION := _SLIP * _SLIP
 
 ## How much of each correction the lofted solver applies, as an exponent on the
 ## ratio it measured. Below 1 it converges; at 1 it rings.
@@ -211,10 +212,28 @@ func blended_decel(env: SimEnv) -> float:
 
 ## Time for the ball, launched flat at `speed`, to cover `distance` on the
 ## ground. Used for interception geometry.
+##
+## The two phases solved in turn, not a single blended deceleration. `blended_decel`
+## is the `a` that reproduces the *range*, which is what it was written for and all
+## it is good for: matching the total distance to a stop says nothing about how long
+## the ball takes to get anywhere short of it. Measured, a 25 m pass struck at
+## 14.6 m/s takes 2.39 s and the blended answer was 2.21 -- 7% quick, and
+## `_pass_success` prices every interception in the match off exactly this number,
+## so every pass in the engine was charged for a journey quicker than the one it
+## makes. It is the same class of error the note above records being fixed once
+## before, surviving in the half of the model nobody had checked.
 func ground_travel_time(distance: float, speed: float, env: SimEnv) -> float:
-	# Solve d = v0 t - 1/2 a t^2 with the blended deceleration.
-	var a: float = maxf(blended_decel(env), 0.3)
-	var disc := speed * speed - 2.0 * a * distance
+	var slide_decel: float = maxf(env.slide_friction * SimConsts.GRAVITY, 0.5)
+	var roll_decel: float = maxf(env.roll_decel, 0.1)
+	# The slide, which ends when the ball has lost 2/7 of its speed.
+	var rolling := speed * _SLIP
+	var slide_span := _SLIDE_FRACTION * speed * speed / (2.0 * slide_decel)
+	if distance <= slide_span:
+		var d1 := speed * speed - 2.0 * slide_decel * distance
+		return (speed - sqrt(maxf(d1, 0.0))) / slide_decel
+	var t1 := (speed - rolling) / slide_decel
+	# And the roll, from the speed the slide left it at.
+	var disc := rolling * rolling - 2.0 * roll_decel * (distance - slide_span)
 	if disc <= 0.0:
-		return speed / a  # ball stops short; time until it stops
-	return (speed - sqrt(disc)) / a
+		return t1 + rolling / roll_decel  # ball stops short; time until it stops
+	return t1 + (rolling - sqrt(disc)) / roll_decel

@@ -1763,7 +1763,7 @@ static func _why_no_ball_in_behind() -> void:
 		total += SimDecision.behind_gate[i]
 	if total < 1.0:
 		return
-	print("\nA man was running in behind  (%d times somebody was deciding while he ran)" % int(total))
+	print("\nA man could be played in behind  (%d men ahead of the ball while somebody decided)" % int(total))
 	var parts := PackedStringArray()
 	for i in SimDecision.behind_gate.size():
 		parts.append("%s %.0f%%" % [SimDecision.BEHIND_GATES[i],
@@ -1831,6 +1831,14 @@ static func _the_ball_in_behind(ctx: SimContext, events: Array) -> void:
 	var feet_struck := 0.0
 	var feet_arrives := 0.0
 	var feet_lead := 0.0
+	# And the ball over the top, which is the other ball in behind and is aimed by
+	# a different rule. Only two of the columns mean anything for it -- a ball in
+	# the air has no arrival pace on the grass -- but `aimed ahead` is the one that
+	# matters and it is the one that says whether the ball was put in front of him
+	# or dropped on his head.
+	var over := 0
+	var over_lead := 0.0
+	var over_got := 0
 
 	# Attempt to outcome by passer, oldest first: the same join `_passing_quality`
 	# makes, and for the same reason. An attempt that never resolves -- the ball
@@ -1867,6 +1875,12 @@ static func _the_ball_in_behind(ctx: SimContext, events: Array) -> void:
 			feet_struck += v
 			feet_arrives += at_target
 			feet_lead += float(e.get("lead", 0.0))
+			continue
+		if kind == SimTelemetry.Touch.LOFTED_PASS:
+			over += 1
+			over_lead += float(e.get("lead", 0.0))
+			if int(rec["receiver"]) == int(e.get("target", -1)):
+				over_got += 1
 			continue
 		if kind != SimTelemetry.Touch.THROUGH_BALL:
 			continue
@@ -1923,6 +1937,10 @@ static func _the_ball_in_behind(ctx: SimContext, events: Array) -> void:
 		print("  %-12s %6d %7s %6.1f m/s %7.1f m/s %10.1f m %8s %12s" % [
 			"to feet", feet, "-", feet_struck / float(feet),
 			feet_arrives / float(feet), feet_lead / float(feet), "-", "-"])
+	if over > 0:
+		print("  %-12s %6d %7s %8s %9s %10.1f m %8s %11.0f%%" % [
+			"over the top", over, "-", "-", "-", over_lead / float(over), "-",
+			100.0 * float(over_got) / float(over)])
 	print("  arriving faster than the man can run   %d of %d (%.0f%%)" % [
 		too_fast, total, 100.0 * float(too_fast) / float(total)])
 	print("  aimed further ahead than he can reach  %d of %d (%.0f%%)" % [
