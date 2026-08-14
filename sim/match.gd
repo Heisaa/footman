@@ -451,24 +451,52 @@ func _advance_dead_ball() -> void:
 ## Only a scored ball, which is the only one the netting is between: a ball wide
 ## of the post or over the bar passes outside the net the view draws, and one
 ## crossing for a corner or a goal kick is nowhere near it.
+##
+## All four panels the view draws, not just the back. The first version stopped
+## the ball on the back netting alone, so a shot angled across the goal ran out
+## through the side panel, and one still rising at the line went up through the
+## sloping roof — through the net, on the one ball everyone is watching.
 func _catch_in_net() -> void:
 	if int(_pending_restart.get("kind", -1)) != SimSetPiece.Kind.KICKOFF:
 		return
 	var b := ctx.ball
-	var line: float = signf(b.pos.x) * ctx.pitch.half_length
 	var depth: float = absf(b.pos.x) - ctx.pitch.half_length
-	var limit: float = lerpf(SimConsts.NET_DEPTH_FOOT, SimConsts.NET_DEPTH_TOP,
-		clampf(b.pos.y / ctx.pitch.goal_height, 0.0, 1.0)) - SimConsts.BALL_RADIUS
-	if depth < limit:
+	if depth < 0.0:
+		# In front of the line — a ball the net has already dropped, rolling
+		# back out of the goal mouth. Nothing there to catch it.
 		return
-	b.pos.x = line + signf(b.pos.x) * limit
-	# Horizontal pace only. Zeroing the fall as well leaves the ball hanging in
-	# the netting for the rest of the linger, because this runs every tick and
-	# takes away whatever gravity has just given it; what should happen is that it
-	# drops down the net and settles in the goal.
-	b.vel.x = 0.0
-	b.vel.z *= 0.25
-	b.spin = Vector3.ZERO
+	var line: float = signf(b.pos.x) * ctx.pitch.half_length
+	# The back panel slopes from `NET_DEPTH_FOOT` on the grass to
+	# `NET_DEPTH_TOP` at the top of the back netting, which is the same shape
+	# `_build_net` draws.
+	var limit: float = lerpf(SimConsts.NET_DEPTH_FOOT, SimConsts.NET_DEPTH_TOP,
+		clampf(b.pos.y / SimConsts.NET_BACK_HEIGHT, 0.0, 1.0)) - SimConsts.BALL_RADIUS
+	if depth >= limit:
+		b.pos.x = line + signf(b.pos.x) * limit
+		# Horizontal pace only. Zeroing the fall as well leaves the ball hanging
+		# in the netting for the rest of the linger, because this runs every tick
+		# and takes away whatever gravity has just given it; what should happen
+		# is that it drops down the net and settles in the goal.
+		b.vel.x = 0.0
+		b.vel.z *= 0.25
+		b.spin = Vector3.ZERO
+	# The side panels, one down each post.
+	var z_limit: float = ctx.pitch.goal_half_width - SimConsts.BALL_RADIUS
+	if absf(b.pos.z) > z_limit:
+		b.pos.z = signf(b.pos.z) * z_limit
+		b.vel.z = 0.0
+		b.vel.x *= 0.25
+		b.spin = Vector3.ZERO
+	# The roof, sloping from the crossbar down to the top of the back netting.
+	var roof: float = lerpf(ctx.pitch.goal_height, SimConsts.NET_BACK_HEIGHT,
+		clampf(depth / SimConsts.NET_DEPTH_TOP, 0.0, 1.0)) - SimConsts.BALL_RADIUS
+	if b.pos.y > roof:
+		b.pos.y = roof
+		# A net catches: the climb is taken, the fall is left to gravity.
+		b.vel.y = minf(b.vel.y, 0.0)
+		b.vel.x *= 0.25
+		b.vel.z *= 0.25
+		b.spin = Vector3.ZERO
 
 
 func _score_goal(team: int) -> void:
