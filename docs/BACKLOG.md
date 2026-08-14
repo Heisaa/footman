@@ -117,6 +117,10 @@ omission in a table rather than a design choice.
 | 24 | The arrival contest is a neutral race, and the terms fail together | `SimDecision._pass_success` | ? |
 | 25 | ~~Nothing in the score pays for ground~~ built — `TERRITORY` 0.75, counterweighted by 13 | `SimDecision.score_of` | + |
 | 26 | The driven ball as its own candidate, not just its own strike | `SimDecision._add_passes`, `_pass_success` | ? |
+| 27 | The direct plan does not play the longer pass | `SimTactics.direct_bias`, `SimDecision._add_passes` | ? |
+| 28 | The layoff — first-time ball back to the man facing play | `SimDecision._add_passes`, `SimTouch` | + |
+| 29 | A setting touch before the long ball or the shot | `SimDecision`, `SimTouch.facing_penalty` | ? |
+| 30 | Receive on the half-turn — orient before the ball arrives | `SimTouch.first_touch`, `SimOffBall` | + |
 
 **(22) was neither the length nor the level, and both were tried.** The length term
 reshaped the pass and left the count alone, 207 against 211 over three seeds.
@@ -211,6 +215,31 @@ touch. That is a candidate scored differently from the roller beside it —
 the ground-curl the physics lacks (a rolling ball with sidespin runs straight
 here). Until then the driven ball is priced as a roller, which the bench says is
 honest to within a couple of metres on the long axis.
+
+**(28), (29) and (30) are the owner's watching list** — small tells from real
+football, named alongside the dwell (built; `docs/STATUS.md`). The layoff is
+the highest-visibility one: a man receiving back to goal bounces it first-time
+to the man facing play, and this engine models first-time contact for shots
+alone, so every target man kills it and turns into his marker instead. The
+setting touch is its mirror on the striking side — before a long diagonal or a
+shot from range a footballer plays the ball a metre out of his feet, where the
+engine strikes from whatever the ball is doing and pays `facing_penalty` for
+it; the touch *is* the answer to that penalty, made an act. The half-turn is
+the receiving side: the first touch is currently a reaction to the arriving
+ball, and a real receiver has chosen his touch — and his hips — before it
+gets there, off the same believed picture the dwell reads. All three are
+already-priced situations missing only the act; none needs a new value model.
+
+**(27) is a measured surprise, not a bug report.** A manager expects the direct
+plan to play the longer ball, and it does not: over the fitted sample at real
+time the means are equal (14.5 m direct against 14.7 m patient), and under the
+standard clock's fit the ordering decisively inverts (13.6 against 14.7,
+t = 3.1) — the press circulates short and quick while the deep block clears
+long. `direct_bias` values the *forward* ball, and forward is not long; nothing
+in the score prefers length. Whether it should is a football question: the
+plausible mechanic is the direct plan reaching for the ball in behind and the
+diagonal sooner, not a length bonus. The suite's directional check is t-gated
+until this is decided (`tests/test_tactics.gd`).
 
 ## Keeping the ball without spending a body
 

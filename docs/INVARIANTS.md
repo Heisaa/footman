@@ -86,15 +86,19 @@ exactly five constants read it: `SHOT_APPETITE_URGENT`, `SHOT_SIGMA_URGENT`,
 `KEEPER_SAVE_URGENT`, `KEEPER_REACH_URGENT` and `SimDecision.TERRITORY_URGENT`.
 Adding a sixth means adding it to that list and to `SimMatchConfig`'s own block,
 never beside the mechanic it scales. **Every one of them must be a no-op at
-`clock_rate` 1**, and that is the property the whole arrangement rests on: it is
-what keeps the goldens, the §11 bands and `docs/STATUS.md` describing the engine
-they were measured against. The check is cheap and worth running after any
-change to them — `./run.sh diagnose --seed 7 --minutes 10` must return what it
-returned before. `--urgency U` forces the fit on at any clock rate so it can be
-measured; it is a measurement affordance and nothing in the sim should read it
-other than `urgency()` itself. The 3D view opens at `clock_rate = 30` because it exists to
-be watched; the sim, the runner, every batch and the suite default to 1.0, so the
-bands and the goldens measure the engine they always measured.
+`clock_rate` 1**, and `test_clock` guards it: the property is what keeps
+`--clock-rate 1` meaning the same patient engine the early measurements
+described. The check after changing one is
+`./run.sh diagnose --seed 7 --minutes 10 --clock-rate 1`, which must return what
+it returned before. `--urgency U` forces the fit on at any clock rate so it can
+be measured; it is a measurement affordance and nothing in the sim should read it
+other than `urgency()` itself. **Everything defaults to `clock_rate` 10** — the
+view, the sim, the runner, every batch and the suite — because the owner never
+runs real-time games and the instruments should measure the match the player
+gets (DECISIONS.md, sixth amendment). The goldens are baselined at 10; the §11
+bands and the figures in `docs/STATUS.md` were measured at 1 and are historical
+until re-measured. The urgency anchor stays at 30, where the fit was made, so
+the standard match runs it at about 0.68 strength until the tuning-freeze refit.
 
 **Match length is meant to become a player-facing setting**, with goals per match
 holding roughly steady whichever length is chosen. A match holds

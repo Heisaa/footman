@@ -15,7 +15,8 @@ class Options extends RefCounted:
 	var away_tactics: SimTactics = null
 	var minutes := 90.0
 	## Match-clock seconds per simulated second. See SimMatchConfig.clock_rate.
-	var clock_rate := 1.0
+	## 10.0 is the standard nine-minute match; 1 is the measurement affordance.
+	var clock_rate := 10.0
 	## Shrinks a regulation pitch, eleven a side kept. See SimPitch.scaled.
 	var pitch_scale := 1.0
 	## Forces the compressed match's scoring fit on at any clock rate, for

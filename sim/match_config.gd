@@ -25,12 +25,19 @@ var minutes := 90.0
 ## out in `minutes / clock_rate` minutes of football. Nothing else in the sim
 ## changes — players run at human speeds, the ball obeys the same physics, and
 ## the tick is still 1/60 s — so a compressed match is not a sped-up one. What
-## it is instead is a match containing proportionally fewer events, which is a
-## tuning problem and is why this defaults to 1.0 (PLAN.md §11.1.1).
-var clock_rate := 1.0
+## it is instead is a match containing proportionally fewer events.
+##
+## Defaults to 10.0, the standard nine-minute match, everywhere — the owner
+## never runs real-time games, so every instrument measures the match the
+## player gets (DECISIONS.md, sixth amendment). `--clock-rate 1` recovers the
+## patient engine for measurement; the fit knobs below are no-ops there, and
+## `test_clock` guards that property.
+var clock_rate := 10.0
 
-## How hard the football itself plays for a goal, from 0 at real time to 1 at the
-## 30x match the 3D view opens with.
+## How hard the football itself plays for a goal, from 0 at real time to 1 at
+## 30x, where the fit was made. The 3D view now opens at 10x — a nine-minute
+## match — which lands at about 0.68; the anchor stays at 30 until the
+## tuning-freeze refit (owner's call, DECISIONS.md sixth amendment).
 ##
 ## `docs/INVARIANTS.md` asks for exactly this and says why: a match holds
 ## `5400 / clock_rate` seconds of football, so goals per match is goals per second
@@ -63,12 +70,13 @@ var _urgency := -1.0
 ## Forces the value above, for measurement. Below zero it derives from the clock
 ## as it should.
 ##
-## It exists because the fit cannot otherwise be looked at. The compressed match
-## holds three minutes of football, so a whole one of them has about five shots
-## in it and `diagnose`'s shot table is empty — and `diagnose` is where the
-## answer to "which stage of a chance is losing the goal" actually lives. With
-## this, `./run.sh diagnose --minutes 10 --urgency 1` reports ten minutes of the
-## compressed match's football at the length the instruments were built for.
+## It exists to look at the fit in isolation. With the clock defaulting to 10
+## everything measures the fit already; what cannot otherwise be seen is the
+## fit *without* the shortened match — `./run.sh diagnose --minutes 90
+## --clock-rate 1 --urgency 0.68` is the standard match's scoring pressure over
+## a full ninety of football, which gives `diagnose`'s shot table a population
+## the nine-minute match cannot. `--urgency 1` is the 30x anchor the fit was
+## made at.
 var urgency_override := -1.0
 
 

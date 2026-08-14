@@ -28,7 +28,7 @@ extends SceneTree
 ##
 ## --minutes and --clock-rate are not the same measurement and are easy to
 ## confuse. `--minutes 10` plays the first ten minutes of a match and stops;
-## `--clock-rate 30` plays all ninety, kick-off to full time, in three minutes
+## `--clock-rate 10` plays all ninety, kick-off to full time, in nine minutes
 ## of football. The first samples a rate, the second changes what a match is.
 
 
@@ -93,7 +93,7 @@ func _options(flags: Dictionary) -> SimRunner.Options:
 	o.home_quality = float(flags.get("home", "0.6"))
 	o.away_quality = float(flags.get("away", "0.6"))
 	o.minutes = float(flags.get("minutes", "90"))
-	o.clock_rate = float(flags.get("clock-rate", "1"))
+	o.clock_rate = float(flags.get("clock-rate", "10"))
 	o.pitch_scale = float(flags.get("pitch-scale", "1"))
 	o.urgency = float(flags.get("urgency", "-1"))
 	o.small_sided = flags.has("small")

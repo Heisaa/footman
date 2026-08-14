@@ -201,6 +201,22 @@ func per_90(value: float) -> float:
 	return value * 90.0 / minutes_played()
 
 
+## Minutes of *football* actually played -- the ticks, which never compress.
+## Under the standard clock these are a tenth of `minutes_played()`.
+func football_minutes() -> float:
+	return maxf(float(ticks) / float(SimConsts.TICK_HZ) / 60.0, 1.0)
+
+
+## Scales a count to per ninety minutes of football. The sanity ranges use this
+## for the rows that are football density -- passes, fouls, corners, distance --
+## because "is this still football" is a question about the football, and a
+## compressed match holds proportionally less of it. Rows the scoring fit
+## deliberately moves -- goals, shots, on-target -- stay per match clock, since
+## the format holds those steady per match, not per football minute.
+func per_football_90(value: float) -> float:
+	return value * 90.0 / football_minutes()
+
+
 func total_goals() -> int:
 	return goals[0] + goals[1]
 

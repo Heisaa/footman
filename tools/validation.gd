@@ -72,7 +72,8 @@ static func _aggregate(all: Array[SimMatchStats], squad_size: int) -> Dictionary
 		"passes": 0.0, "pass_completion": 0.0, "fouls": 0.0, "offsides": 0.0,
 		"corners": 0.0, "distance": 0.0, "score_draws": 0.0, "all_draws": 0.0,
 		"stronger_possession": 0.0, "minutes": 0.0, "box_touches": 0.0,
-		"goals_total": 0.0,
+		"goals_total": 0.0, "passes_fb": 0.0, "fouls_fb": 0.0,
+		"offsides_fb": 0.0, "corners_fb": 0.0, "distance_fb": 0.0,
 	}
 	for s in all:
 		acc["minutes"] += s.minutes_played()
@@ -89,6 +90,14 @@ static func _aggregate(all: Array[SimMatchStats], squad_size: int) -> Dictionary
 			acc["offsides"] += s.per_90(float(s.offsides[t]))
 			acc["corners"] += s.per_90(float(s.corners[t]))
 			acc["distance"] += s.per_90(s.km_per_player(t, squad_size))
+			# The football-density variants, for the sanity ranges: per ninety
+			# of football rather than of match clock. See
+			# `SimMatchStats.per_football_90` for which rows want which.
+			acc["passes_fb"] += s.per_football_90(float(s.passes[t]))
+			acc["fouls_fb"] += s.per_football_90(float(s.fouls[t]))
+			acc["offsides_fb"] += s.per_football_90(float(s.offsides[t]))
+			acc["corners_fb"] += s.per_football_90(float(s.corners[t]))
+			acc["distance_fb"] += s.per_football_90(s.km_per_player(t, squad_size))
 		if s.is_draw():
 			acc["all_draws"] += 1.0
 			if s.score[0] > 0:
@@ -111,6 +120,11 @@ static func _aggregate(all: Array[SimMatchStats], squad_size: int) -> Dictionary
 		"offsides": acc["offsides"] / per_team,
 		"corners": acc["corners"] / per_team,
 		"distance": acc["distance"] / per_team,
+		"passes_fb": acc["passes_fb"] / per_team,
+		"fouls_fb": acc["fouls_fb"] / per_team,
+		"offsides_fb": acc["offsides_fb"] / per_team,
+		"corners_fb": acc["corners_fb"] / per_team,
+		"distance_fb": acc["distance_fb"] / per_team,
 		"score_draws": 100.0 * acc["score_draws"] / n,
 		"all_draws": 100.0 * acc["all_draws"] / n,
 		"box_touches": acc["box_touches"] / per_team,
@@ -128,20 +142,29 @@ static func _aggregate(all: Array[SimMatchStats], squad_size: int) -> Dictionary
 ##
 ## These are the pass/fail criterion during the concept phase. They are not
 ## targets and nothing should ever be tuned toward them.
+## Two normalisations, deliberately. The football-density rows -- passes,
+## fouls, offsides, corners, distance -- are per ninety of *football*
+## (`per_football_90`), so a compressed match is judged on the density of the
+## football it actually contains and the wires still catch real breakage. The
+## rows the scoring fit deliberately moves -- goals, shots, on-target -- stay
+## per match clock, because the format holds those steady per match; the
+## on-target ceiling sits at 90 because the fit's goal-bound share is about
+## 0.78 by design (`SimMatchConfig.SHOT_SIGMA_URGENT`), and the wire is there
+## for "every shot on target", not for the fit.
 static func sanity_bands(all: Array[SimMatchStats], squad_size: int) -> Array[Band]:
 	var a := _aggregate(all, squad_size)
 	var K := Band.Kind.SANITY
 	return [
 		Band.new("goals per 90", a["goals"], 0.5, 8.0, "", K, 3),
 		Band.new("shots per team", a["shots"], 3.0, 35.0, "", K, 3),
-		Band.new("shots on target", a["on_target_share"], 15.0, 65.0, "%", K, 3),
+		Band.new("shots on target", a["on_target_share"], 15.0, 90.0, "%", K, 3),
 		Band.new("possession, higher side", a["possession"], 50.0, 80.0, "%", K, 3),
 		Band.new("pass completion", a["pass_completion"], 45.0, 95.0, "%", K, 2),
-		Band.new("passes per team", a["passes"], 120.0, 900.0, "", K, 2),
-		Band.new("fouls per team", a["fouls"], 1.0, 40.0, "", K, 5),
-		Band.new("offsides per team", a["offsides"], 0.0, 12.0, "", K, 5),
-		Band.new("corners per team", a["corners"], 0.5, 20.0, "", K, 5),
-		Band.new("distance per player", a["distance"], 6.0, 15.0, "km", K, 2),
+		Band.new("passes per team", a["passes_fb"], 120.0, 900.0, "", K, 2),
+		Band.new("fouls per team", a["fouls_fb"], 1.0, 40.0, "", K, 5),
+		Band.new("offsides per team", a["offsides_fb"], 0.0, 12.0, "", K, 5),
+		Band.new("corners per team", a["corners_fb"], 0.5, 20.0, "", K, 5),
+		Band.new("distance per player", a["distance_fb"], 6.0, 15.0, "km", K, 2),
 	]
 
 
@@ -180,7 +203,7 @@ static func report(all: Array[SimMatchStats], squad_size: int, strict: bool = fa
 		n, a["mean_minutes"], a["mean_minutes"] * float(n),
 		"strict: tuning bands count" if strict else "concept mode: tuning bands are advisory",
 	])
-	print("\n  sanity — is this still football? (PLAN.md §11)")
+	print("\n  sanity — is this still football? (PLAN.md §11; density rows per 90 of football, scoring rows per match clock)")
 	var sane := true
 	for b in sanity_bands(all, squad_size):
 		print(b.line(n))

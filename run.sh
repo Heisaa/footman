@@ -21,8 +21,8 @@ usage: ./run.sh <command> [args]
   test [--only NAME]        run the test suite
   record-golden             re-baseline the golden replay hashes
 
-  smoke                     6 x 12 min, reduced fidelity  (~50 s)
-  gate                      6 x 90 min, full fidelity     (~3 min)
+  smoke                     6 full matches, reduced fidelity  (~40 s)
+  gate                      6 full matches, full fidelity     (~90 s)
   accept                    200 x 90 min, strict          (~50 min)
   pbatch --matches N        an arbitrary parallel batch
       [--workers K] [--minutes M] [--home Q] [--away Q] [--reduced]
@@ -31,7 +31,8 @@ usage: ./run.sh <command> [args]
   match [--seed N]          simulate one match and print a summary
       [--urgency U]         --urgency forces the compressed match's scoring fit
                             on at any clock rate, for measurement: 0 is the
-                            real-time engine, 1 is the three-minute one. Works on
+                            real-time engine, 0.68 the standard nine-minute
+                            match, 1 the 30x anchor the fit was made at. Works on
                             match, diagnose, batch and pbatch. See
                             SimMatchConfig, "the compressed match's scoring fit"
   diagnose [--seed N]       simulate one match and break it down
@@ -67,7 +68,7 @@ usage: ./run.sh <command> [args]
                             ball chose and what he turned down, a ticker, and
                             seven annotation layers on keys 1-7. It drops the
                             clock rate to real time unless told otherwise,
-                            because nothing on it can be read at 30x.
+                            because nothing on it can be read compressed.
                             --layers turns layers on from the command line, for
                             a screenshot; --bookmark marks a moment without
                             anyone pressing M. Keys: space pause, [ ] speed,
@@ -90,7 +91,7 @@ usage: ./run.sh <command> [args]
                             fast-forwarded to five seconds before the tick,
                             played at quarter speed, paused on the tick.
                             Defaults to the compressed match: eleven a side, a
-                            full ninety in about three minutes at 1x speed.
+                            full ninety in about nine minutes at 1x speed.
                             --clock-rate 1 --pitch-scale 1 for real time.
                             --step-fps quantises the animation, for the old
                             stop-motion look; the default is smooth
@@ -314,7 +315,7 @@ case "$cmd" in
 		# the same question and the two are worth seeing side by side; the owner
 		# chose eleven for the tactics it keeps.
 		exec "$GODOT" res://presentation/match_3d.tscn -- \
-			--small --clock-rate "${DEMO_CLOCK_RATE:-30}" "$@"
+			--small --clock-rate "${DEMO_CLOCK_RATE:-10}" "$@"
 		;;
 	shot)
 		# Renders a frame from a virtual display, so the look can be checked
@@ -349,10 +350,12 @@ case "$cmd" in
 		echo "all scripts parse"
 		;;
 	import)        exec "$GODOT" --headless --import ;;
-	# The tight loop: short matches at reduced fidelity, judged on the sanity
-	# ranges only. Catches "I broke football" in the time it takes to read the
-	# diff, which is the only check frequent enough to be run every time.
-	smoke)         drive_parallel 6 --minutes 12 --reduced --home 0.62 --away 0.55 "$@" ;;
+	# The tight loop: whole standard matches at reduced fidelity, judged on the
+	# sanity ranges only. Catches "I broke football" in the time it takes to
+	# read the diff. Was 6 x 12 match-minutes; at the standard clock a full
+	# ninety is nine minutes of football and costs less than those twelve did,
+	# so smoke and gate now differ only in fidelity.
+	smoke)         drive_parallel 6 --reduced --home 0.62 --away 0.55 "$@" ;;
 	# The routine check: full-length, full-fidelity matches, small sample.
 	gate)          drive_parallel 6 --home 0.62 --away 0.55 "$@" ;;
 	# The tuning check. Only this one judges the §11 target table.

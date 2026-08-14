@@ -824,6 +824,18 @@ static func _show_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3)
 		if is_zero_approx(side):
 			side = 1.0
 		point += lateral * side * SHOW_STEP
+	# The lane, not just the marker. `docs/STATUS.md` ("Support is an angle
+	# problem") measured the filter on support as almost entirely the lane --
+	# the men were there and unmarked, and the ball could not reach them. So a
+	# man showing into a blocked line takes one more lateral step, to whichever
+	# side opens it. The quota is untouched: this is effort from the men
+	# already coming, not more men coming.
+	if _lane_open(ctx, ball, point, team) < 0.7:
+		var across := Vector3(-dir.z, 0.0, dir.x) * SHOW_STEP
+		var left := point + across
+		var right := point - across
+		point = left if _lane_open(ctx, ball, left, team) >= _lane_open(ctx, ball, right, team) \
+			else right
 	return ctx.pitch.clamp_to_pitch(Vector3(point.x, 0.0, point.z), 1.5)
 
 

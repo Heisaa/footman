@@ -31,7 +31,12 @@ When one is built, move the row and put the account in `docs/STATUS.md`.
 | Carry, eight probed directions | built | `_add_dribbles` |
 | Knock past a man, and race him | built | `_add_dribbles`, the burst |
 | Hold — the settling touch | built | `_add_hold`, `_play_hold` |
+| The dwell — a free man keeps it a beat while he takes another look, then plays | built | `SimDecision.scan_gain`, priced into `_hold_score`; the look is `SimPerception`'s staleness |
+| Orient before the act — a beat between coming by the ball and striking it, pre-paid by the flight he watched | built | `SimDecision.readiness`, `_apply_set_damp`; a long ball can still be played first-time |
 | First touch, and the turn | built | `SimTouch.first_touch` |
+| The layoff — first-time ball back to the man facing play | absent | first-time is modelled for shots alone; `docs/BACKLOG.md` 28 |
+| A setting touch out of the feet before the long ball or the shot | absent | every strike is taken from whatever the ball is doing; `docs/BACKLOG.md` 29 |
+| Receive on the half-turn — the touch chosen before the ball arrives | absent | `first_touch` reacts to the ball; nothing orients him for the next act in advance; `docs/BACKLOG.md` 30 |
 | Body facing priced into the strike | built | `SimTouch.facing_penalty` for the aim, `strike_scale` for the range |
 | Turn before you can hit it | built | a ball played behind the body has a fraction of the range, so the long one has to be turned onto |
 | Give-and-go | partial | the passer is nudged to run and the receiver prices the return ball; there is no executed one-two |
@@ -55,6 +60,7 @@ When one is built, move the row and put the account in `docs/STATUS.md`.
 | Break on the counter | built | `SimDecision.break_on` prices the ball forward, `SimOffBall` sends the runners, both off the same measurement |
 | Attack a cross — near post, far post, the pull-back | partial | `SimMovement` sends `AERIAL_CHASERS` men at a ball in the air instead of the one the possession cap allows, and they go at the ball; the near post and the far post are not authored positions |
 | Check away and come back | absent | |
+| Arrive as the ball does — easing the last metres, not standing at the spot | absent | a runner reaches his target and stands; timing the arrival is nobody's job |
 | Drop into the pocket between the lines | absent | |
 | Decoy run — going where the ball will not | absent | every run is made to receive |
 | Anticipate the second ball | absent | |
@@ -74,6 +80,7 @@ When one is built, move the row and put the account in `docs/STATUS.md`.
 | Block a shot | partial | a defender already in the path can take the ball, and bodies in the line lower the chance; nobody throws himself in the way (`docs/BACKLOG.md` 5) |
 | Cover a beaten teammate | partial | a beaten defender is penalised in the chase ranking; nobody covers the space he lost |
 | Jockey, delay, show him wide | absent | a defender either goes for it or holds station |
+| Escort a dying ball over the line, body between it and the attacker | absent | shielding's cheapest special case, and instantly recognisable |
 | Spring an offside trap | absent | the line exists; stepping up as an act does not |
 | The deliberate foul | absent | |
 | Defend the penalty area | absent | the largest single hole an eye will find — `docs/BACKLOG.md` orders it first |
@@ -156,6 +163,7 @@ holds it.
 | Believed positions, stale and noisy | built | `SimPerception`, `ctx.beliefs` |
 | A believed offside line, not the true one | built | `SimReferee.believed_offside_line` |
 | Options gated by what he can perceive | absent | he is scored for passes he cannot see — `docs/BACKLOG.md` 12 |
+| The scan you can see — head turned to where he is looking | partial | the sim has the looking (`SimPerception`'s refresh, and the dwell prices it); nothing in `presentation/` draws a head turn or a raised arm calling for it |
 
 ## Watching with this list
 

@@ -7,11 +7,13 @@ extends SimTestCase
 ## elsewhere. That is measurable, so it is measured here rather than eyeballed.
 
 
-## Long enough to play both halves and settle a rate, and no longer. It was
-## twelve, and every check below is either a ratio -- which converges in the
-## first minute or two -- or a floor on a count with a wide margin. See
+## Long enough to play both halves and settle a rate, and no longer. Match-clock
+## minutes: at the standard `clock_rate` 10 this is six minutes of football,
+## which is what every threshold below was calibrated against. It was twelve
+## (of football), and every check below is either a ratio -- which converges in
+## the first minute or two -- or a floor on a count with a wide margin. See
 ## `MIN_EVENTS`.
-const MINUTES := 6.0
+const MINUTES := 60.0
 
 ## The floor under the event count, and it is a "did a match happen at all" test
 ## rather than a rate. Six minutes of football produces several hundred events --

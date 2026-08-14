@@ -130,6 +130,23 @@ Manager*'s highlights, which cut, and a compressed clock, which does not. The
 owner chose the compressed clock: **a full match, kick-off to full time, in about
 three minutes at 1x.**
 
+**Amended 2026-08-14, owner's call: the standard match is nine minutes.** The 3D
+view and the demo now open at `clock_rate` 10 instead of 30. The urgency anchor
+stays at 30 — `SimMatchConfig.urgency()` is still `log(clock_rate)/log(30)` — so
+the standard match runs the scoring fit at about 0.68 strength. That is the
+right direction: nine minutes holds 540 seconds of football, so a steady
+scoreline needs ~27 goals per ninety of play rather than 81. The five fitted
+constants were fitted at 30x and get refit at the tuning freeze.
+
+**Amended again the same day: `clock_rate` 10 is the default everywhere** — the
+sim, the runner, batches, `diagnose` and the suite, not just the view. Owner's
+call: real-time games will never be run, so the instruments measure the match
+the player gets. The goldens are re-baselined at 10x. Every §11 band and
+`docs/STATUS.md` figure was measured at 1x and is historical until re-measured.
+`--clock-rate 1` remains the affordance for asking what the football does
+without the format's fit, and the fit knobs staying no-ops there is now guarded
+by `test_clock`.
+
 | Section | Was | Now | Why |
 |---|---|---|---|
 | §2.3 | 1x viewing advances the sim 60 steps per second, so match time is wall-clock time | The match *clock* advances by `clock_rate` seconds per simulated second; the tick is still 1/60 s and 1x is still one tick per frame | The compression is in the clock, not the frame rate. Nothing about how a player moves changes. |
@@ -193,6 +210,33 @@ coming back:
   above.
 
 ## Design calls made during the build
+
+**Waiting is a first-class option: an unpressured man is not rushed.** Made
+2026-08-14, after the owner watched real football against the engine. Players
+need time to orient, decide, and then act — and with no pressure on, keeping
+the ball a beat is normal football, not a failure to find a pass. Two
+mechanics carry it: `SimDecision.scan_gain` (the dwell — a stale picture makes
+another look worth something), `FREE_WAIT_COST` (the wait discount runs at a
+quarter rate for a free man, full rate as pressure arrives), and
+`_apply_set_damp` (the beat — a man who has just come by the ball is not set
+to strike it for half a second, less the flight he watched coming, so a long
+ball is still played first-time). The guard all three keep: a closed-down man
+still releases at once, and waiting stays a losing game in itself, so nobody
+stands on the ball forever.
+
+**Width in build-up: hold the structure, and the far man is a real option.**
+Made 2026-08-14, the owner watching own-half build-up: the defenders and
+midfield collapsed onto the carrier, the lanes closed, and the only ball left
+was the long one to the front. The direction is the reverse of the five failed
+experiments in `docs/STATUS.md` ("Support is an angle problem") — those pulled
+support *in*; this holds the shape *out*. Four mechanics carry it: the lateral
+ball-pull eases in own-half possession (`SimMovement.BALL_PULL_Z_BUILD`), the
+midfield joins the build-up split at a milder factor (`BUILD_UP_WIDTH_MID`),
+a man showing into a blocked lane steps off it (`SimOffBall._show_point`, one
+step, quota untouched), and the widest free man is guaranteed a shortlist slot
+with the anti-hoof prior refunded for a genuine switch
+(`SimDecision._switch_lift` — a switch to a free man is not a hoof, the same
+argument the cross makes about `CROSS_BIAS`).
 
 **Goals and draws are entertainment targets, not simulation targets.** The owner
 asked for slightly more goals than real football and slightly fewer draws.
@@ -360,8 +404,10 @@ The conflict is not resolvable by a mechanic. A three-minute match holds 180
 seconds of football; 2.7 goals in 180 seconds is 81 goals per ninety minutes of
 play, against football's 2.7 and this engine's 11.6. Nothing that reads as
 football produces it. Match length and pitch size are the two levers that would
-have, and both were ruled out: the match stays at three minutes on a regulation
-pitch, eleven a side.
+have, and both were ruled out at the time: the match stayed at three minutes on
+a regulation pitch, eleven a side. (The match-length lever was later pulled —
+the sixth amendment's 2026-08-14 note extends the standard match to nine
+minutes, which shrinks this gap by 3x but does not close it.)
 
 So the compression carries the fit. `SimMatchConfig.urgency` and the five
 constants that read it are a tuning of the *format*, not of the football, and

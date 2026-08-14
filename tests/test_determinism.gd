@@ -15,13 +15,15 @@ extends SimTestCase
 ## One baseline plus three variants plus one contrast is five runs, and at three
 ## minutes each that is 15.
 ##
-## Three minutes because divergence is compared over the whole event log, and a
-## log that long already contains set pieces, fouls, shots and a keeper -- the
-## paths where an undefined iteration order or a stray global RNG call actually
-## hides. Length beyond that buys repetition, not coverage: a sim that reads the
-## frame counter diverges immediately, not eventually.
+## Three minutes of football because divergence is compared over the whole event
+## log, and a log that long already contains set pieces, fouls, shots and a
+## keeper -- the paths where an undefined iteration order or a stray global RNG
+## call actually hides. Length beyond that buys repetition, not coverage: a sim
+## that reads the frame counter diverges immediately, not eventually. The
+## constant is match-clock minutes: 30 at the standard `clock_rate` 10 is those
+## same three minutes of football.
 const SEED := 4242
-const MINUTES := 3.0
+const MINUTES := 30.0
 
 
 func run() -> void:
@@ -63,9 +65,10 @@ func _same_seed_same_events(a: SimMatch) -> void:
 
 
 func _different_seeds_differ(a: SimMatch) -> void:
-	# A minute is plenty: two seeds pick different squads and diverge at the
-	# kick-off. If they had not, no amount of extra match would separate them.
-	var b := _run_match(SEED + 1, 1.0)
+	# A minute of football is plenty: two seeds pick different squads and diverge
+	# at the kick-off. If they had not, no amount of extra match would separate
+	# them.
+	var b := _run_match(SEED + 1, 10.0)
 	check(a.ctx.telemetry.digest() != b.ctx.telemetry.digest(), "different seeds must produce different matches")
 
 

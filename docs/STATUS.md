@@ -1060,8 +1060,8 @@ defers this to the tuning freeze and `docs/INVARIANTS.md` names the tractable
 version: one scalar derived from `clock_rate`. Match length and pitch size were
 both ruled out by the owner, so the scoring knobs are what is left.
 
-`SimMatchConfig.urgency` is that scalar: 0 at real time, 1 at the 30x match the
-3D view opens with, logarithmic in between. Four constants read it and nothing
+`SimMatchConfig.urgency` is that scalar: 0 at real time, 1 at 30x where the fit
+was made, logarithmic in between; everything now defaults to 10x, about 0.68. Four constants read it and nothing
 else may — shot appetite, shot aim, the keeper's save roll and the keeper's
 reach, with `SimDecision.TERRITORY_URGENT` as the fourth. **Every one is a no-op
 at `clock_rate` 1**, which is the property that makes it survivable: seed 7 at
@@ -2392,3 +2392,102 @@ should be *worth* — hops the lane cannot cut, a harder first touch — is the
 full version, `docs/BACKLOG.md` (26).
 
 **Goldens re-recorded.**
+
+## The dwell: a free man's time on the ball is worth a look
+
+The owner watched real football and named the gap: a free man lets the ball
+roll beside him while he scans, and the pass comes a second or two later than
+this engine plays it. The engine's instant release was structural, not tuned —
+`_hold_score` prices waiting off the board the carrier sees now, so waiting
+could never improve anything and any positive option beat the hold at once.
+
+But the board he sees is not the board. `SimPerception` keeps his view of his
+teammates stale by design, and time on the ball is how a footballer buys the
+refresh. `SimDecision.scan_gain` is that statement made a term: the hold's
+continuation is scaled up by as much as the carrier's mean teammate staleness
+says his picture is out of date, times how free he is. Zero under pressure, so
+the dwell never argues for standing in a challenge; zero once the picture is
+fresh, which is what ends the dwell and releases the pass. The decay is the
+perception cadence itself — awareness buys a faster scan, so the better reader
+takes the shorter dwell.
+
+Registered as an ablation term (`SimAblation.T_SCAN`) so the chain can see it.
+First fit (`SCAN_GAIN` 0.5, saturation 1.2 s) measured 1.006–1.500 mean 1.24
+where applied, 5.1% of picks flipped — and the owner watched a match and saw
+nothing, because the perception cadence keeps mean staleness well under that
+saturation point and a half-second chain of settling touches is a stutter, not
+a behaviour. Raised to `SCAN_GAIN` 1.0, saturation 0.7 s: the term runs
+1.01–2.00 (mean 1.59), flips 37% of picks, and the touch mix moved to the
+shape the owner named — free touches went from 9% carry / 53% pass to 50%
+carry / 26% pass while closed-down men still release at once (83% pass,
+unchanged). The debug overlay prints the factor as `look` on the hold's line,
+so a dwell and a nothing-on hold can be told apart on screen. Goldens
+re-recorded, twice.
+
+## The beat: orient, decide, then act
+
+The owner's spec, verbatim in shape: a beat before the strike when the player
+has the ball, but the direct ball stays possible because a man a pass was
+played to could scan and decide while it travelled. `SimDecision.readiness` is
+that sentence as arithmetic — seconds on the ball this spell plus the flight
+he watched before his first touch of it, stamped at the touch funnel
+(`SimTouch.apply`) — and `_apply_set_damp` prices the first half-second of an
+unprepared spell: strike candidates (pass, lofted, through, cross, shot) lose
+accuracy toward `SET_SUCCESS_FLOOR` 0.5, fading as he sets himself. A damp,
+not a gate: the rushed ball can still be chosen, it is just priced as rushed.
+`Clear` is exempt, because the panic hack *is* an unprepared strike and a
+tackled man needs a way out. One-touch combination play is not this term's
+job — a pre-agreed ball is a decision already made, and the give-and-go and
+pattern biases still argue for it.
+
+Measured on seed 7 at ten minutes with `--ablate`: applies on 24% of on-ball
+decisions — the first moments of spells, which is the population it was aimed
+at — at 0.52–0.98, and flips 20% of picks, commonest flip under ablation
+hold → pass: with the beat in, an unset man takes the settling touch first
+and the strike comes a touch later. The overlay prints the damp as `set` on
+strike lines, beside the dwell's `look`. Goldens re-recorded.
+
+## Width in build-up: the collapse, and the switch that answers it
+
+The owner watched own-half build-up and named the failure chain whole: the
+defenders and midfield group around the ball, the group gets too tight to pass
+out of, the midfield collapses, and the only way forward is the long ball to
+the strikers. The five positional experiments this file already records
+("Support is an angle problem") all pulled support *toward* the ball and paid
+for it in shots; this is the owner directing the reverse — hold the shape out,
+and make the far man a real option.
+
+Four changes, one per link. The lateral ball-pull eases from 0.30 to 0.16
+while a side has the ball in its own half, so the far side keeps its width
+instead of sliding across after the ball. The midfield joins the build-up
+split the back line already had, at 1.18 against the back line's 1.35. A man
+showing into a blocked lane takes one more lateral step to whichever side
+opens it — the quota is untouched, so it is effort from the men already
+coming, not more men coming, which is what the failed experiments got wrong.
+And the widest free man across the pitch is guaranteed a pass-shortlist slot
+in own-half build-up, with `LOFTED_BIAS`'s anti-hoof charge refunded 2x for a
+genuine switch (`_switch_lift`): a ball across the pitch to a man with eight
+metres of grass is not a hoof, on the same argument the cross makes about its
+own priors.
+
+Measured on seed 7 at ten minutes: **the carrier with no safe option at all
+fell from 31% to 11%**, against the 36% this file's support section recorded
+as the cause of the sideways circulation. Teammates in range and safe held at
+3.3 / 1.8, so the options were not bought by pulling men closer — the same
+men are reachable now. The scar's warning stands until a gate run says
+otherwise: every previous retention gain here was paid for in shots, and
+whether this one is is a question for `gate` and the owner's eye. Goldens
+re-recorded.
+
+**Dialed up the same day** — the owner watched it and still saw grouping and
+midfield collapse. The lateral build pull went 0.16 to 0.10, the midfield
+split 1.18 to 1.30, and the CM now holds his height against a deep ball in
+his own side's possession the way the front line always has
+(`ball_pull_shift`'s `building` arm) — the pivot still drops to offer,
+because that is build-up, but the man between the lines stays there. The
+near-band instrument reads exactly as spreading should: teammates 6-18 m out
+fell 3.3 to 2.8 and no-safe-option rose 11% to 22% (still against the 31-36%
+baseline), while safety in the two seconds after a regain went from 60%
+none-at-all to 12% — the men are no longer stacked in the band the
+instrument counts, and the options live wider than it can see. Goldens
+re-recorded again.

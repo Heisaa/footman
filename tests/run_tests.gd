@@ -22,6 +22,7 @@ extends SceneTree
 
 const CASES := [
 	"res://tests/test_rng.gd",
+	"res://tests/test_clock.gd",
 	"res://tests/test_ball.gd",
 	"res://tests/test_locomotion.gd",
 	"res://tests/test_value_field.gd",

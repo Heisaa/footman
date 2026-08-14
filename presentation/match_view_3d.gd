@@ -131,15 +131,15 @@ const TURF_MESH_STEP := 1.0
 
 
 ## The defaults below are the compressed match, because this scene exists to be
-## watched and a ninety-minute one is not. They are the view's alone: the sim,
-## the headless runner and every batch still default to an uncompressed match on
-## a regulation pitch, so the bands and the goldens are measuring what they
-## always measured. `--clock-rate 1 --pitch-scale 1` puts this back to real time.
+## watched and a ninety-minute one is not. The sim, the headless runner and
+## every batch now default to the same clock (DECISIONS.md, sixth amendment),
+## so the view and the instruments describe one match. `--clock-rate 1
+## --pitch-scale 1` puts this back to real time.
 @export var match_seed := 1
 @export var minutes := 90.0
-## Match-clock seconds per simulated second. At 30 a full ninety is played out
-## in three minutes of football, with the scoreboard still reading 0-90.
-@export var clock_rate := 30.0
+## Match-clock seconds per simulated second. At 10 a full ninety is played out
+## in nine minutes of football, with the scoreboard still reading 0-90.
+@export var clock_rate := 10.0
 ## Six a side on a reduced pitch. Everything geometric in the world is built
 ## from `_pitch`, so this changes the markings, the goals and the stands with it.
 @export var small_sided := false

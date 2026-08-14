@@ -920,7 +920,7 @@ and a shape that never moved appear nowhere in the panel. The layers are what
 answers that, and they are positions rather than reasons.
 
 **The compressed clock makes it unreadable.** `view3d` and the main scene both
-default to `--clock-rate 30`, which scrolls a minute of football a second, so
+default to `--clock-rate 10`, which scrolls ten seconds of football a second, so
 `--debug` drops the clock to real time unless the command line says otherwise.
 The clock rate is baked into a match when it is built, so a match opened with
 `F1` instead cannot be un-compressed and the help line says as much; slowing the
@@ -973,18 +973,24 @@ is how the `tactics` arms are compared. Neither is in `--help`.
 edit shifts the byte offsets under the running instance and it dies with a syntax error
 partway through, after the simulation time has been spent.
 
-## Measuring the compressed match
+## The compressed match is the default
 
-`--urgency U` forces the compressed match's scoring fit on at any clock rate — 0 is the
-real-time engine, 1 is the three-minute one, and without it the fit only appears above
-`clock_rate` 1. It exists because the fit cannot otherwise be looked at: a whole compressed
-match holds about five shots, so `Shots by distance` has no population and the question the
-block answers — which stage of a chance is losing the goal — has no data behind it.
-`./run.sh diagnose --seed 7 --minutes 10 --urgency 1` is ten minutes of the compressed
-match's football at the length every instrument here was built for.
+Every instrument now runs the standard nine-minute match: `clock_rate` defaults to 10
+everywhere (DECISIONS.md, sixth amendment), so `diagnose`, a batch and the suite measure
+the match the player gets, scoring fit included at about 0.68 strength. Counting
+statistics are still normalised per 90 of match clock, so the printed rates carry the
+fit's inflation — a figure read here is a figure about the format.
 
-Two cautions. It does not reproduce a compressed match exactly, because fatigue scales with
-`clock_rate` and this does not touch the clock — a `--urgency 1` run has fresh players
-throughout and reads a little high on shots. And a figure measured through it is a figure
-about the format: `docs/STATUS.md`, "the compressed match's scoring fit", has what that
-costs. Anything asking what the *football* does wants the default.
+Two affordances take the lens off:
+
+- `--clock-rate 1` is the patient engine — the fit knobs are no-ops there
+  (`test_clock` guards it), so it is the honest way to ask what the *football* does,
+  and the only run comparable against the measurements in `docs/STATUS.md`.
+- `--urgency U` forces the fit at any clock rate: `--clock-rate 1 --urgency 0.68` is
+  the fit's effect isolated from the clock — full-length football, fresh legs, so it
+  reads a little high on shots against a real compressed match, whose fatigue scales
+  with the clock. 1 is the 30x anchor the fit was made at.
+
+`./run.sh diagnose --seed 7 --minutes 90` is now nine minutes of wall clock and holds a
+whole standard match; the shot table that used to be empty at this length has a
+population again.

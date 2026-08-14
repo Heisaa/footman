@@ -298,8 +298,9 @@ is not a move, it is a background hum.
 ## Running the thing
 
 **Clock rate** — match-clock seconds per simulated second. The match clock runs faster
-than the world; nothing else changes. `--clock-rate 30` plays all ninety minutes in
-three, which is what the 3D view opens at. **Not the same thing as `--minutes 10`**,
+than the world; nothing else changes. `--clock-rate 10` plays all ninety minutes in
+nine, and is the default everywhere; `--clock-rate 1` is real time, the affordance for
+measuring the football without the format's fit. **Not the same thing as `--minutes 10`**,
 which plays the first ten minutes and stops: one changes what a match *is*, the other
 samples a rate from an ordinary match. `docs/INVARIANTS.md` has what may scale with it.
 

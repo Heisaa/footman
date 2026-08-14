@@ -61,8 +61,8 @@ unwritable here.
 ```
 ./run.sh check                   # every script parses               (seconds)
 ./run.sh test [--only ball]      # the suite, or one case          (owner runs)
-./run.sh smoke                   # 6 x 12 min, reduced fidelity    (owner runs)
-./run.sh gate                    # 6 x 90 min, full fidelity       (owner runs)
+./run.sh smoke                   # 6 full matches, reduced fidelity (owner runs)
+./run.sh gate                    # 6 full matches, full fidelity    (owner runs)
 ./run.sh accept                  # the 200-match acceptance run    (owner runs)
 ./run.sh match --seed 7          # simulate one match, print a summary
 ./run.sh diagnose --seed 7       # break that match down by touch, pass, third
@@ -107,7 +107,7 @@ quantity ("it cuts too often") — then once, and stop.
 
 - **Mine, no asking.** `check`; `strike` and `behind`, which run no match at all;
   `diagnose --seed N --minutes 10` or shorter;
-  `test --only rng|ball|locomotion|value_field`; and `record-golden`, which is
+  `test --only rng|clock|ball|locomotion|value_field`; and `record-golden`, which is
   required after a mechanic change rather than optional.
 - **Yours to approve, mine to offer.** Everything measured in minutes: the slow
   single test cases (`--only touch|match|golden|determinism|patterns`), `test` in

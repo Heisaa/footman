@@ -161,6 +161,14 @@ static func apply(ctx: SimContext, player: SimPlayer, kind: int, vel: Vector3, s
 	if player.id == ctx.last_pass_to and ctx.ball.last_touch_player == ctx.last_pass_from \
 			and ctx.last_pass_arrival_tick < ctx.last_pass_tick:
 		ctx.last_pass_arrival_tick = ctx.tick_index
+	# The first touch of a spell starts his orientation clock, and the flight he
+	# watched before it counts toward it. Read before the ball's memory is
+	# overwritten; `SimDecision.readiness` is the consumer.
+	if ctx.ball.last_touch_player != player.id:
+		player.spell_start_tick = ctx.tick_index
+		player.spell_prep_seconds = 0.0
+		if ctx.ball.last_touch_tick >= 0:
+			player.spell_prep_seconds = float(ctx.tick_index - ctx.ball.last_touch_tick) * SimConsts.DT
 	ctx.ball.launch(vel, spin)
 	ctx.ball.last_touch_player = player.id
 	ctx.ball.last_touch_team = player.team

@@ -36,15 +36,41 @@ const BALL_PULL_Z := 0.30
 ## the whole point of the change.
 const BALL_PULL_X_HOLD := 0.25
 
+## The lateral pull, eased while this side builds in its own half. The failed
+## experiments in `docs/STATUS.md` ("Support is an angle problem") pulled the
+## shape *toward* the ball and halved the attack; the owner's direction is the
+## reverse — in build-up the far side holds its width, so the switch of play
+## has somewhere to go and the middle does not collapse onto the carrier.
+## Defending, and anywhere past halfway, the full pull stands. Dialed 0.16 to
+## 0.10 at the owner's direction after watching: still too much grouping.
+const BALL_PULL_Z_BUILD := 0.10
+
+
+## How hard this player's station slides sideways with the ball.
+static func lateral_pull(ctx: SimContext, p: SimPlayer, ball_x: float) -> float:
+	if ctx.possession_team == p.team and ball_x < 0.0:
+		return BALL_PULL_Z_BUILD
+	return BALL_PULL_Z
+
 
 ## How far the station slides for a ball at `ball_x`, in the canonical attacking
 ## frame. Piecewise and continuous at the halfway line, where the two slopes
 ## meet: a striker pushes on once the ball is over it and holds his height while
 ## the side builds behind it.
-static func ball_pull_shift(role: int, ball_x: float) -> float:
-	if ball_x >= 0.0 or not SimRole.is_attacking(role):
+##
+## `building` is "this player's own side has the ball": with it, the CM holds
+## his height against a deep ball the same way the front line always has.
+## Trailing all the way back onto the carrier is the midfield collapse the
+## owner watched (DECISIONS.md, "Width in build-up") — the pivot still comes,
+## because a DM dropping to offer for his centre-halves is build-up, but the
+## man between the lines stays between the lines. Defending, everyone tracks
+## at the full rate as before.
+static func ball_pull_shift(role: int, ball_x: float, building: bool = false) -> float:
+	if ball_x >= 0.0:
 		return BALL_PULL_X * ball_x
-	return BALL_PULL_X_HOLD * ball_x
+	if SimRole.is_attacking(role) or (building and role == SimRole.CM):
+		return BALL_PULL_X_HOLD * ball_x
+	return BALL_PULL_X * ball_x
 
 
 ## How much wider the back line stands with the ball at its own feet in its own
@@ -65,6 +91,13 @@ static func ball_pull_shift(role: int, ball_x: float) -> float:
 ## to 11. It is not a tactical switch — the plan's own `width_scale` multiplies
 ## on top, so a narrow side still splits less than a wide one.
 const BUILD_UP_WIDTH := 1.35
+## The midfield's share of the same split. Smaller, because a midfield spread
+## to the touchlines is not a shape, but a midfield that keeps its formation
+## width while the ball is worked out of the back is what stops the middle
+## collapsing onto the carrier — the owner watched the collapse and the long
+## ball that was the only way out of it (DECISIONS.md, "Width in build-up").
+## Dialed 1.18 to 1.30 at the owner's direction after watching.
+const BUILD_UP_WIDTH_MID := 1.30
 ## How deep the ball has to be for the whole of it, as a fraction of the half
 ## length. Full inside their own third, gone by the halfway line: splitting the
 ## back line is a thing a side does while it still has grass behind it, and a
@@ -566,8 +599,9 @@ static func shape_position(ctx: SimContext, p: SimPlayer, ball_at: Vector3 = SHA
 
 	# The shape slides with play rather than being pinned to the formation, and
 	# the front of it does not trail back with a ball played behind it.
-	var x := home.x + ball_pull_shift(p.role, ball_c.x)
-	var z := home.z * tactics.width_scale() * _build_up_width(ctx, p, ball_c.x) + ball_c.z * BALL_PULL_Z
+	var x := home.x + ball_pull_shift(p.role, ball_c.x, ctx.possession_team == p.team)
+	var z := home.z * tactics.width_scale() * _build_up_width(ctx, p, ball_c.x) \
+		+ ball_c.z * lateral_pull(ctx, p, ball_c.x)
 
 	# Defensive line height. Only the back line and the pivot are anchored to
 	# it; the front line hangs off the shape ahead of them.
@@ -615,10 +649,12 @@ static func shape_position(ctx: SimContext, p: SimPlayer, ball_at: Vector3 = SHA
 static func _build_up_width(ctx: SimContext, p: SimPlayer, ball_x: float) -> float:
 	if ctx.possession_team != p.team:
 		return 1.0
-	if p.role != SimRole.CB and p.role != SimRole.FB:
-		return 1.0
 	var depth: float = clampf(-ball_x / maxf(ctx.pitch.half_length * BUILD_UP_DEPTH, 1.0), 0.0, 1.0)
-	return lerpf(1.0, BUILD_UP_WIDTH, depth)
+	if p.role == SimRole.CB or p.role == SimRole.FB:
+		return lerpf(1.0, BUILD_UP_WIDTH, depth)
+	if p.role == SimRole.DM or p.role == SimRole.CM or p.role == SimRole.AM:
+		return lerpf(1.0, BUILD_UP_WIDTH_MID, depth)
+	return 1.0
 
 
 ## Canonical X of the formation's own back line, used as the reference the

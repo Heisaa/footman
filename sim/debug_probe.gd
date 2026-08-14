@@ -181,6 +181,16 @@ static func option_text(opt: Dictionary) -> String:
 		tail += "   succ %.2f  gain %.3f  loss %.3f  bias %.2f" % [
 			opt["success"], opt["gain"], opt["loss"], opt["bias"],
 		]
+		# The dwell, when it is one: how much "keep it while I look" is
+		# scaling the hold's continuation. Absent at 1.0 -- a hold without a
+		# look is just "nothing on".
+		var scan := float(opt.get("scan", 1.0))
+		if scan > 1.005:
+			tail += "  look %.2f" % scan
+		# The beat: how rushed this strike would be. Absent at 1.0 -- he is set.
+		var set_damp := float(opt.get("set", 1.0))
+		if set_damp < 0.995:
+			tail += "  set %.2f" % set_damp
 	return "%-26s %s   w %2.0f%%" % [head, tail, opt["weight"] * 100.0]
 
 
@@ -306,6 +316,8 @@ static func _option(ctx: SimContext, player: SimPlayer, c: Dictionary, weight: f
 		"gain": float(c.get("gain", NAN)),
 		"loss": float(c.get("loss", NAN)),
 		"bias": float(c.get("bias", 1.0)),
+		"scan": float(c.get("scan", 1.0)),
+		"set": float(c.get("set", 1.0)),
 		"score": float(c.get("score", NAN)),
 		"weight": weight,
 	}
@@ -314,7 +326,8 @@ static func _option(ctx: SimContext, player: SimPlayer, c: Dictionary, weight: f
 static func _label_option(label: String) -> Dictionary:
 	return {
 		"action": -1, "label": label, "point": Vector3.ZERO, "catch": Vector3.INF, "target": -1,
-		"success": NAN, "gain": NAN, "loss": NAN, "bias": NAN, "score": NAN, "weight": NAN,
+		"success": NAN, "gain": NAN, "loss": NAN, "bias": NAN, "scan": 1.0, "set": 1.0,
+		"score": NAN, "weight": NAN,
 	}
 
 

@@ -36,7 +36,8 @@
 # `--bands` (tests/run_tests.gd). That figure is an estimate from match-minutes
 # simulated, not a measurement.
 #
-# So the four fast cases stay in `allow` through `--only`; the rest sit in `ask`.
+# So the five fast cases stay in `allow` through `--only`; the rest sit in
+# `ask`. (`test_clock` is the fifth: no match, sub-millisecond.)
 #
 # stdin is the PreToolUse JSON. Allowing is silence (exit 0); anything else is a
 # JSON permissionDecision on stdout.
@@ -52,10 +53,10 @@ cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null)
 slow=""    # what to call it in the message
 tier=""    # ask | deny
 
-# The suite. `--only` with one of the four sub-second cases is allowed through;
+# The suite. `--only` with one of the five sub-second cases is allowed through;
 # `--only` with a slow case asks; the whole suite is the owner's.
 if printf '%s' "$cmd" | grep -qE '(^|[;&|[:space:]])(\./)?run\.sh[[:space:]]+test\b'; then
-	if printf '%s' "$cmd" | grep -qE '\-\-only[[:space:]]+(rng|ball|locomotion|value_field)\b'; then
+	if printf '%s' "$cmd" | grep -qE '\-\-only[[:space:]]+(rng|clock|ball|locomotion|value_field)\b'; then
 		:
 	elif printf '%s' "$cmd" | grep -qE '\-\-only[[:space:]]+[a-z_]+'; then
 		slow="a slow test case (20-70 s)"

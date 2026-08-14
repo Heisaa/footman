@@ -507,6 +507,31 @@ const MAX_PASS_TARGETS := 6
 ## The nearest teammates are always considered whatever the filter thinks, so a
 ## player under pressure never loses their safe ball.
 const ALWAYS_KEEP_NEAREST := 2
+## The switch of play, in build-up. How far across the pitch a man has to be
+## to count as one, how much grass around him counts as free, and what the
+## anti-hoof prior gives back for it. `LOFTED_BIAS` exists to stop the engine
+## hoofing it, and a switch to a free man is not a hoof -- it is the one ball
+## that beats a collapse without going long to the front (the cross makes the
+## same argument about its own priors at `CROSS_BIAS`). The lift is folded
+## into the recorded `F_LOFTED` factor, so the chain still takes the whole
+## prior out exactly.
+const SWITCH_ACROSS := 12.0
+const SWITCH_FREE_RADIUS := 8.0
+const SWITCH_LIFT := 2.0
+
+
+## The lofted prior's refund for a genuine switch: a ball across the pitch, out
+## of the team's own half, to a man with grass around him. 1.0 otherwise.
+static func _switch_lift(ctx: SimContext, player: SimPlayer, mate: SimPlayer,
+		believed: Vector3, from: Vector3) -> float:
+	if from.x * ctx.pitch.attack_dir(player.team) >= 0.0:
+		return 1.0
+	if absf(believed.z - from.z) < SWITCH_ACROSS:
+		return 1.0
+	var near := ctx.nearest_to(mate.pos, SimConsts.other_team(player.team))
+	if near != null and near.dist_to(mate.pos) < SWITCH_FREE_RADIUS:
+		return 1.0
+	return SWITCH_LIFT
 
 ## Scratch candidate list, reused so the decision path allocates as little as
 ## possible. Candidates are dictionaries; there are rarely more than 30.
@@ -575,6 +600,7 @@ static func _generate(ctx: SimContext, player: SimPlayer) -> float:
 	_add_dribbles(ctx, player, _uncontrolled, challenger, regain)
 	_add_hold(ctx, player, _uncontrolled, regain)
 	_add_clear(ctx, player)
+	_apply_set_damp(ctx, player)
 	return regain
 
 
@@ -970,11 +996,12 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 			var l_pattern := SimPatterns.pass_bias(ctx, player, mate_id, lofted_target)
 			var l_call := _call_bias(ctx, mate)
 			var l_break: float = brk if (lofted_target - from).x * attack_dir > 4.0 else 1.0
+			var l_switch := _switch_lift(ctx, player, mate, believed, from)
 			# The map value the focus actually added, not the multiplier.
 			_note_factor(SimAblation.F_FOCUS, l_xt * l_focus - l_xt)
 			_note_factor(SimAblation.F_OFF_BALANCE, off_balance)
 			_note_factor(SimAblation.F_DIRECT, tactics.direct_bias())
-			_note_factor(SimAblation.F_LOFTED, LOFTED_BIAS)
+			_note_factor(SimAblation.F_LOFTED, LOFTED_BIAS * l_switch)
 			_note_factor(SimAblation.F_LENGTH, l_length)
 			_note_factor(SimAblation.F_PATTERN, l_pattern)
 			_note_factor(SimAblation.F_CALL, l_call)
@@ -995,7 +1022,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				"flight": flight,
 				# `l_break` is only the ball that actually goes somewhere: a lofted
 				# ball played square or back is not a counter, it is a reset.
-				"bias": tactics.direct_bias() * LOFTED_BIAS * l_length
+				"bias": tactics.direct_bias() * LOFTED_BIAS * l_switch * l_length
 					* l_pattern * l_call * l_break,
 			})
 			_keep_parts()
@@ -1216,6 +1243,30 @@ static func _shortlist(ctx: SimContext, player: SimPlayer, from: Vector3) -> Pac
 	for i in mini(ALWAYS_KEEP_NEAREST, nearest.size()):
 		if not kept.has(nearest[i]):
 			kept.append(nearest[i])
+	# And the switch. In own-half build-up the ranking above fills the list
+	# with the cluster around the ball -- proximity is half the score and
+	# expected threat is flat back there -- so the free man on the far side
+	# never makes it, and the only ball out of a crowd was the long one to the
+	# front (DECISIONS.md, "Width in build-up"). The same argument as the
+	# runner in behind: the best ball out of a collapse is invisible unless a
+	# slot guarantees it. One slot, the widest free man across the pitch.
+	if from.x * ctx.pitch.attack_dir(player.team) < 0.0:
+		var switch_id := -1
+		var switch_z := SWITCH_ACROSS
+		for mate_id in _short_ids:
+			if kept.has(mate_id):
+				continue
+			var mate := ctx.players[mate_id]
+			var across: float = absf(mate.pos.z - from.z)
+			if across <= switch_z:
+				continue
+			var near := ctx.nearest_to(mate.pos, SimConsts.other_team(player.team))
+			if near != null and near.dist_to(mate.pos) < SWITCH_FREE_RADIUS:
+				continue
+			switch_id = mate_id
+			switch_z = across
+		if switch_id >= 0:
+			kept.append(switch_id)
 	return kept
 
 
@@ -3052,10 +3103,125 @@ static func _discount(tactics: SimTactics, ablate: int) -> float:
 const DISCOUNT_SECONDS := 1.0
 
 
+## An unpressured man is not rushed. The discount prices "the board gets worse
+## while you wait" -- and the board gets worse because somebody is closing you
+## down. With nobody near, it barely does: the option decays at this fraction
+## of the nominal rate, rising to the full rate as pressure arrives. Owner's
+## call (DECISIONS.md, "Waiting is a first-class option"): the old flat rate
+## made every free man play like a pressed one, which is the rushed look the
+## dwell was built to remove. Waiting stays a losing game even at zero
+## pressure -- `success` is below one and the risk half still charges -- so a
+## free man dwells while his look is worth something and then plays; he does
+## not stand on the ball forever.
+const FREE_WAIT_COST := 0.25
+
+
 ## What waiting one more touch costs, as a multiplier on the deferred option.
 static func _wait_discount(ctx: SimContext, player: SimPlayer, ablate: int = -1) -> float:
-	var steps: float = player.touch_cooldown_length() / DISCOUNT_SECONDS
+	var pressed := clampf(ctx.pressure_on(player) + ctx.challenge_on(player), 0.0, 1.0)
+	var steps: float = player.touch_cooldown_length() / DISCOUNT_SECONDS \
+		* lerpf(FREE_WAIT_COST, 1.0, pressed)
 	return pow(_discount(ctx.tactics(player.team), ablate), steps)
+
+
+## The beat: orient, decide, then act. A footballer who has just come by the
+## ball is not set to strike it -- the body has to get over the ball and the
+## decision has to finish -- so for the first half-second of a spell his
+## strikes are rushed, and a rushed strike is a worse strike. The flight of the
+## incoming ball is preparation he has already banked: a man a long pass was
+## played to has scanned and decided while it travelled, and plays first-time
+## at full accuracy. A ball won in a tackle came with no warning and earns the
+## whole beat.
+##
+## It is a damp on `success`, not a gate: nothing is forbidden, the rushed ball
+## is just priced as what it is, and the settling touch or the dwell wins the
+## first decision instead -- which is the visible beat. `Clear` is exempt,
+## because the panic hack is precisely an unprepared strike and taking it away
+## leaves a tackled man no way out. One-touch combination football in tight
+## areas is not this term's job: a pre-agreed ball is a decision already made,
+## and the give-and-go and pattern biases still argue for it.
+const PREPARE_SECONDS := 0.5
+## What a wholly unprepared strike keeps of its accuracy.
+const SET_SUCCESS_FLOOR := 0.5
+
+
+## Seconds of orientation this player has had: time on the ball this spell,
+## plus the flight he watched before his first touch of it.
+static func readiness(ctx: SimContext, player: SimPlayer) -> float:
+	if ctx.ball.last_touch_player == player.id and player.spell_start_tick >= 0:
+		return player.spell_prep_seconds \
+			+ float(ctx.tick_index - player.spell_start_tick) * SimConsts.DT
+	if ctx.ball.last_touch_tick < 0:
+		return PREPARE_SECONDS
+	return float(ctx.tick_index - ctx.ball.last_touch_tick) * SimConsts.DT
+
+
+## Damps the strike candidates of a man who is not set yet. Runs once, after
+## generation, so every builder stays ignorant of it; the recorded factor keeps
+## the chain able to take it back out exactly (`SimAblation.T_SET`).
+static func _apply_set_damp(ctx: SimContext, player: SimPlayer) -> void:
+	var ready := clampf(readiness(ctx, player) / PREPARE_SECONDS, 0.0, 1.0)
+	if ready >= 1.0:
+		return
+	var damp := lerpf(SET_SUCCESS_FLOOR, 1.0, ready)
+	for i in _candidates.size():
+		var c: Dictionary = _candidates[i]
+		match int(c["action"]):
+			Action.GROUND_PASS, Action.LOFTED_PASS, Action.THROUGH_BALL, \
+			Action.CROSS, Action.SHOOT:
+				c["success"] = clampf(float(c["success"]) * damp, 0.01, 0.98)
+				# For the debug overlay, printed as `set`.
+				c["set"] = damp
+				if SimAblation.enabled and _cand_factors.size() >= (i + 1) * SimAblation.FACTORS:
+					_cand_factors[i * SimAblation.FACTORS + SimAblation.F_SET] = damp
+
+
+## The dwell: what one more look is worth to a man with time to take one.
+##
+## The owner watched real football and named what the engine lacks: a free man
+## lets the ball roll beside him while he looks, and the pass comes a second or
+## two later than this engine plays it. The engine's reason to release at once
+## is structural -- waiting can never improve the board, because `_hold_score`
+## prices the continuation off the board he sees now. But his board is not the
+## board: `SimPerception` keeps his view of his teammates stale by design, and
+## time on the ball is how a footballer buys the refresh. So a free man's
+## continuation is understated by exactly as much as his picture is out of date,
+## and this term puts it back.
+##
+## Zero under pressure -- a closed-down man has no time to look and the dwell
+## must never make standing in a challenge attractive -- and zero once his
+## picture is fresh, which is what ends the dwell and plays the pass. The decay
+## is the perception cadence itself: awareness buys a faster scan, so the better
+## reader of the game takes the shorter dwell, which is football.
+const SCAN_GAIN := 1.0
+## Mean teammate staleness, in seconds, that counts as a wholly out-of-date
+## picture. Above it the bonus saturates.
+##
+## Both raised from 0.5 / 1.2: at those the look averaged 1.24 where it
+## applied, flipped 5% of picks, and the owner watched a match and saw no
+## dwell -- a chain of settling touches half a second long is not a behaviour,
+## it is a stutter. The perception cadence keeps the mean teammate staleness
+## well under the old saturation point, so the bonus rarely left the floor.
+const SCAN_STALE_SECONDS := 0.7
+
+
+## How much holding is worth over releasing now, 0 to `SCAN_GAIN`, as a
+## fraction of the continuation.
+static func scan_gain(ctx: SimContext, player: SimPlayer) -> float:
+	var freedom := 1.0 - clampf(ctx.pressure_on(player) + ctx.challenge_on(player), 0.0, 1.0)
+	if freedom <= 0.0:
+		return 0.0
+	var stale := 0.0
+	var n := 0
+	for pid in ctx.team_players[player.team]:
+		var mate := ctx.players[pid]
+		if mate.id == player.id or mate.is_keeper or not mate.on_pitch:
+			continue
+		stale += SimPerception.staleness(ctx, player, mate)
+		n += 1
+	if n == 0:
+		return 0.0
+	return SCAN_GAIN * clampf(stale / float(n) / SCAN_STALE_SECONDS, 0.0, 1.0) * freedom
 
 
 ## What a hold is worth: the decision it defers, not the ball it keeps.
@@ -3132,6 +3298,19 @@ static func _hold_score(ctx: SimContext, player: SimPlayer, c: Dictionary, best_
 		raw_bias /= maxf(undo, 1e-6)
 	var bias: float = maxf(raw_bias, 0.01)
 	continuation = continuation * bias if continuation > 0.0 else continuation / bias
+	# The dwell. Applied with the same sign guard as the bias: above zero the
+	# look makes waiting worth more, below zero it makes waiting cost less --
+	# both are "the board after a look is better than this one".
+	var scan := scan_gain(ctx, player)
+	if ablate == SimAblation.T_SCAN:
+		scan = 0.0
+	if scan > 0.0:
+		var look := 1.0 + scan
+		continuation = continuation * look if continuation > 0.0 else continuation / look
+	if ablate < 0:
+		# Stamped for the debug overlay, which prints it as `look`: a hold at
+		# 1.0 is "nothing on", a hold above it is a dwell.
+		c["scan"] = 1.0 + scan
 	c["gain"] = continuation
 	return success * continuation - (1.0 - success) * risk * loss
 
@@ -3380,6 +3559,14 @@ static func _note_term_values(ctx: SimContext, player: SimPlayer, term: int) -> 
 			return
 		SimAblation.T_DISCOUNT:
 			SimAblation.note_value(term, tactics.future_discount())
+			return
+		SimAblation.T_SCAN:
+			# A property of the situation, noted where it applies: zero is the
+			# term not biting (pressured, or picture fresh), and averaging the
+			# zeros in would flatten the swing the column exists to show.
+			var scan := scan_gain(ctx, player)
+			if scan > 0.0:
+				SimAblation.note_value(term, 1.0 + scan)
 			return
 	for i in _candidates.size():
 		var c: Dictionary = _candidates[i]

@@ -50,10 +50,11 @@ func _patterns_fire_and_are_all_resolved() -> void:
 	# Cut from fourteen, and cut less far than everything else in the suite,
 	# because this one is not a rate: `fired > 5` is an absolute count and
 	# patterns are deliberately on long cooldowns -- a ten-minute diagnose has
-	# shown a single named move firing once for a side. Ten minutes keeps a real
-	# margin over the floor. Do not shorten it further without checking what the
-	# firing count actually does; that is the check this test is made of.
-	opts.minutes = 10.0
+	# shown a single named move firing once for a side. Ten minutes of football
+	# keeps a real margin over the floor -- 100 match-clock minutes at the
+	# standard `clock_rate` 10. Do not shorten it further without checking what
+	# the firing count actually does; that is the check this test is made of.
+	opts.minutes = 100.0
 	opts.home_tactics = SimTactics.high_press_direct()
 	opts.away_tactics = SimTactics.deep_block_patient()
 	var m := SimRunner.build(opts)

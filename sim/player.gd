@@ -116,6 +116,13 @@ var making_run := false
 var value_offset := Vector3.ZERO
 var value_offset_tick := -1000
 var touch_cooldown := 0.0
+## When his current spell on the ball began, and how many seconds of flight he
+## had to read the incoming ball before it arrived. Stamped by `SimTouch.apply`
+## at the first touch of a spell; `SimDecision.readiness` sums them into "has
+## he had time to orient, decide, and set himself" (DECISIONS.md, "Waiting is a
+## first-class option").
+var spell_start_tick := -1
+var spell_prep_seconds := 0.0
 ## Tick at which this player last won the ball back from the opposition. For a
 ## second or two afterwards his priority is to secure it rather than to advance
 ## it; `SimDecision.regain_urgency` reads it and decays it.
