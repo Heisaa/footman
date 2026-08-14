@@ -17,6 +17,7 @@ extends SceneTree
 ##   perf        timing of a full-fidelity match
 ##   tactics     two contrasting plans compared (the §10 Phase 5 exit criterion)
 ##   replay      every decision around one tick of one seed, in words
+##   behind      the ball in behind, struck in a geometry set rather than sampled
 ##
 ## Flags worth knowing: --minutes M (counts are normalised per 90, so a short
 ## batch is a legitimate measurement of a rate), --clock-rate R (match-clock
@@ -49,12 +50,16 @@ func _initialize() -> void:
 			_cmd_tactics(flags)
 		"diagnose":
 			_cmd_diagnose(flags)
+		"chains":
+			_cmd_chains(flags)
 		"aggregate":
 			_cmd_aggregate(flags)
 		"compare":
 			_cmd_compare(flags)
 		"replay":
 			_cmd_replay(flags)
+		"behind":
+			BehindBench.run(flags)
 		_:
 			printerr("unknown command: %s" % command)
 			quit(2)
@@ -161,11 +166,89 @@ func _cmd_diagnose(flags: Dictionary) -> void:
 	# Chase geometry is a positional question, so diagnose always pays for the
 	# trace. It is 5 Hz and one match; the cost does not show up next to the sim.
 	opts.trace = true
+	# The near-tie experiment needs every decision in the match, and six ints a
+	# decision is nothing. Always on here for the same reason as the trace, and off
+	# everywhere else so a batch does not carry it.
+	SimChoices.enabled = true
+	# Asked for rather than always on, though not for the reason it looks like.
+	# Nineteen extra scorings of the list per decision costs about 4% of a
+	# diagnose run -- candidate generation is what a decision costs, and scoring
+	# it again is nearly free. It is a flag because it answers a question about
+	# the scoring rather than about the football, and the table is twenty lines.
+	SimAblation.enabled = flags.has("ablate")
 	var m := SimRunner.build(opts)
 	m.run_to_completion()
 	var s := SimMatchStats.collect(m)
 	print("%s %d - %d %s\n" % [m.ctx.teams[0].short_name, s.score[0], s.score[1], m.ctx.teams[1].short_name])
 	SimDiagnostics.report(m)
+
+
+## The chains over several matches, saved or set against a saved run.
+##
+## The block `diagnose` prints says where an attack stops. This says what a change
+## *did* to that, which is a different question and the one that keeps getting
+## answered by eye across two terminal scrollbacks.
+##
+## Several matches rather than one, and it is not fussiness. A code change moves the
+## match wholesale -- two runs of one seed become different football within seconds
+## of the first different decision -- so a one-seed diff measures a different match
+## and not the change. `docs/BACKLOG.md` 19 is the same trap stated in full. Five
+## seeds is not a sample either; it is enough that a conversion moving ten points is
+## worth looking at.
+##
+## Only the chain counts are kept, so a saved run is a few hundred bytes and can sit
+## in the repo across a change.
+func _cmd_chains(flags: Dictionary) -> void:
+	# Checked before a single tick is simulated. `minutes` defaults to a full match
+	# everywhere else in this file, so the bare command is five ninety-minute games
+	# -- and it used to run all five before saying it had nowhere to put them.
+	if not flags.has("out") and not flags.has("against"):
+		printerr("nothing to do: pass --out FILE to save a run, or --against FILE to compare one")
+		return
+	# Two of the four chains start at a decision rather than at a spell, and the
+	# first three links of each are unreachable from the log. Without this they
+	# come back empty and the diff silently compares two of them instead of four.
+	SimChoices.enabled = true
+	var count := int(flags.get("matches", "5"))
+	var opts := _options(flags)
+	var base := opts.seed_value
+	var run := {}
+	for i in count:
+		opts = _options(flags)
+		opts.seed_value = base + i
+		var m := SimRunner.build(opts)
+		m.run_to_completion()
+		SimDiagnostics.accumulate(run, SimDiagnostics.measure(m),
+			SimMatchStats.collect(m).clock / 60.0)
+		print("  match %d of %d (seed %d)" % [i + 1, count, opts.seed_value])
+	if flags.has("out"):
+		var file := FileAccess.open(flags["out"], FileAccess.WRITE)
+		if file == null:
+			printerr("could not write %s" % flags["out"])
+			return
+		file.store_string(JSON.stringify(run))
+		file.close()
+		print("saved %s" % flags["out"])
+	if not flags.has("against"):
+		return
+	var before := _read_run(flags["against"])
+	if before.is_empty():
+		return
+	print("")
+	SimDiagnostics.chain_diff(before, run)
+
+
+func _read_run(path: String) -> Dictionary:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		printerr("could not read %s" % path)
+		return {}
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	file.close()
+	if typeof(parsed) != TYPE_DICTIONARY or not parsed.has("chains"):
+		printerr("%s is not a saved chains run" % path)
+		return {}
+	return parsed
 
 
 ## Everything the engine decided in a window around one tick, as sentences.

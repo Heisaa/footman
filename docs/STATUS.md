@@ -1302,3 +1302,660 @@ engine went to roughly 42 goals per ninety minutes of football. The gather was
 propping up the whole defensive balance, and with it gone the modelled save is
 visibly under-delivering against its own calibration. That is the next thread,
 and it is a football question rather than a format one.
+
+## Which half of the save model is losing the goal
+
+The thread the section above opened, and the answer is *both halves, equally*.
+Nothing could have said so, because the instrument did not exist.
+
+`SimKeeper._shot_response` resolves a save in two stages that **multiply**. The
+reach envelope decides whether he gets to it at all; `save_chance` then decides
+whether he keeps it out. Only the second one carried a calibration — "roughly two
+thirds to three quarters of shots on target are kept out" — and it is asked only
+of the shots the first has already passed. **A claim about the compound, written
+on the second factor.** The compound cannot exceed 0.72 times the envelope's pass
+rate, and being beaten for reach returned without logging anything, so the two
+failures were indistinguishable from outside.
+
+`_record_facing` stamps the outcome onto `ctx.active_shot` rather than logging an
+event of its own, so these rows and `SimReferee.close_shot`'s fates describe one
+population by construction. The tick test is what makes that true: the save model
+also fires for deflections and sliced clearances the forecast has going in, and
+those are not shots.
+
+**Three seeds, ten minutes, `clock_rate` 1. 26 shots the save model resolved.**
+
+| | seed 7 | seed 3 | seed 11 | all |
+|---|---|---|---|---|
+| beaten for reach | 36% | 12% | 29% | **27%** |
+| reached, not held | 9% | 38% | 43% | **27%** |
+| saved | 55% | 50% | 29% | **46%** |
+
+**The roll is doing exactly what its expression says.** `save_chance` is 0.66 to
+0.82 for an ordinary keeper on an ordinary shot, so 27% failures is the number it
+was written to produce. It is not miscalibrated as an expression; it is
+miscalibrated as a *model*, because the comment describes a job it only does half
+of.
+
+**The envelope is the finding, and it is arithmetic rather than a defect.** The
+mean reach on the beaten rows is 1.9 m, 1.6 m and 1.6 m — against `REACH_STANDING`
+1.35 and `REACH_DIVING` 3.4. He is barely leaving his feet. `extension` is
+`dive_time / DIVE_TIME` and `DIVE_TIME` is 0.55 s, so a full dive needs better
+than half a second of warning; a shot from twelve metres at 25 m/s is 0.48 s of
+flight, the reaction time takes 0.2 of it and the last three metres to his own
+plane take 0.13, which leaves about 0.15 s and a quarter of an extension. **For
+any shot struck inside the box `REACH_DIVING` is unreachable**, and the keeper
+covers a band of about 3.2 m across a goal 7.32 m wide.
+
+That is one rule, `DIVE_TIME`, deciding how much of his goal a keeper owns, and
+nothing in the module says so. Whether 0.55 s to full extension is right is a
+football question worth asking by eye rather than a coefficient to move: a keeper
+who covers less than half his goal from twelve metres is either the reason
+conversion is 23%, or he is correct and the reason is that the engine takes those
+twelve-metre shots seven times as often as football does.
+
+**The goldens moved and were re-recorded.** The SHOT event carries four new
+fields, so the canonical text changed; no behaviour did, and `_record_facing`
+draws no random numbers.
+
+## Re-fitting the compressed match against an honest keeper
+
+The scoring fit's four knobs were chosen against a keeper who was quietly
+compensating with `_try_gather`. With the gather gone he saved **2% of what he
+faced** — one save in thirty minutes of football — and the three-minute match
+converted 58% of its shots. The knobs were re-fitted against the keeper as he
+now is.
+
+**The instrument.** Three seeds at `./run.sh diagnose --minutes 10 --urgency 1`,
+which is what `urgency_override` exists for: a whole compressed match holds about
+five shots and the shot table needs a population. It reads 4.10 goals per
+compressed match where the owner's forty-match batch read 2.76, because seeds 3,
+7 and 11 run hot — so **it is a relative instrument, and the absolute scoreline
+still wants the batch.** Every row below is the same thirty minutes of football.
+
+| | appetite | aim | save | reach | shots | goal-bound | save rate | conversion |
+|---|---|---|---|---|---|---|---|---|
+| the shipped fit | 8 | 0.15 | 0.15 | 0.35 | 71 | 65% | **2%** | 58% |
+| everything off | 1 | 1 | 1 | 1 | 81 | 47% | 50% | 21% |
+| aim alone | 1 | 0.15 | 1 | 1 | 68 | 74% | 62% | 26% |
+| keeper alone | 1 | 1 | 0.15 | 0.35 | 48 | 52% | 0% | 44% |
+| | 1 | 0.15 | 0.5 | 0.6 | 66 | 74% | 26% | 48% |
+| | 1 | 0.15 | 0.35 | 0.5 | 70 | 79% | 14% | 63% |
+| | 8 | 0.15 | 0.35 | 0.5 | 84 | 81% | 12% | 68% |
+| | 8 | 0.15 | 0.85 | 0.9 | 65 | 82% | 58% | 31% |
+| | 8 | 0.15 | 0.5 | 0.6 | 91 | 78% | 18% | 57% |
+| **shipped** | **8** | **0.15** | **0.7** | **0.75** | 91 | 78% | **36%** | 48% |
+
+**The shot column is noise and should not be read.** The same seed swung 14 to 32
+between configurations that never touched shooting. Three seeds at ten minutes
+cannot see a shot count, which is why the original fit used forty matches a row.
+
+**What is stable is a single curve.** Conversion is the goal-bound share times
+one minus the save rate, and it predicted every one of the nine rows inside a
+tenth. That reduces the whole fit to one equation — the compressed match needs
+about 0.57 of it — and makes the trade explicit rather than a search:
+
+- The aim knob sets the goal-bound share. At 0.15 it is about 0.78; left alone,
+  about 0.50.
+- The keeper knobs set the save rate, and what is left over is his.
+
+**So the aim knob is what buys the keeper his saves back.** At a goal-bound share
+of 0.50 the equation has no solution at any keeper strength — the aim knob alone
+reached 1.80 against the fit's 4.10. **The prior recommendation, to move weight
+off the keeper and onto the aim, was exactly backwards**, and the two rows that
+say so are `aim alone` and `keeper alone`: the keeper carries the goals and the
+aim knob is what makes carrying them affordable.
+
+**Shipped: the keeper goes from 2% to 36%, and the scoreline does not move** —
+4.40 against 4.10 on the instrument, which is inside its noise. He now saves
+about a third of what he faces against the 46% the same keeper manages at
+`clock_rate` 1, so the format costs him roughly a quarter of himself rather than
+all of him. The unrealism that used to sit on the goalkeeper now sits on the
+shooting, where a viewer reads it as good finishing rather than as a broken man
+in goal.
+
+**Appetite is the one knob still unsettled.** It stays at 8 on forty matches'
+authority, which measured it as a no-op. Three seeds here suggested it now moves
+shots by a fifth, and three seeds cannot see a shot count — so this is the
+comparison a batch should settle, and it is worth settling, because 8 prices a
+shot at eight times what it is worth in every decision taken in the penalty area:
+
+```
+./run.sh pbatch --matches 40 --clock-rate 30      # then again with SHOT_APPETITE_URGENT at 1.0
+```
+
+**The goldens did not move and did not need re-recording.** Every knob is
+`lerpf(1.0, X, urgency())` and urgency is zero at `clock_rate` 1, which is where
+the goldens run. That was checked rather than assumed — the digests are byte-identical.
+
+## Three links of the chain, run and then acted on
+
+The chain over three seeds at ten minutes, `--ablate` on, and the balanced plan run
+again under `--plan press --away-plan block`. It confirmed everything the file
+already records — `focus_at` still never applied, `break_bias` still flipping 0.0%,
+`risk_weight` and the pattern bias still inert on a balanced plan and live under
+contrasting ones — and found three things worth acting on. All three are below,
+with what they moved.
+
+### The one-two never met itself
+
+`GIVE_AND_GO_BIAS` is 1.45. The value actually applied was 1.005 to 1.300, **mean
+1.11**, over a third of the decisions in the match, `on score` 0.00004, flipping
+0.4% of the picks it touched. The window ran from the tick the ball was *struck*,
+so the flight and the receiver's first touch spent three quarters of it before he
+ever looked up — and the passer's run half read the same clock, so the 1.5x lift on
+his run had decayed to a quarter by the moment the return ball was being scored.
+Both halves of the mechanic were arriving at each other empty.
+
+`SimContext.last_pass_arrival_tick` is the fix: stamped in `SimTouch.apply` when the
+man it was played to touches a ball nobody else has touched since it left, so an
+interception or a scramble three seconds later is not a one-two. The pass half now
+decays from there; the run half holds at full lift while the ball is travelling and
+decays from the same tick.
+
+Measured on seed 7: applied value **1.011 – 1.231 – 1.386**, `in` 37% → 23% (it now
+counts arrivals rather than balls in flight), `on score` 0.00004 → 0.00013, flips
+0.4% → 0.6%. The constant now reaches the range it was written for. Whether 1.45 is
+the right number is a judgement; it was not one before, because the term never got
+near it.
+
+The `gng` flag on the pass log counts from the arrival too, so the log and the
+mechanic agree. That widens the population — a return played a second after control
+now counts, where before the whole window had run out — and its completion rate fell
+from 90% to 72% with the count flat. That is the definition changing, not the ball.
+
+### What the pass model said about the balls it played
+
+`success` in the diagnose block is the best *rejected* candidate of its kind and
+`completed` is what the played ones did, so the two are separated by however hard
+that kind is selected — fourteen rejections per through ball played against two per
+ordinary pass. Read as a calibration it accused a model that might have been picking
+well. **The like-for-like measurement did not exist**, so it was added:
+`SimDecision.PLAYED_MODEL` and the five factors beside it, over the balls that were
+actually played, printed as `and of the ones it played`.
+
+Seed 7, ten minutes, `said` against `completed`:
+
+| | said | completed | ratio |
+|---|---|---|---|
+| pass | 0.55 | 82% | 1.5 |
+| lofted | 0.34 | 44% | 1.3 |
+| cross | 0.34 | 50% | 1.5 |
+| **through** | **0.29** | **65%** | **2.2** |
+
+Every kind claims less than it delivers, by about the same amount — that residual is
+the model asking a stricter question than `completed` does. The through ball was the
+one outlier, and the factor was `struck`: **0.72 against a pass to feet's 0.90.**
+
+It is `AERIAL_TOLERANCE`'s mistake in the other branch of the same function. A ball
+played in behind is not aimed at a boot; it is aimed at grass a man is running onto
+at six or seven metres a second, and two metres long is a better through ball rather
+than a failed one. `SPACE_TOLERANCE` is 1.8, the same number for the same reason: a
+receiver at a sprint covers about three metres in the time he has to adjust, which
+on a twenty-five metre ball is the tolerance again.
+
+After it, `struck` reads 0.94 and the through ball's ratio is 1.8 — still the
+highest, and what is left is `space`, 0.48 against the ordinary pass's 0.80. That is
+`control_at_time` saying the grass in behind is contested, which it is. Contested is
+not lost, and whether the two should agree is a real question rather than a defect.
+Through balls played moved 37 to 46 on seed 7, inside the divergence between two
+runs of the same seed.
+
+### The ball into the box
+
+Of 313 wide moments in the opponent's half across three seeds, **11% produced a
+cross candidate at all**, seven crosses were played in thirty minutes of football,
+and none of them produced a goal. The cause was structural rather than a price:
+`_add_passes` builds every ball by walking the shortlist of teammates, so a cross
+could only exist where somebody was **already standing in the penalty area** — and
+0.12 players are beyond the last defender at any moment in this engine. No value
+knob can reach that. It is link 4, upstream of every prior in the file.
+
+`SimDecision._add_crosses` is the ball aimed at the grass instead: near post,
+penalty spot, far post as fixed points off the goal, the receiver named on each
+being whoever can be *there when it lands* rather than whoever is there now, and
+`_lofted_success` pricing the arrival exactly as it does for any other ball in the
+air. One candidate per decision, not three, or the act would take three shares of
+the softmax against one for the carry beside it.
+
+Two things had to go with it. The lofted branch no longer re-labels itself a cross
+when its target happens to be in the box — **one act, one generator, one prior** —
+and the cross does not inherit `LOFTED_BIAS` or the length penalty. Those exist to
+stop the engine hoofing it, and together they are about a tenth: a cross has the
+largest gain in the game, 0.16 against a winning option's 0.017, and was losing
+every time it was offered because it was being charged for being long and in the
+air, which is what a cross is.
+
+**What it moved**, three seeds, ten minutes each:
+
+| | before | after |
+|---|---|---|
+| crosses played | 7 | 11 |
+| a cross was offered, of wide moments in their half | 11% | 2–8% |
+| of the offers, it scored best | 16% | 33–89% |
+| shots from the penalty spot or closer | 14% | 26–36% |
+| goals | 14 | 8 |
+
+**The offered link falls because the generator is gated on the final third and the
+instrument is not.** At the halfway line the mean cross came out at 37.7 m, which is
+a diagonal rather than a cross, and the lofted pass already covers that ball. The
+chain keeps the wider population on purpose: an instrument that adopts every gate
+the mechanic has can never report the mechanic refusing to fire.
+
+**The crosses complete about one in seven, and that is the finding rather than a
+fault.** The model says so before they are struck — `said` 0.15 to 0.21 on the
+played ones, against 0% to 25% completed — so it is right about a bad ball rather
+than wrong about a good one. They resolve like football: headed clear or claimed by
+the keeper, one out of play per seed. What they do not do is produce shots, because
+**there is nobody in the box to attack them**. That is the missing mechanic, it is
+in the off-ball layer, and it is now visible as a number instead of as an absence.
+
+**Goals fell from 14 to 8 over three ten-minute seeds, and three seeds cannot see
+that** — the same caution the compressed-match fit above is written under. The shot
+mix moved the other way: chances are closer in, seed 7 went from 2.06 xG to 3.5 xG,
+and its five goals off 2.06 became four off 3.5. Whether the goals are really down
+is a batch question and nobody should answer it from here.
+
+**The goldens moved and were re-recorded.** Three mechanics changed.
+
+### And the fourth: a plan wired into the lateral focus
+
+`focus_at` was link 1's example and it stayed dead through the three changes above.
+`SimTactics.set_focus` writes it now, from one knob: +1 is down the outside, -1 is
+through the middle, 0 is no opinion. `high_press_direct` takes +1.0 — it wins the
+ball high, gets bodies past it quickest, and the ball into the box is an act the
+engine has since `_add_crosses`. `deep_block_patient` takes -0.6, less strongly,
+because a patient side is not refusing the flanks so much as not built to reach
+them. `balanced()` keeps `[1, 1, 1]`, which is what balanced means.
+
+**The three multipliers average to one, and that is not tidiness.** Every
+candidate's gain is `xt_at(its own point) * focus_at(...)` while `loss` is
+multiplied by nothing, so a triple averaging above one lifts every gain against a
+fixed loss: the plan would come out more *adventurous* rather than more lateral, and
+`--ablate` would report `focus_at` flipping picks while reporting the wrong
+mechanic. `FOCUS_TILT` is 0.12, so the extreme is `[1.12, 0.76, 1.12]`.
+
+| `--ablate`, seed 7 | in | on score | flips |
+|---|---|---|---|
+| before | 0% — never applied | — | — |
+| balanced | 0% — never applied | — | — |
+| `--plan press --away-plan block` | **100%** | 0.00030 | **3.6%** |
+
+Balanced still reading `never applied` is the right answer rather than the old bug,
+and it is the same shape as `risk_weight` and the pattern bias: a prior that only
+varies away from balanced reads as a constant on the default. The two readings
+together are what say a channel is alive.
+
+**The goldens did not move.** They run the balanced plan, whose triple is unchanged,
+so no code path the replay touches is different — checked with `record-golden` and a
+diff rather than assumed, and the file came back byte-identical.
+
+**And what the tilt actually did**, by `./run.sh chains --against`: five seeds, ten
+minutes, `--plan press --away-plan balanced`, the same runs with `set_focus(0.0)`
+saved as `runs/focus-off.json` first. Only the press side holds an opinion, which is
+the point — the first attempt used `--away-plan block` and the two tilts, one wide
+and one central, cancelled in a chain that pools both teams.
+
+| link | before | after | |
+|---|---|---|---|
+| a cross was offered, of wide moments | 12% | 11% | the control |
+| of the offers, the cross scored best | 76% | **85%** | +8.9 |
+| the ball in behind was played, of the ones that scored best | 79% | 108% | +29.8 |
+| kept it 3 s after winning it back | 51% | 44% | −6.5 |
+| out of their own third after winning it | 173% | 192% | +18.9 |
+| a goal, off a shot | 28% | 38% | +9.6 |
+
+**The null is the useful half.** Cross *generation* did not move, and it should not
+have: `_add_crosses` gates on geometry and never on value, so a term in the score
+cannot reach it. A diff where everything moves is a diff measuring divergence. What
+moved is the link below it — with a wide tilt, a cross that gets offered wins the
+scoring nine points more often — which is a value term acting exactly where a value
+term can.
+
+Shots per 90 were flat at 109 and goals went 17.7 to 25.9, so the goal move is
+conversion rather than volume. **It is 12 goals against 18 over five seeds and
+nobody should call that yet.** The population is also pooled across both teams, half
+of which had no opinion, so every figure here is diluted by roughly half.
+
+## Somebody attacks the cross
+
+The cross was built to be aimed at the grass so it would not need a body standing
+in the area first. It still needed a body *arriving*: eleven crosses over three
+seeds, one completed, **no shots**, with 0.12 players beyond the last defender at
+any moment. `SimOffBall` had three ways to make yourself available — show, space,
+behind — and not one of them is *attack the near post*.
+
+`BOX` is the fourth. The three targets are the three points `_add_crosses` aims at
+and the trigger is that function's own test on the ball — a teammate on it, wide,
+in the final third — because a run to meet a ball nobody is going to play is worse
+than holding shape. Two men go, by the quota, and they sort themselves onto
+different posts without coordinating: each is scored on his own arrival, so the
+near man wins the near post. `CALL_BOX` is 1.6, the largest of the call biases,
+because his run is the most specific claim on the pitch.
+
+**Two of the three things that went wrong are worth more than the mechanic.**
+
+**Scored as a race, no player attacked a cross in thirty minutes.** `_race` and
+pitch control both ask who beats whom to the spot, and for a point in the six-yard
+area the answer is always the defence, because they are standing on it. It came
+back at 0.00001. That is the wrong question about the act: nobody arrives at a
+cross first, a cross is a contested ball in the air, and what decides it is being
+there when it lands and being able to attack it when you are — the same pair
+`_lofted_success` prices from the other side.
+
+**Then it was scored against the flight of the ball, and still nobody went.** A
+run into the box is made *before* the cross is struck; the striker goes when he
+sees the winger's head come up, and what he has is that lead plus the flight.
+Scored against the 1.25 s flight alone the run was worthless to anybody more than
+a dozen metres out. `BOX_WINDOW` is 3.0 s and is that lead.
+
+**And the third was mine to have caught.** `_assign` sized its quota tally as
+`[0, 0, 0, 0]`, written out by hand, so a fifth intent walked off the end of it:
+every assignment pass threw `Out of bounds get index '4'` to stderr while the run
+was scored, won its softmax **six times over** — 0.12 against the best alternative
+at 0.021 — and was never committed. Two rounds of model-fixing went into a
+mechanic that was not the problem, because the errors went to stderr and the
+measurements were being read with `grep`. Every per-kind array in the file is now
+sized from `KIND_NAMES.size()`.
+
+**What it does**, three seeds, ten minutes each:
+
+| | before | after |
+|---|---|---|
+| box runs taken | — | 34 |
+| mean run, up-pitch | — | 16.7–22.1 m, +14 to +16 m |
+| the ball's share of the carrier's softmax (`best w`) | behind 15–27% | **box 19–56%** |
+| the run ends in a shot | behind 8–22% | **box 25–38%** |
+| crosses, `then a shot` | 0, 0, 0 | 3, 1, 2 |
+| crosses, `then a goal` | 0, 0, 0 | 1, 0, 0 |
+| touches in the penalty area | 15–16 | 16–27 |
+
+`best w` is the reading to trust: it is the largest share of the softmax the run's
+own ball ever held, and a box run is the most wanted offer in the match by a
+distance. The shot column says the same thing from the other end.
+
+**Goals fell again — 8 to 3 over the same three seeds — and the xG says why not to
+read it as a loss.** The chances are 5.36 xG against 3 goals, where at the start of
+this work seed 7 alone produced 5 goals off 2.06 xG. The engine has gone from
+converting at two and a half times its own chance quality to converting at it, and
+from 45 goals per ninety on seed 7 to 18. Football is 2.7. The direction is right
+and the absolute number is still nowhere near, which is a batch's question and not
+three seeds'.
+
+**The goldens moved and were re-recorded.**
+
+## A run a turnover ended is not a run he finished
+
+Half of everything won was given straight back, and three mechanics written for the
+seconds after a regain — `secure`, `break_bias`, `SimOffBall.BREAK_RUN` — had never
+been measured in the window they fire in. `The two seconds after a regain` is that
+block, and it exists because "the counter is not on" has three causes that produce one
+number: nobody is eligible to run, the run scores badly, or the carrier never picks
+it. They live in three files and the last two mechanics built here each cost two
+rounds of fixing the wrong one.
+
+**What it found, seed 7, ten minutes.** Per assignment pass, of the nine men on the
+side in possession: 2.8 already running, 2.0 resting, 1.3 out of range, 2.8
+considered. Against the rest of the match — 3.1 running, 1.7 resting, 2.85 considered
+— the window is barely different, so **the hypothesis it was written to test was
+wrong**: the rest cooldown is not a tax the counter pays, it is a tax the whole match
+pays. What was exactly right is the mechanism underneath it. **A run a turnover ended
+had served 52% of its window and was charged the whole of `REST_SECONDS` for it** —
+up to 10 s for a run in behind, off half a stride, in an engine where possession
+changes every few seconds.
+
+So `_expire` charges the rest in proportion to `(now − _since) / HOLD_SECONDS`. A man
+who sprinted a full window pays for it; a man whose idea was cut off after half a
+second does not. Three lines, and it is the more honest physiology as well as the
+thing that puts bodies back on the pitch.
+
+**What it did**, seed 7 at ten minutes for the shape, five seeds at ten for the rest:
+
+| | before | after |
+|---|---|---|
+| men resting, in the window | 2.03 | 1.22 |
+| men considered, in the window | 2.84 | 3.56 |
+| runs in behind taken (seed 7) | 36 | 58 |
+| a runner in behind, five seeds | 306 | 449 |
+| `break_bias` flips, `--ablate` | 0.0% | 2.3% |
+| goals, five seeds | 15 | 19 |
+| spells of possession, five seeds | 723 | 782 |
+
+**`still had it after 3 s` fell as a share, 53% to 48%, and rose as a count, 292 to
+309.** More possession happens: regains went from 556 to 640 over the same minutes, so
+the denominator grew faster than the numerator. It is the one number this thread was
+aimed at and it did not move the way the backlog expected; the count is the honest
+reading of it and neither is a verdict at five seeds.
+
+**`break_bias` went from doing nothing to occasionally deciding a pick.** It was never
+its own size that was wrong — the constant flipped 0.0% of the decisions it applied
+to because a through ball is only generated for a man already running in behind, and
+there were no runners. There are now 47% more of them.
+
+### What the same block says is wrong next, and it is not what the backlog said
+
+**20c, `break_on`'s input, is healthy and needs nothing.** Over the 18–21% of
+decisions taken inside the window it means 0.41–0.44, with the opposition's line
+priced at 1.70x and the distribution spread across the whole range — 23% under 0.05,
+20–23% above 0.75. `--ablate`'s "5% of decisions" is the *candidate* being rare, not
+the input being dead. Link 1 of the chain is intact and the loss is at link 4.
+
+**20d, `secure`, is doing what it says.** It reads 1.33–1.36x on average across the
+window, not the 1.7x the backlog assumed, because `break_on` cancels it exactly as
+designed: as the counter comes on the lift on the square ball comes off. Nothing to
+do.
+
+**What is left is the carrier.** Of the runs begun in the window, `received` is 4–14%
+and a run in behind holds 27% of the softmax at its best moment and is played to 13%
+of the time. Over five seeds a runner in behind now exists in 449 decisions and a
+through ball is offered in 214 of them — the situation is three times more common than
+it was and the ball still does not go. That is `_shortlist` and what the pass is worth
+once it is on the list, and it is the next thread.
+
+**The goldens moved and were re-recorded.**
+
+## The ball in behind, and the two gates in front of it
+
+The run half was answered by the proportional rest above; the pass half was not. A
+runner in behind existed in 449 decisions over five seeds and a through ball was
+offered in 214 of them, and no instrument in the project could say what happened to
+the other 235. `A man was running in behind` is that instrument: the population is a
+runner rather than a decision, and each one is filed under **the first gate that
+refused him**, in the order the gates are applied.
+
+**Two gates held it, and neither was the value of the pass.** Seeds 7 and 3 at ten
+minutes: not on his list 1–2%, over 45 m 3–5%, **not moving forward yet 20–21%**, not
+a runner 0%, **out of striking range 32–33%**, offered 40–42%.
+
+`_shortlist` is not the problem — it was fixed when it started ranking men on where
+they are going. The two that are:
+
+**The velocity test was the same proxy the role test had been, one gate along.**
+`mate.vel.x * attack_dir > 1.2` asks whether he is *already* sprinting, and a man a
+stride into a run he has committed to for the next three and a half seconds is not.
+The ball can then only be offered once he is at speed, by which point it has to beat
+him to a spot he is already arriving at. The committed run now answers for itself and
+the velocity stays for everybody else — a striker drifting onto the shoulder with no
+intent is still worth playing in behind. The gate went to 0%.
+
+**Out of striking range is football and stays.** It is `SimTouch.strike_range`: a
+forty-metre ball played across the body is not a shorter version of the same pass.
+The answer to it is the carrier turning, which is a different mechanic and already
+exists. It is now the whole of the refusal — 41–62% across seeds — and that is the
+honest reading of a side whose carrier is facing the wrong way.
+
+### And the value half: 8b, without a new value field
+
+`Why an option lost` said it plainly once the gates were open: a through ball lost at
+`gain` **0.038 against 0.097** for the option that beat it. The most dangerous ball in
+football scored below the average of what it lost to, because expected threat is a map
+of the grass and the same twenty-five metres out is worth the same whether the back
+four is in front of the receiver or behind him.
+
+`_arrival_gain` is where that is answerable without rebuilding `xt_at`, and its own
+note said why it could not: `RECEIVER_CARRY_SECONDS` is 0.9 s, kept short because the
+defence's orientation is not modelled — and charged alike to a man in a crowded pocket
+and a man through on goal. **Counting who is actually between him and the goal is not
+orientation, but it is the half of it that decides what he does next.**
+`CLEAR_CARRY_SECONDS` is 2.6 s, `CLEAR_BODY` is 0.55 a man in the corridor, and the
+carry is still bounded by the distance to goal. The through ball's `gain` went to
+0.100 against the winner's 0.101, and it now loses on `success` — 0.14 against 0.53 —
+which is what a low-percentage pass is supposed to lose on.
+
+**What both did**, five seeds at ten minutes, against the run before this thread and
+the run after the rest fix:
+
+| | start | after 20b | after 8b |
+|---|---|---|---|
+| a through ball offered | 197 | 214 | 220 |
+| it scored best | 54 | 65 | **81** |
+| it was played | 54 | 60 | **75** |
+| then into the area | 12 | 11 | 18 |
+| crosses offered / played | 21 / 15 | 22 / 14 | 44 / 25 |
+| into the final third | 292 | 285 | 327 |
+| shots | 87 | 83 | **72** |
+| on target | 40 | 48 | 39 |
+| goals | 15 | 19 | 18 |
+
+**Shots fell 17% while the final third rose 12%, and that is the number to watch.**
+Penalty-area entries are flat, so it is fewer shots per entry: with a man arriving at
+a clear run priced properly, a pass inside the box now sometimes beats the shot beside
+it. That is the "walks it in" failure arriving from the passing side — the same one
+`_add_shot`'s bias was written against — and it is a tuning question rather than a
+mechanic one, so it is named here and left for the freeze. Goals held at 18 against
+15 before the thread, off 15 fewer shots.
+
+**What is still not done is 8b as written.** Expected threat is still single-step.
+This prices what the receiver does with the ball; it does not make the map itself
+know that a line has been broken.
+
+**The goldens moved and were re-recorded.**
+
+## The through ball was a ball nobody could catch
+
+The gates above got it offered and 8b got it chosen. Neither asked what it was like
+once it was struck, and by eye almost every one of them was too long and too hard.
+
+Nothing in the project could see that. `Passes by kind` gave the through ball one
+mean length and one completion rate, and a ball in behind is aimed *past* a man on
+purpose, so completion answers the wrong question: a ball blasted 30 m into the
+channel and collected by the keeper is resolved, is not completed, and is
+indistinguishable in every count from one cut out by a covering defender. The fixes
+are in different functions.
+
+**Two new instruments, both named in `docs/DIAGNOSTICS.md`.** `The ball in behind, as
+a strike` measures the pass over a match on three ratios against the receiver rather
+than on absolutes — the ball's speed as it reaches the aim point against his top
+speed, where it was aimed against how far he can get while it travels, and whether
+the *intended* man got it. `./run.sh behind` asks the same question of a geometry
+that was set rather than sampled: a passer, a runner and a flat back four at chosen
+distances, the engine's own candidate list read through `SimDecision.options_for`,
+and no match running. The second exists because the first cannot separate the aim
+rule from the selection above it — change the weight and the softmax plays a
+different set of through balls, so the mean moves for two reasons at once.
+
+**What they found**, seed 7 at ten minutes, and the bench agreeing row for row:
+
+- **The weight was set above what a footballer can run.** `arrival_pace(25 m)·1.15`
+  is 9.0 m/s, against a striker who tops out at 9.1 — that is arithmetic off the
+  constants, not a measurement, and it is the cleanest statement of the bug. The
+  block read 68% of through balls arriving faster than the man they were for could
+  run. Not a ball cut out — a ball nobody was ever going to reach.
+- **35% reached the runner they were aimed at, and 41% went straight to an
+  opponent.**
+- The aim sat at a flat **12.6 m in front of him whatever the distance and whatever
+  he was doing**, including 13.7 m ahead on balls under 12 m long.
+
+**Two causes, and neither was the value of the pass.**
+
+**The weight was priced off the distance instead of off the receiver.**
+`arrival_pace` answers a different question — how firmly to hit a ball at somebody's
+feet, where longer means firmer so it is not cut out — and the through ball asked it
+and then multiplied by 1.15. A ball in behind is the one pass not aimed at a man: he
+runs onto it, so its weight is a fact about how fast *he* runs. `behind_pace` caps it
+at `BEHIND_ARRIVE` of his current top speed. Under 1.0 by definition: a ball arriving
+at exactly his pace is one he draws level with and never gets on.
+
+**Only one of the two aim branches capped itself.** The committed run measured the
+flight to the far end and cut the aim back to what that flight buys. The projection —
+the branch that fires for a man who has *not* committed, a striker drifting onto the
+shoulder, which is exactly the man least able to chase a ball rolled past him — went
+to a flat 7–16 m in front of him and asked nothing. `_behind_aim` is the one rule
+both branches now go through.
+
+| seed 7, ten minutes | before | after |
+|---|---|---|
+| mean length | 23.3 m | **17.5 m** |
+| 24 m or longer | 57% | **22%** |
+| arriving faster than he can run | 68% | **13%** |
+| aimed further ahead than he can reach | 19% | **6%** |
+| reached the man it was for | 35% | **40%** |
+| went straight to an opponent | 41% | **26%** |
+| completed to anybody | 51% | **71%** |
+| through balls played | 75 | 86 |
+| shots / goals | 11 / 3 | 15 / 3 |
+
+**The `arrives` column in that table was wrong in both halves, and was fixed
+afterwards.** It backed the arrival pace out of `ground_travel_time`'s single
+blended decel, and the strike is solved against the two-phase slide-then-roll law —
+about a metre a second apart over twenty-five, always in the pessimistic direction.
+`SimBallistics.ground_pace_after` is the exact inverse of `ground_pass_speed` and
+both instruments now use it; on the bench the column reads 7.3 m/s against an intent
+of 7.28, which is the check that it is right. The before-column above is left as it
+was measured and is overstated by the same amount. Nothing else in the table
+depends on the model.
+
+**The 13% that still arrive too fast are execution, and the physics is why they
+are so visible.** Arrival pace goes as the *square* of the strike: at 25 m a ball
+overhit by 10% arrives at 9.4 m/s instead of 7.3. `_perturb` is what overhits it,
+`weight_sigma` is what scales the scatter by passing skill, and a through ball
+running away from a striker because it was struck a fraction too firmly is the
+mechanic working rather than failing. It is also why the figure moves so much by
+squad — 5%, 13% and 23% on seeds 3, 7 and 11.
+
+**A slower ball is longer on the grass and `_pass_success` prices interception off
+exactly that**, which is the trade `arrival_pace` names in its own note. It was paid
+and the pass still came out better, because the balls it stopped playing were the
+ones going to the keeper.
+
+**The goldens moved and were re-recorded.**
+
+### And the length term it never had
+
+The ground pass carries `length_bias`, `1/(1 + d·0.21)`, whose own note says the
+engine plays a Hollywood ball every time without it. The through ball carried no
+length term at all, so a 12 m ball slipped between two centre backs and a 30 m
+raking one were priced alike on length while `xt_at` paid the longer one more for
+finishing further up the pitch.
+
+`behind_length_bias` is not that law reused. It starts falling at the boot, and a
+ball in behind lives at fifteen to twenty-five metres — applied here it would not
+shape the pass, it would delete it. Length is free to `BEHIND_FREE` and falls away
+past it, where what is being played is a raking sixty-yarder wearing a through
+ball's name.
+
+**It did what a length term should do and nothing else**, three seeds at ten
+minutes:
+
+| | no term | with it |
+|---|---|---|
+| through balls played | 211 | 207 |
+| of them over 30 m | 8.5% | **3.9%** |
+| of them over 24 m | 21% | **18%** |
+
+**The count did not move, and that is the finding.** The frequency was never a
+length problem. `BEHIND_WORTH` — the level, the term that would move it — was tried
+at 0.75 and took through balls from 207 to 161 while their share of all passes went
+from 14.3% to 14.1%, because the passing game shrank with them, 479 passes a match
+to 383. A fifth of the football for two tenths of a percentage point. The level
+stays at 1.0 and the frequency goes to `docs/BACKLOG.md` (22), pointed at the two
+places that have not been looked at: how many men are put on a run in behind at
+all, and how many of them the carrier is offered at once.
+
+**Three ten-minute seeds do not resolve a match-level count**, and this thread is
+the demonstration. Seed 7 gave 15 shots at one setting and 9 at another differing
+in a single constant, while total passes per match — 377, 387, 384 within one
+setting — barely moved between seeds. Read the through-ball columns, which are the
+same population measured directly; do not read shots off three seeds.
+
+**The goldens moved again and were re-recorded.**

@@ -33,6 +33,21 @@ func ground_pass_speed(distance: float, arrive_pace: float, env: SimEnv) -> floa
 	return clampf(sqrt(maxf(needed, 0.0)), 2.0, 34.0)
 
 
+## Pace a ground pass struck at `speed` still has after running `distance`.
+##
+## The exact inverse of `ground_pass_speed`, and it has to be that rather than
+## anything simpler. There are two friction models in this file: the two-phase
+## slide-then-roll one the strike is solved against, and the single blended decel
+## `ground_travel_time` uses. Backing the arrival pace out of the second gives
+## about a metre a second too much over twenty-five, which is exactly the
+## difference between a ball a runner catches and one he does not — it read a
+## through ball out at 8.1 m/s that had been struck to arrive at 7.2. Nothing in
+## `sim/` calls this; the instruments do, and they were getting it wrong.
+func ground_pace_after(speed: float, distance: float, env: SimEnv) -> float:
+	var roll_decel: float = maxf(env.roll_decel, 0.1)
+	return sqrt(maxf(ground_pass_range(speed, env) - distance, 0.0) * 2.0 * roll_decel)
+
+
 ## Distance a ground pass struck at `speed` will run before stopping.
 func ground_pass_range(speed: float, env: SimEnv) -> float:
 	var slide_decel: float = maxf(env.slide_friction * SimConsts.GRAVITY, 0.5)

@@ -33,6 +33,8 @@ var risk := 0.5
 ## Lateral spread of the formation's home positions.
 var width := 0.5
 ## Expected-threat multipliers by third of the pitch across: left, centre, right.
+## Written by `set_focus`, never by hand -- see it for why the three have to
+## average to one.
 var attacking_focus := PackedFloat32Array([1.0, 1.0, 1.0])
 ## Willingness to counter-attack directly on winning the ball.
 var counter := 0.5
@@ -123,6 +125,31 @@ func width_scale() -> float:
 	return lerpf(0.78, 1.2, width)
 
 
+## How far a plan tilts toward the flanks, at the extreme. Wide bands go up by
+## this and the middle comes down by twice it, which is what keeps the three
+## averaging to one.
+const FOCUS_TILT := 0.12
+
+
+## Which way the side looks for its threat: +1 down the outside, -1 through the
+## middle, 0 no opinion.
+##
+## The three multipliers have to average to one and that is not tidiness. Every
+## candidate's gain is `xt_at(its own point) * focus_at(...)`, and `loss` is not
+## multiplied by anything, so a triple averaging above one lifts every gain
+## against a fixed loss and the plan comes out *more adventurous* rather than
+## more lateral. `--ablate` would then report `focus_at` flipping picks, and it
+## would be reporting the wrong mechanic.
+##
+## Until this existed nothing in the engine wrote `attacking_focus` at all. It
+## sat at `[1.0, 1.0, 1.0]` through eight call sites, multiplying every gain in
+## the decision layer by exactly one, in every plan, in every match --
+## `docs/DIAGNOSTICS.md` link 1, and the first thing `--ablate` found.
+func set_focus(wing: float) -> void:
+	var w: float = clampf(wing, -1.0, 1.0) * FOCUS_TILT
+	attacking_focus = PackedFloat32Array([1.0 + w, 1.0 - 2.0 * w, 1.0 + w])
+
+
 ## Multiplier on expected threat for a point, by its lateral third.
 func focus_at(z: float, pitch: SimPitch) -> float:
 	var t := (z + pitch.half_width) / (2.0 * pitch.half_width)
@@ -177,6 +204,10 @@ static func high_press_direct() -> SimTactics:
 	t.risk = 0.75
 	t.width = 0.6
 	t.counter = 0.8
+	# Wins it high and goes down the outside. It is the plan that gets bodies
+	# beyond the ball quickest, and the ball into the box is now an act the
+	# engine has -- `SimDecision._add_crosses`.
+	t.set_focus(1.0)
 	t.install(SimPattern.Kind.PRESS_THE_GOAL_KICK, 0.9)
 	t.install(SimPattern.Kind.RUN_IN_BEHIND, 0.8)
 	t.install(SimPattern.Kind.THIRD_MAN_RUN, 0.6)
@@ -196,6 +227,10 @@ static func deep_block_patient() -> SimTactics:
 	t.risk = 0.25
 	t.width = 0.42
 	t.counter = 0.35
+	# Sits in and works it through the middle when it gets it. Less strongly than
+	# the press tilts the other way: a patient side is not refusing the flanks,
+	# it is not built to reach them.
+	t.set_focus(-0.6)
 	t.install(SimPattern.Kind.KEEPER_PLAYS_SHORT, 0.9)
 	t.install(SimPattern.Kind.SWITCH_FAR_SIDE, 0.8)
 	t.install(SimPattern.Kind.UNDERLAP, 0.6)

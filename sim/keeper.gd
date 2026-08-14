@@ -457,6 +457,7 @@ static func _shot_response(ctx: SimContext, k: SimPlayer) -> void:
 	state["resolved"] = true
 	if margin > reach:
 		# Beaten. The keeper still dives, which is what the player sees.
+		_record_facing(ctx, k, margin, reach, false, false)
 		k.play_anim(SimConsts.Anim.DIVE_LEFT if point.z < k.pos.z else SimConsts.Anim.DIVE_RIGHT, 0.8)
 		return
 
@@ -471,7 +472,9 @@ static func _shot_response(ctx: SimContext, k: SimPlayer) -> void:
 	save_chance *= ctx.config.keeper_save_scale()
 	k.play_anim(SimConsts.Anim.DIVE_LEFT if point.z < k.pos.z else SimConsts.Anim.DIVE_RIGHT, 0.8)
 	if not ctx.rng.chance(save_chance):
+		_record_facing(ctx, k, margin, reach, true, false)
 		return
+	_record_facing(ctx, k, margin, reach, true, true)
 
 	# Saved. Parry versus catch is decided by margin and ball speed.
 	var can_catch := closeness > 0.55 and ball_speed < 24.0 and ctx.rng.chance(lerpf(0.2, 0.9, k.attrs.handling))
@@ -488,6 +491,34 @@ static func _shot_response(ctx: SimContext, k: SimPlayer) -> void:
 	# a dive is — but the ball keeps flying, and is taken when it arrives.
 	state["caught"] = can_catch
 	state["save_tick"] = ctx.tick_index + int(round(dive_time * float(SimConsts.TICK_HZ)))
+
+
+## Records which of the save model's two stages resolved a shot, on the shot's
+## own event.
+##
+## They multiply, and only the second one is calibrated. `save_chance` claims two
+## thirds to three quarters of shots on target are kept out, and it is asked only
+## of the shots the reach envelope has already passed — so the compound can never
+## be more than that figure times the envelope's pass rate. Nothing measured the
+## envelope: being beaten for reach returns without logging anything, so a keeper
+## who stops half of what is goal-bound reads exactly like one whose roll is
+## unlucky, and the two want opposite fixes.
+##
+## Stamped onto `ctx.active_shot` rather than logged as an event of its own, so
+## these rows and `SimReferee.close_shot`'s fates describe one population and can
+## be read against each other. The tick test is what makes that true:
+## `_shot_response` fires for any ball the forecast has going in, a deflection or
+## a sliced clearance included, and those are not shots.
+static func _record_facing(ctx: SimContext, k: SimPlayer, margin: float, reach: float,
+		reached: bool, saved: bool) -> void:
+	if ctx.active_shot.is_empty() or ctx.ball.last_touch_tick != ctx.active_shot_tick:
+		return
+	if int(ctx.active_shot.get("team", -1)) == k.team:
+		return
+	ctx.active_shot["k_margin"] = margin
+	ctx.active_shot["k_reach"] = reach
+	ctx.active_shot["k_reached"] = reached
+	ctx.active_shot["k_saved"] = saved
 
 
 ## Takes the ball at the end of a dive whose outcome was settled up to nine

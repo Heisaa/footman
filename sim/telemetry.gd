@@ -26,12 +26,16 @@ enum Ev {
 	SUBSTITUTION,
 	SAVE,
 	OUT_OF_PLAY,
+	## The end of one team's spell on the ball. Appended rather than inserted:
+	## these are ints in a hashed log, and renumbering the enum would move every
+	## digest for nothing.
+	POSSESSION_END,
 }
 
 const EV_NAMES := [
 	"kickoff", "touch", "pass_attempt", "pass_outcome", "shot", "duel", "foul",
 	"card", "recovery", "pattern", "phase_change", "goal", "offside", "set_piece",
-	"period", "substitution", "save", "out_of_play",
+	"period", "substitution", "save", "out_of_play", "possession_end",
 ]
 
 ## Touch kinds. Shared with the touch module.
@@ -77,12 +81,26 @@ func clear() -> void:
 	trace.clear()
 
 
+## `poss` is stamped on by `SimContext.log_event`, which is the only caller: it is
+## the spell of possession that was live when the event was logged, and it is the
+## join key everything in `tools/diagnostics.gd` pairs on. Before it existed the
+## only way to ask what became of a touch was to guess by tick window, and
+## `docs/DIAGNOSTICS.md` has the two ways that went wrong.
 func log_event(kind: int, tick: int, data: Dictionary = {}) -> void:
 	if not events_enabled:
 		return
 	data["ev"] = kind
 	data["t"] = tick
 	events.append(data)
+
+
+## Every event belonging to one spell of possession, in order.
+func in_possession(poss: int) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for e in events:
+		if int(e.get("poss", -1)) == poss:
+			out.append(e)
+	return out
 
 
 func log_trace(sample: PackedVector3Array) -> void:

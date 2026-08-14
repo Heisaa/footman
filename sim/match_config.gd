@@ -100,17 +100,42 @@ var urgency_override := -1.0
 ## engine's own comment beside `_add_shot`'s bias says this is not the knob for
 ## how often it shoots. In a football-first engine that is right. This is the
 ## format admitting it is using it as one anyway.
+##
+## Unsettled, and the only one of the four that is. It sits at 8 because forty
+## compressed matches said it did nothing -- shots per team 2.29 to 2.40 across
+## 1 to 8 -- and a knob that does nothing costs nothing to leave alone. Three
+## seeds during the re-fit suggested it now moves shots by a fifth, but three
+## seeds cannot see a shot count at all: the same seed swung 14 to 32 between
+## configurations that never touched shooting. Forty matches beat three seeds, so
+## it stays until a batch says otherwise. `docs/STATUS.md` has the comparison.
 const SHOT_APPETITE_URGENT := 8.0
 ## Multiplier on `SimTouch.SHOT_AIM_BASE`, so below one is a straighter shot.
+##
+## Load-bearing, and it is what lets the two below stay near one. The fit reduces
+## to a single curve: conversion is the goal-bound share times one minus the save
+## rate, which predicted all eight measured configurations inside a tenth, and
+## the compressed match needs about 0.57 of it. At this value the goal-bound
+## share is about 0.78, which leaves room for a keeper saving a third. Left alone
+## the share is about 0.50 and the equation has no solution at *any* keeper
+## strength -- measured, the aim knob alone reached 1.80 goals against the old
+## fit's 4.10 on the same instrument. That is the reason the format's unrealism
+## is placed on the shooting rather than on the goalkeeper.
 const SHOT_SIGMA_URGENT := 0.15
 ## Multiplier on the keeper's save chance. He still dives, still reads it, still
 ## has his attributes -- he just keeps out fewer of them.
-const KEEPER_SAVE_URGENT := 0.15
+const KEEPER_SAVE_URGENT := 0.7
 ## Multiplier on how far he can get to a ball, which is the larger half of him.
 ## Measured: halving the save roll alone moved conversion by a seventh, because
 ## most shots never reach the roll -- a keeper whose reach covers the shot has
 ## already gathered it. Below one the corners of the goal come back into play.
-const KEEPER_REACH_URGENT := 0.35
+##
+## Both keeper knobs were 0.15 and 0.35, fitted against a keeper who was quietly
+## compensating with `SimKeeper._try_gather`. With the gather gone they left him
+## saving 2% of what he faced -- one save in thirty minutes of football -- which
+## is the single most visible thing on the screen, because the viewer is watching
+## him during every shot. At 0.7 and 0.75 he saves about a third, against the
+## 46% the same keeper manages at `clock_rate` 1, and the scoreline is unchanged.
+const KEEPER_REACH_URGENT := 0.75
 
 
 func shot_appetite() -> float:

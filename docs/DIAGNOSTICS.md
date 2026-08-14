@@ -73,6 +73,49 @@ because it is the attack working rather than the run failing — and it was most
 number, which rose every time the engine got better at reaching the box. What is left
 in `cut short` is a real turnover mid-stride.
 
+**`A man was running in behind`** — the gates in front of the one pass the whole
+counter is built around, and the population is a **runner rather than a decision**:
+every teammate making the run at the moment somebody is deciding, filed under the
+first gate that refused him, in the order the gates are applied. `Chains` can say the
+run existed three times more often than the pass was offered and cannot say why, and
+the answer picks the layer — `_shortlist` keeping six of ten is a different job from a
+body-orientation range clamp, and both are upstream of everything the pass is worth.
+
+It has already caught one proxy and left one piece of football standing: `not moving
+forward yet` was 21% and is now 0%, because a man a stride into a committed run is not
+yet at 1.2 m/s and the ball wants playing exactly then; `out of striking range` is 41–62%
+and stays, because it is `SimTouch.strike_range` saying the carrier is facing the wrong
+way. **A value knob cannot reach a candidate that was never generated**, and this is
+the third time the project has been caught by that.
+
+**`The two seconds after a regain`** — the same three questions asked of the window
+instead of the match. `secure`, `break_bias` and `SimOffBall.BREAK_RUN` all fire
+inside `SimDecision.REGAIN_WINDOW`, and until this nothing measured them there:
+`Offering for the ball` answers over ninety minutes, and "the counter is not on" has
+three causes that produce one number between them. Nobody on the winning side is
+*eligible* to run; they are eligible and the run scores badly; or they run and the
+man on the ball never picks them. The three live in three different files.
+
+Read it top to bottom and stop at the first row that is wrong.
+
+- the first pair of rows is **eligibility**, and it is the gate in `SimOffBall._assign`
+  counted rather than reasoned about: each man on the side in possession is filed
+  under the first of the gate's own tests he fails. **It is a pair on purpose** —
+  `in the window` against `the rest of it` — because two men of nine resting is only a
+  tax on the counter if the same row reads lower when the counter is off.
+- `a run a turnover ended had served …%` is the physiology behind that, and it is what
+  `_expire` charges the rest in proportion to.
+- the third block is **scoring**: of the men who were free to be considered, how many
+  actually took a run in the window, by kind.
+- the fourth is the **carrier**, in the same `offered` / `best w` / `received` terms
+  as the block above, over the offers made when the counter was on rather than all of
+  them.
+- `break_on` is link 1 for both multipliers hanging off it — the distribution of the
+  number they are lerped through, over the decisions taken inside the window.
+
+`Did he have a safe pass?` carries the same window on its last line, off the trace and
+the recovery events rather than off the sim.
+
 **`Why an option lost`** — the other half of the same question, one layer down. For
 every decision, the best-scoring candidate of each kind is set against the option that
 was actually played, and the terms are averaged over the decisions where that kind
@@ -95,11 +138,38 @@ multiply out exactly to the printed `success`: what is left over is `off_balance
 penalty for choosing while the ball is still moving, which is applied to the candidate
 rather than inside the model.
 
+**`and of the ones it played` is the calibration, and the table above it is not.**
+`success` there is the best *rejected* ball of its kind and `completed` beside it is
+what the played ones did, so the gap between the two columns is mostly selection —
+and selection is not the same size for every kind. A through ball loses fourteen
+times for every one that gets played and an ordinary pass loses twice, so the same
+gap means different things in the two rows, and reading it as a calibration is how a
+model that is picking well gets mistaken for one that is wrong.
+
+The second table is the same five factors and the same model on the balls it
+actually **played**, against the completion rate of those same balls. That pair is
+like-for-like. Measured, every kind sits 1.3 to 1.5 times its own claim — the
+residual is the model asking a stricter question than `completed` does — except the
+through ball, which sat at 2.2 and had `struck` at 0.72 against a pass to feet's
+0.90. `SPACE_TOLERANCE` is what that found: a ball into space was being graded
+against the boot of a standing receiver. The same instrument then said the cross
+claims 0.15 to 0.21 and completes at about that, which is the model being right
+about a bad ball rather than wrong about a good one.
+
 **The `gain` column is not comparable across kinds.** A shot carries a gain of 1.0 by
 construction — the gain *is* the goal, and the scoring multiplies it by the chance of
 one — so any row whose winner was often a shot has an inflated right-hand side. The
 comparison that means something is within a column, between the two sides of the same
 row, on `success`.
+
+**A row that is missing is a run nobody ever made, and the block prints no zeros.**
+`box`, the run that attacks a cross, was absent for two rounds of fixes while the
+mechanic under it was scored, won its softmax six times over and was never
+committed — `sim/off_ball.gd` sized its quota tally by hand and threw an
+out-of-bounds error to stderr on every assignment pass. A block read through
+`grep` cannot show you an error, and an absent row looks exactly like a run the
+engine chose not to make. Read the whole output when a row you expect is not
+there.
 
 **When the two halves disagree, believe the trace.** An intent that is taken and never
 resolves into a body arriving somewhere useful is a run that exists only in the
@@ -114,6 +184,27 @@ both. What tells them apart is the band the shots were struck from, the mean exp
 goals per attempt beside it — real football's is about 0.10, and an engine printing
 0.40 only ever shoots from a tap-in — and how many were second balls rather than fresh
 chances.
+
+Under the fate rows sits **`the save model resolved N of them`**, which is the only
+thing that can say *why* a goal-bound shot went in. `SimKeeper._shot_response` resolves
+a save in two stages that multiply — the reach envelope, then `save_chance` — and until
+this block existed only the second one was visible, because being beaten for reach
+returned without logging anything. A keeper whose envelope is too small and one whose
+roll is too low produce the same compound rate and want opposite fixes.
+
+Its population is smaller than the goal-bound fates above, deliberately. A shot a
+defender blocks before the keeper commits never reaches him, and one struck from six
+yards can be in the net before his reaction time is up: those are goals the save model
+never had an opinion about, and charging them to it would be blaming it for the
+defence. The last line goes the other way — `Goalkeeping`'s `saves` counts every ball
+the forecast had going in, deflections and sliced clearances included, and those are
+not shots.
+
+The `ball ... away, reach ...` pair on the beaten row is measured in the keeper's own
+reach space, not in metres of grass: `_closest_approach` stretches height by
+`VERTICAL_REACH_RATIO`, so a top corner is further away than the same offset along the
+floor. The reach figure is the one to read first, because it is the dive he actually
+got off rather than the one `REACH_DIVING` describes.
 
 Under it sits what no count of shots can reach: what the man on the ball did with his
 touches *inside* the penalty area, and how far in front of himself he pushed the ball
@@ -229,12 +320,369 @@ there, over which line, and for the carried ones how much grass the man had besi
 how hard he struck it. A count of throw-ins says none of that, and a ball hammered clear
 and a ball walked over the line in front of a carrier are the same restart.
 
+**`The ball in behind, as a strike`** — the through ball judged as a weight rather than
+as a choice. `Passes by kind` gives it one mean length and one completion rate, and
+neither can see the thing the eye sees first: a ball in behind is aimed *past* a man on
+purpose, so whether it was a good ball is not "did it reach a teammate" but "was it hit
+at a weight he could run onto". Those come apart completely — a ball blasted 30 m into
+the channel and collected by the keeper is resolved, is not completed, and is
+indistinguishable in every other count from one cut out by a defender.
+
+Three columns carry it, and all three are ratios against the receiver rather than
+absolute numbers.
+
+- `arrives` against his top speed. The ball's own speed as it reaches the aim point.
+  Above his top speed it is a ball nobody catches, whatever else was true of the pass.
+- `aimed ahead` against `he covers`. Where it was played against how far he can get
+  while it travels. Over is a ball aimed at a yard he never reaches.
+- `reached him` — the *intended* man. `Passes by kind` counts a through ball scuffed to
+  the nearest centre back's feet as a completion.
+
+The row marked `to feet` is the ordinary ground pass on the same columns, and it is
+there so the numbers above it can be read at all: a figure is only high against
+something.
+
+Every quantity comes off the strike itself — `struck`, `lead` and `rmax` on the pass
+attempt — rather than being reconstructed from the 5 Hz trace, which at 16 m/s moves
+three metres between samples. `rmax` is on the event rather than looked up when the log
+is read because `max_speed` is fatigue-capped and falls across a match: read late, a
+first-minute ball gets judged against tenth-minute legs.
+
+**`arrives` must come off `SimBallistics.ground_pace_after` and never off
+`ground_travel_time`.** There are two friction models in `sim/ballistics.gd` — the
+two-phase slide-then-roll one a strike is solved against, and the single blended decel
+the travel time uses — and they disagree by about a metre a second over twenty-five,
+always in the direction that makes a ball look faster than it was struck to be. This
+block had that bug when it was written. The check that it is right: on the bench, an
+intent of 7.28 m/s reads back as 7.3.
+
+Expect a residual on `arriving faster than the man can run` even when the aim is
+correct, and read it as execution rather than as intent. Arrival pace goes as the
+*square* of the strike, so at 25 m a ball overhit by 10% arrives at 9.4 m/s instead of
+7.3, and `_perturb` overhits some of them by design. It runs 5% to 23% by squad.
+
+### `./run.sh behind` — the same ball in a geometry nobody had to reach
+
+The block above measures the through ball over a match and cannot answer the question
+the eye asks. A match mixes the aim rule with the whole of the selection above it:
+change the weight a through ball is hit at and the softmax plays a *different set* of
+them, so the mean length moves for two reasons at once and neither is separable. That is
+the right instrument for "how much of this is happening" and useless for "is this ball
+hit right".
+
+So `behind` sets the situation instead of sampling it. A passer, a runner, a flat back
+four and a keeper, at distances chosen rather than found, and one question per row: the
+ball the engine would play here — can the man it is for get to it? No match runs, no
+tick advances, nothing is random, and it returns instantly. The same geometry gives the
+same row on every build, so a row is a property of the rule.
+
+It reads the engine's own candidate list through `SimDecision.options_for`, which
+generates without playing, so the ball it prints is the ball the match would strike and
+not a copy of the rule that can drift from it.
+
+The `run` column says which branch of the aim produced the row: `committed` when the
+off-ball layer has the man on a timed run in behind, `projected` when the aim is the
+guess made in its absence. Those were two different rules until the projection was found
+aiming a flat 12.6 m ahead of a man whatever he was doing.
+
+A row that offers no ball names the gate that refused it, off `SimDecision.behind_gate`
+— the same tally `A man was running in behind` prints. **That tally has a blind spot the
+bench makes visible**: `_open_behind_gates` opens its population on
+`is_running_in_behind`, so it only ever counts men the off-ball layer has *committed* to
+a run. Every `projected` ball is invisible to it, in the bench and in a match alike, and
+the projection is the branch that was aiming wrong.
+
+## The chain
+
+Four instruments and a command, one subject. Everything above measures what the
+football did; these measure **why a change to it did nothing**, which is a different
+question and the one that used to have no answer at all.
+
+A constant reaches a goal down six links, and each can break on its own:
+
+| | the link | what says it broke | how it breaks |
+|---|---|---|---|
+| 1 | the constant reaches the input that reads it | `--ablate`, the `value` column | a range the engine never enters |
+| 2 | the term's output varies | `--ablate`, `on score` | applied, and the same for every option |
+| 3 | the varying term changes which option wins | `--ablate`, `flips` and `moves p` | moves the numbers, dominated by something bigger |
+| 4 | the option is generated at all, and played | `Chains`, links 1–4 | a gate upstream of every value knob |
+| 5 | the act leads somewhere | `Chains`, the `then …` links; `What became of the ball` | the football stops one stage earlier than expected |
+| 6 | it was the act that did it, not the situation | `The coin the softmax tossed` | it correlated, it did not cause |
+
+`./run.sh chains --against` is the command, and it asks links 4 to 6 again about a
+change rather than about a match.
+
+**Read them in order.** A term that never reaches the pick cannot be blamed for an
+outcome, and a link that broke at 2 makes every measurement below it noise about
+something else. The first three cost nothing and answer most complaints on their own.
+
+Two of them have found something already. `focus_at` multiplies every gain in the
+decision layer by exactly one, in every plan, because nothing writes
+`SimTactics.attacking_focus` — link 1. And only a fifth of the wide moments in the
+opponent's half generate a cross candidate at all, so raising `LOFTED_BIAS` moved
+`it was played` by sixty points and `a cross was offered` by −1.7 — link 4, upstream
+of every prior in the file.
+
+**`Where a term changes the decision`** — `--ablate`, links 1 to 3, and the only
+block in this file that does not measure the match. It measures whether a term in the
+score can reach it at all.
+
+**Start here, because a term that never changes the pick produces a match identical
+in every count there is.** No statistic over a match can see one, however many matches
+are run, and this is where a knob that was turned and did nothing usually died.
+
+So it is measured per decision and counterfactually. Each decision, the list is
+scored again with one term neutralised and the two choices are compared. No second
+match — and, the reason to trust it over one, no divergence cascade: two runs of one
+seed become different football within seconds of the first different decision, and a
+diff between them measures a different match rather than the knob.
+
+**Read `in`, `on score`, `flips`, in that order. They fail differently and the fixes
+are in different files.**
+
+- `in` at 0% — the term is applied to no candidate. It is not wired to the situation
+  it was written for, and nothing downstream can be its fault.
+- `on score` at ~0 — applied, and its value never varies, so it shifts every option
+  alike and discriminates between none. This is the `turnover_exposure` failure
+  recorded in `SimDecision`, found by hand: guessed thresholds, a mean of 1.16, no
+  variance.
+- `flips` at 0% with a real `on score` — it moves the numbers and something bigger
+  beats it. The only one of the three that is a judgement rather than a bug.
+
+`flips` is a share of the decisions the term *applied to*, not of the match, because
+a term cannot change a pick where it is not present. `moves p` is the same question
+without the cliff edge: how far the softmax's distribution over the kinds of action
+moved, which counts a term that shifts every decision a little and flips none.
+
+**The commonest flip is two independent maxima**, the kind that most often lost the
+pick and the kind that most often won it. `pass -> pass` is not a contradiction: it
+means the term reorders the passes among themselves rather than changing what kind
+of act gets played.
+
+**A term is measured against the plans the match was played with.** A prior that only
+varies away from balanced reads as a constant on the default — `risk_weight` flips
+0.3% of decisions in a balanced match and 3.3% under `--plan press --away-plan block`,
+and the pattern bias goes from 0% to 11%. Run it both ways before calling a tactical
+term inert.
+
+It found one immediately. **`focus_at` was dead**: `SimTactics.attacking_focus` was
+`[1.0, 1.0, 1.0]` and nothing in the engine ever wrote it, so the lateral focus
+multiplied every candidate's gain by exactly one, in every plan, in every match. Four
+call sites, present in every gain in the decision layer, contributing nothing. It was
+a channel with no plan wired into it rather than a broken formula, and it read
+`never applied` at `in` 0%. `SimTactics.set_focus` is what now writes it, and the
+two Phase 5 presets are what call it.
+
+**It still reads `never applied` on the balanced plan, and that is now the right
+answer rather than the bug.** `balanced()` has no lateral opinion, so its triple is
+`[1, 1, 1]` and the term contributes exactly nothing — the same thing `risk_weight`
+and the pattern bias do on that plan. Under `--plan press --away-plan block` it
+applies to 100% of decisions and flips 3.6% of them. The two readings together are
+what say the channel is alive; either one alone says nothing.
+
+Same one-way-tap contract as the decision sink: off unless asked for, never touches
+`ctx.rng`, nothing in `sim/` reads it back. Every other block in the report is
+byte-identical with it on. It compares the pick on the **best** option rather than on
+a second draw, because drawing again would consume the stream and the match would no
+longer be the seed's. It costs about 4% of a diagnose run — scoring the list again is
+nearly free, since what a decision costs is generating the candidates.
+
+**`What became of the ball`** — what a spell of possession produced, and what had
+been played in it. Every other block on this page counts acts; none of them can say
+what came of one, because a count has no way of reaching forward.
+
+`SimContext.possession_id` is what makes it reachable. Every event now carries the
+spell it was logged in, so "what became of this" is a filter over a group rather
+than a guess at a tick window — and it retires the pairing trap in `Two traps in
+reading positions` below, because there is nothing left to desynchronise.
+
+A spell is a run of one team being the side in possession. It ends when the other
+team takes over **and at every dead ball**, because a restart sets
+`ball.last_touch_player` to -1 and drives possession to -1 with it. That second rule
+is deliberate: a free kick to the side that already had the ball would otherwise be a
+possession that swallowed the foul that interrupted it, and the foul is the outcome
+worth counting.
+
+**The fate is precedence-ordered, not last-event-wins.** A shot that goes out for a
+corner logs the corner second, and reading backwards files the possession as a ball
+out of play and loses the only thing about it that mattered. Three of seed 7's six
+balls out of play are shots, and they belong on the shot row.
+
+**Two joins, and they are not interchangeable.** The fate comes off the tag: the
+event that *ends* a spell — the tackle, the cut-out pass, the whistle — is logged
+while that spell is still the live one, because possession is derived at the top of a
+tick and football is played in the middle of one. The contents come off the tick
+interval instead, because the touch that *wins* the ball is logged a tick early too,
+so by tag it belongs to the spell it ended rather than the one it began. Counted by
+tag, a deflection came back as a possession with no touches in it.
+
+**`ground` is the ball, not the move.** It is how far the ball travelled toward the
+goal that team was attacking, measured from where the spell started, so a goal kick
+hammered eighty metres and headed clear counts eighty. The attacking direction is
+captured at the spell's start rather than read at its end — `SimPitch` only knows
+where the ends are pointing now, and the trap below is what that costs.
+
+`picked off loose` is the row that had to be added, and it is the largest single way
+this engine loses the ball after the cut-out pass. It logs no duel and no failed
+pass, so without a row of its own it sat in "lost otherwise" and read as a gap in the
+instrument rather than a fact about the football.
+
+**The lower half is observational, and that is its limit.** A spell containing a
+cross is a spell that had already reached the byline, so the shot rate beside it is
+partly the pass and partly the situation it was played from. `The coin the softmax
+tossed`, below, is the version that separates the two; this one says what goes
+together, not what causes what.
+
+**A shot is a content, not an ending event, and getting that wrong cost two goes.**
+It is worth knowing about because it is the shape of every mistake this join can
+make. A first-time strike off a loose ball *is* the touch that wins the ball, so it
+is tagged to the spell it ended — the opposition's — and a team check that was right
+to reject it threw four of seed 7's five goals away. Before that, goals were read off
+the `GOAL` event, which lands a spell later than the strike again: the ball is
+touched on its way in often enough that four of five goals were charged to the
+fragment of play *after* the ball was already in the net, which is why the goal row
+read two touches and three seconds long. Shots and goals are matched to the spell
+whose team owned the ball at that tick, by the same interval join as the touches, and
+the counts now agree with `Shots by distance` — 22 shots, 13 on target, 5 goals.
+
+**`Chains`** — the same spells, walked link by link. The block to reach for when a
+change went in, the goals did not move, and nobody can say where it stopped. A count
+of shots says the attack failed; this says which link failed, and the links have
+different owners.
+
+Four chains, and they come in two shapes. `Into a shot` and `After winning it back`
+start at a spell of possession; the second is the counter, and it is there because
+`--ablate` said `break_bias` — the whole counter-attacking prior, a 2.6x multiplier —
+had never once changed which option was played. It flips 2.3% of them since the rest
+charged for a run a turnover ended was made proportional, which is what a prior on an
+option nobody was generating looks like when the option starts being generated.
+
+`The cross` and `The ball in behind` start at a **decision**, and their first three
+links are invisible to every other instrument in the project. A cross that was never
+a candidate and a cross that was scored and beaten are the same absence in every
+count here, and they are different jobs: the first is `_add_passes` not offering it,
+the second is what it is worth once offered. A crossable moment that produced nothing
+leaves no event in the log at all, so nothing reading the log can find it — which is
+why `SimChoices` records which kinds were generated, how wide the carrier was, and
+whether anybody was running in behind.
+
+Everything from `then …` on is conditional on the act having been **played** and on
+happening **after** it. Counted the way the spell chains are, the cross chain
+reported 22 spells reaching the area against 5 crosses played — 440%, and measuring
+attacks that never crossed at all. `CHAIN_GATE` is where that conditioning starts.
+
+The population is a decision, not a spell, so a move offering three crossable moments
+counts three times and its outcome three times with it. That is right for "of the
+moments that called for a cross, how many became one" and wrong for counting crosses;
+`Passes by kind` does that.
+
+**What they found.** Of 122 wide moments in the opponent's half, **only 20% produced a
+cross candidate at all** — and raising `LOFTED_BIAS` from 0.30 to 0.60 moved that link
+by −1.7 points while moving `it was played` by +60. A value knob cannot create an
+option that was never generated, and the generation gate is upstream of every prior
+in the file. That is the shape of the complaint this whole set of instruments exists
+for, and no count of crosses can see it.
+
+Over three seeds it was 11%, not 20% — seed 7 is the optimistic one — and
+`SimDecision._add_crosses` is the answer to it: see `docs/STATUS.md`, "The ball into
+the box". **The population is deliberately wider than the mechanic.** The chain asks
+its question of every wide moment in the opponent's half while the generator fires
+only in the final third, so the `offered` link reads 2 to 8% and most of the gap is a
+design decision rather than a miss. An instrument that adopts every gate the mechanic
+has can never report the mechanic refusing to fire, which is the whole job of link 4.
+
+**The stages are shares of the population, not nested subsets, and `of above` can
+pass 100%.** The first version enforced nesting and got it wrong in the direction
+that matters: a shot struck from outside the penalty area was stopped at the box row
+and never counted, so the chain printed 8 shots against the 19 the block above it had
+just reported. An instrument that disagrees with the one beside it is the one that is
+wrong. Read the other way, that same row is the finding — 22 shots against the 15
+spells that reached the area, `of above` 147%, which is an engine shooting from
+outside the box far more than it gets into it.
+
+### `./run.sh chains` — what a change did to the chain
+
+The block above says where an attack stops. This says what a change *did* to that,
+which is a different question and the one that was being answered by eye across two
+terminal scrollbacks.
+
+```
+./run.sh chains --matches 5 --minutes 10 --out runs/before.json    # before
+#   ... change the code ...
+./run.sh chains --matches 5 --minutes 10 --against runs/before.json
+```
+
+A saved run is a few hundred bytes and holds only the chain and fate counts, so it
+can sit in the repo across a change. Relative paths land in the repo root, since
+`run.sh` runs from there.
+
+**Read the conversion column, not the counts.** A change that produces more
+possessions moves every count in the chain and has told you nothing about where it
+landed. A change that moves a *conversion* has changed what happens at that link, and
+the arrow marks the largest moves. The counts are printed beside it because a
+conversion over nothing is noise.
+
+**Several matches, not one, and this is not fussiness.** A code change moves the match
+wholesale — two runs of one seed become different football within seconds of the first
+different decision — so a one-seed diff measures a different match rather than the
+change. Five seeds is not a sample either; it is enough that a conversion moving ten
+points is worth a look. The `n` column is what says whether it is.
+
+**The two runs will not have played the same amount of football.** Measured, 20
+minutes against 23 on the same four seeds, which inflates every `after` count by 15%.
+The header says so when they are more than 5% apart, the conversions are immune, and
+the outcome table underneath is put on a per-90 rate.
+
+Measured against `SimDecision.TERRITORY` at 0.75 — the value the file's own comment
+describes — the diff says: box entries 18% → 26% of the spells that reached the final
+third, shots 97 → 112 per 90, goals 26.5 → 23.1, and the goal conversion off a shot
+50% → 33%. More chances, worse chances, no more goals. That is the same finding
+recorded beside `TERRITORY_URGENT`, arrived at from a standing start in ninety
+seconds, which is what the command is for.
+
+**`The coin the softmax tossed`** — the only comparison in this file that is not
+confounded, and the engine has been running the trial since it was written.
+
+Every other split here compares what happened after a carry with what happened after
+a pass, and every one is as much a fact about the situations carries get chosen in as
+about carrying. No number of matches fixes that; it is the wrong question asked
+precisely.
+
+But options are chosen by softmax and never by argmax, so when two kinds of act score
+close together **which one gets played is settled by `ctx.rng` and by nothing about
+the situation**. That is random assignment. Condition on the near-ties, split by what
+came out, and the gap between the arms is caused by the choice.
+
+Two things make it better than a real trial: the propensity is not estimated but is
+the number the engine used, and both arms come from one match, so nothing about the
+football differs between them. **Read `p` first** — it is the mean chance the arm's
+kind had of being played, and if the two sides of a row are not near even the
+conditioning has not worked and the rest of the row is worth nothing. Measured, they
+come out at 0.52 against 0.49.
+
+Two limits, both real. It is a **local** effect: it says what the pass was worth
+instead of the carry on the decisions where the two were nearly equal, which is the
+population the engine was undecided about rather than one football cares about. And
+the outcome is the whole spell's, so a decision three seconds from a turnover is
+scored on a possession it barely influenced.
+
+**It wants a full-length match and says so.** Ten minutes holds about 130 near-ties
+over fourteen pairs, so every row prints `noisy at n=`, on the same rule the batch
+runner uses. Widening the band to reach a sample is fitting the instrument to the run
+rather than to the question — at 0.35 to 0.65 the carry arm's shot rate moved from 8%
+to 28% on the same seed, which is the noise saying so.
+
 ## Two traps in reading positions
 
 **Outcomes cannot be paired with attempts by their order in the log.** Not every attempt
 resolves — a ball that runs out of play never does — so a positional pairing desynchronises
 at the first missing one, and every completion rate after that point belongs to somebody
 else. It reported 20% against an actual 78%.
+
+Anything written from now on should join on `poss` instead, which cannot desynchronise.
+The blocks above predate the field and still pair by order or by tick window; they are
+correct as they stand and are not worth rewriting for its own sake, but a new one that
+pairs by hand is choosing the trap.
 
 **The half-time flip is applied once.** Flipping a point that has already been flipped
 cancels, and every first-half pass then reads as having gone the other way, which turned

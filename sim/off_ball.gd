@@ -24,8 +24,12 @@ extends RefCounted
 ##              him. Timed rather than positional: he starts from onside and is
 ##              offside if the pass comes late, which is what makes the timing
 ##              of the release matter to both players.
+##   box     -- attack the cross. The three targets are the three points
+##              `SimDecision._add_crosses` aims at, and the trigger is that
+##              function's own test on the ball, because a run to meet a ball
+##              nobody is going to play is worse than holding shape.
 ##
-## The three are scored in the same units as everything else in the engine --
+## The four are scored in the same units as everything else in the engine --
 ## pitch control times expected threat -- picked by softmax rather than argmax,
 ## held for a commitment window so nobody flickers between two ideas, and
 ## rationed by a quota per team so that ten men do not all come short at once.
@@ -47,9 +51,9 @@ extends RefCounted
 ## ball nobody could do anything with. Contributions, per PLAN.md §4.3, not
 ## replacements.
 
-enum { NONE, SHOW, SPACE, BEHIND }
+enum { NONE, SHOW, SPACE, BEHIND, BOX }
 
-const KIND_NAMES := ["none", "show", "space", "behind"]
+const KIND_NAMES := ["none", "show", "space", "behind", "box"]
 
 ## Assignment cadence, in ticks. This is built out of the value field, which is
 ## a 5 Hz quantity (PLAN.md §2.5), so it is refreshed at the same rate.
@@ -67,7 +71,7 @@ const ASSIGN_TICKS := 12
 ## moving into space is the one kind that cannot swarm: no intent in this file
 ## ever targets the ball and the nearest of them stops ten metres off it, so the
 ## guard in `SimMovement._assign_chasers` has nothing to say about it.
-const QUOTA := [0, 1, 3, 2]
+const QUOTA := [0, 1, 3, 2, 2]
 
 ## Nobody further than this from the ball is offering to receive it. He is
 ## holding shape, which at that distance is the right thing to be doing.
@@ -150,11 +154,11 @@ const BEHIND_MAX_RUN := 18.0
 ## and for a move into space that now means long enough to finish the far probe,
 ## which at the pace below is a little over three seconds. A window that expires
 ## as he arrives is a man who never arrives.
-const HOLD_SECONDS := [0.0, 3.0, 4.5, 4.0]
+const HOLD_SECONDS := [0.0, 3.0, 4.5, 4.0, 3.5]
 ## And the rest afterwards, before the same player will do it again. The sprint
 ## in behind is the expensive one and carries much the longest cooldown; without
 ## it a front three covers eighteen kilometres between them.
-const REST_SECONDS := [0.0, 4.5, 4.0, 10.0]
+const REST_SECONDS := [0.0, 4.5, 4.0, 10.0, 7.0]
 
 ## Pace of each kind as a fraction of the player's maximum, and how close counts
 ## as arrived. A run in behind has to be made to the metre; drifting into space
@@ -168,8 +172,8 @@ const REST_SECONDS := [0.0, 4.5, 4.0, 10.0]
 ## per cent of moves into space ever had the ball played to them. He goes at the
 ## pace he was scored at, near enough, and what is left of the gap is the
 ## difference between a footballer's cruise and his sprint.
-const PACE := [0.0, 0.62, 0.75, 0.97]
-const DEADBAND := [0.0, 1.5, 1.8, 1.0]
+const PACE := [0.0, 0.62, 0.75, 0.97, 0.95]
+const DEADBAND := [0.0, 1.5, 1.8, 1.0, 1.2]
 
 ## How much better than standing still an idea has to look before it is worth
 ## the legs. The same hysteresis as SimMovement.PROBE_MARGIN and for the same
@@ -235,10 +239,62 @@ static var weight := PackedFloat32Array()
 ## `cut_short`, which was counting them as failures. See `_expire`.
 static var shot := PackedInt32Array()
 
+## The same question asked of the two seconds after a regain, which is the only
+## window three separate mechanics fire in.
+##
+## Everything above answers over a match, and a match is the wrong population for
+## this. `break_bias`, `BREAK_RUN` and `secure` all live inside
+## `SimDecision.REGAIN_WINDOW`, and "the counter is not on" has three causes that
+## produce one number between them: nobody on the winning side is *eligible* to
+## run, or they are eligible and the run scores badly, or they run and the man on
+## the ball never picks them. They are fixed in three different files.
+##
+## So this is the eligibility gate in `_assign`, counted rather than reasoned
+## about: for every man on the side in possession, the first of the gate's own
+## tests he fails. `resting` is the one to read first, and it is indexed by the
+## kind he is resting *from*, because `REST_SECONDS` charges 10 s for a run in
+## behind and possession here changes every few seconds.
+##
+## Every count is a pair: `[0]` is the rest of the match and `[1]` is the window.
+## A row on its own says nothing — two men of nine resting is only a tax on the
+## counter if the same row reads lower when the counter is not on.
+static var regain_passes := PackedInt32Array()
+static var regain_men := PackedInt32Array()
+static var regain_live := PackedInt32Array()
+static var regain_resting := PackedInt32Array()
+static var regain_rest_left := PackedFloat32Array()
+static var regain_far := PackedInt32Array()
+static var regain_held := PackedInt32Array()
+static var regain_considered := PackedInt32Array()
+
+## How much of its window a run had served when a turnover ended it, by kind, and
+## how many of them there were.
+##
+## The quantity the fix in `_expire` would scale the rest by, measured before it
+## is applied: a man charged 10 s for a run he made a fifth of is a man the engine
+## has taken off the pitch for the next ten seconds on the strength of half a
+## stride.
+static var cut_served := PackedFloat32Array()
+static var cut_n := PackedInt32Array()
+
+## And what became of the runs that did begin inside the window: the same
+## offered / best w / received split, over the offers that were made when the
+## counter was on rather than over all of them.
+static var born := PackedInt32Array()
+static var born_offered := PackedInt32Array()
+static var born_weight := PackedFloat32Array()
+static var born_received := PackedInt32Array()
+
 ## The live half of those two, per player, reset at `_commit` and folded in at
 ## `_expire`.
 static var _offered := PackedInt32Array()
 static var _best_weight := PackedFloat32Array()
+
+## Which kind each man is serving his rest for, and whether the run he is on now
+## was begun inside a regain window. Both are for the tallies above and nothing
+## in the football reads them.
+static var _rest_kind := PackedInt32Array()
+static var _born := PackedInt32Array()
 
 ## Scratch for one assignment pass, reused so the path allocates nothing.
 static var _pick_ids := PackedInt32Array()
@@ -348,7 +404,7 @@ static func drift_for(ctx: SimContext, p: SimPlayer) -> Vector3:
 ## yet begun -- and that run is exactly the one worth passing to.
 static func destination_for(ctx: SimContext, p: SimPlayer) -> Vector3:
 	match intent_of(ctx, p):
-		SHOW, BEHIND:
+		SHOW, BEHIND, BOX:
 			return _point[p.id]
 		SPACE:
 			return SimMovement.shape_position(ctx, p) + _point[p.id]
@@ -382,7 +438,13 @@ const GIVE_AND_GO_RUN := 1.5
 ## `SimDecision.break_bias` is the pass half; this is the run half, and neither
 ## does anything without the other -- lifting the pass alone moved through balls
 ## from 39 to 40 on seed 7, because a through ball is only generated for a mate
-## already moving in behind and two seconds after a regain nobody is.
+## already moving in behind and two seconds after a regain nobody was.
+##
+## Since measured, in `The two seconds after a regain`: a man in the window takes a
+## run three times as often per assignment pass as he does in settled play, so this
+## lift is reaching the pick. It cannot change *which* run he takes, because it
+## multiplies BEHIND and SPACE by the same number, and space is what he mostly
+## takes -- 385 to 15 on seed 7.
 const BREAK_RUN := 3.0
 ## And what the pressure gate below relaxes to while it is on. A regain happens
 ## in the most crowded pocket on the pitch, so `BEHIND_MAX_PRESSURE` refuses the
@@ -392,11 +454,22 @@ const BREAK_RUN := 3.0
 const BEHIND_MAX_PRESSURE_BREAK := 2.2
 
 
-## 1 at the moment this player laid the ball off, 0 once the window has run out.
+## 1 while the ball is on its way to the man he gave it to, then decaying to 0
+## across the window.
+##
+## The run half of the one-two, and it holds rather than decaying during the
+## flight for the same reason the pass half now starts at the arrival: a window
+## measured from the strike is mostly spent by the time there is anybody to give
+## it back to, and both halves were reaching that moment at nothing. He plays it
+## and he goes; the clock on the pair starts when the ball gets there.
 static func _just_passed(ctx: SimContext, p: SimPlayer) -> float:
 	if ctx.last_pass_from != p.id:
 		return 0.0
-	var elapsed := float(ctx.tick_index - ctx.last_pass_tick) / float(SimConsts.TICK_HZ)
+	if ctx.last_pass_arrival_tick < ctx.last_pass_tick:
+		# Still travelling. Worth the full run until somebody other than the man
+		# it was played to touches it, which is the ball being cut out.
+		return 1.0 if ctx.ball.last_touch_player == p.id else 0.0
+	var elapsed := float(ctx.tick_index - ctx.last_pass_arrival_tick) / float(SimConsts.TICK_HZ)
 	if elapsed < 0.0 or elapsed > SimDecision.GIVE_AND_GO_WINDOW:
 		return 0.0
 	return 1.0 - elapsed / SimDecision.GIVE_AND_GO_WINDOW
@@ -408,13 +481,22 @@ static func _just_passed(ctx: SimContext, p: SimPlayer) -> float:
 static func _assign(ctx: SimContext, team: int, carrier: int) -> void:
 	var ball := ctx.ball.ground_pos()
 	var urgency := ctx.pressure_on(ctx.players[carrier])
+	# The same window the pass half of the counter is priced in, read off the same
+	# function, so the two halves cannot disagree about when it is open.
+	var in_window := SimDecision.regain_urgency(ctx, ctx.players[carrier]) > 0.0
+	_sample_regain(ctx, team, carrier, ball, 1 if in_window else 0)
 	# One gather for the whole pass: every point considered below is within a
 	# few metres of somebody in this set, so the same handful of players decides
 	# all of them.
 	ctx.value.begin_local(ctx, ball, LOCAL_RADIUS)
 
 	# Runs already under way consume the quota before anyone new is considered.
-	var used := [0, 0, 0, 0]
+	# Sized from the kinds rather than by hand: written out as four zeroes, adding
+	# a fifth intent left this one behind and every assignment pass threw an
+	# out-of-bounds error to stderr, so the new run was scored, won its softmax
+	# six times over, and was never once committed.
+	var used := PackedInt32Array()
+	used.resize(KIND_NAMES.size())
 	for pid in ctx.team_players[team]:
 		var live: int = _intent[pid]
 		if live != NONE:
@@ -445,18 +527,46 @@ static func _assign(ctx: SimContext, team: int, carrier: int) -> void:
 		if used[kind] >= int(QUOTA[kind]):
 			continue
 		used[kind] += 1
-		_commit(ctx, _pick_ids[i], kind, _pick_points[i])
+		_commit(ctx, _pick_ids[i], kind, _pick_points[i], in_window)
+
+
+## Who on the winning side could have offered anything, in the seconds after the
+## regain. See `regain_passes`.
+##
+## The tests are the eligibility gate of the loop below, in the gate's own order,
+## and each man is counted against the first one he fails. Reading the raw
+## `_intent` rather than `intent_of` is deliberate: `_expire` has just run on this
+## tick, so the raw array is what the gate itself sees.
+static func _sample_regain(ctx: SimContext, team: int, carrier: int, ball: Vector3, w: int) -> void:
+	var kinds := KIND_NAMES.size()
+	regain_passes[w] += 1
+	for pid in ctx.team_players[team]:
+		var p := ctx.players[pid]
+		if pid == carrier or p.is_keeper or not p.on_pitch:
+			continue
+		regain_men[w] += 1
+		if _intent[pid] != NONE:
+			regain_live[w * kinds + _intent[pid]] += 1
+		elif ctx.tick_index < _ready[pid]:
+			regain_resting[w * kinds + _rest_kind[pid]] += 1
+			regain_rest_left[w] += float(_ready[pid] - ctx.tick_index) / float(SimConsts.TICK_HZ)
+		elif p.dist_to(ball) > RANGE:
+			regain_far[w] += 1
+		elif SimPatterns.movement_override(ctx, p) != Vector3.INF:
+			regain_held[w] += 1
+		else:
+			regain_considered[w] += 1
 
 
 ## Scores this player's options, picks one by softmax, and files it against the
 ## quota. Filing rather than committing, because how good the idea is decides
 ## who gets to act on it.
 static func _consider(ctx: SimContext, p: SimPlayer, team: int, carrier: int, ball: Vector3, urgency: float) -> void:
-	if _scores.size() != 4:
-		_scores.resize(4)
-		_points.resize(4)
-		_weights.resize(4)
-	for i in 4:
+	if _scores.size() != KIND_NAMES.size():
+		_scores.resize(KIND_NAMES.size())
+		_points.resize(KIND_NAMES.size())
+		_weights.resize(KIND_NAMES.size())
+	for i in KIND_NAMES.size():
 		_scores[i] = -INF
 		_points[i] = Vector3.ZERO
 
@@ -516,6 +626,26 @@ static func _consider(ctx: SimContext, p: SimPlayer, team: int, carrier: int, ba
 			* ctx.tactics(team).direct_bias() * ctx.tactics(team).focus_at(behind.z, ctx.pitch)
 		_points[BEHIND] = behind
 
+	# Attacking the cross, and it is scored as neither pitch control nor a race.
+	#
+	# Both of those ask who beats whom to the spot, and for a point in the
+	# six-yard area the answer is always the defence, because they are already
+	# standing on it. Scored as a race it came back at 0.00001 and **no player
+	# attacked a cross in thirty minutes of football across three seeds** -- the
+	# run existed and was never once taken.
+	#
+	# That is the wrong question about the act. Nobody arrives at a cross first;
+	# a cross is a contested ball in the air, and what decides it is being there
+	# when it lands and being able to attack it when you are. Which is the same
+	# pair `_lofted_success` prices from the other side -- arrival, then aerial
+	# ability -- rather than a foot race nobody wins.
+	var box := _box_point(ctx, p, team, ball)
+	if box != Vector3.INF:
+		var aerial: float = lerpf(0.35, 0.85, (p.attrs.heading + p.attrs.jumping) * 0.5)
+		_scores[BOX] = ctx.value.xt_at(team, box, ctx.pitch) * _box_reach(p, box) * aerial \
+			* ctx.tactics(team).direct_bias() * ctx.tactics(team).focus_at(box.z, ctx.pitch)
+		_points[BOX] = box
+
 	# The give-and-go, from the side that has to make the run. A man who has
 	# just laid the ball off is the one player on the pitch whose marker is
 	# watching something else, and nothing in a positional model knows that --
@@ -547,7 +677,7 @@ static func _consider(ctx: SimContext, p: SimPlayer, team: int, carrier: int, ba
 	# span less than a hundredth.
 	var best := -INF
 	var worst := INF
-	for i in 4:
+	for i in KIND_NAMES.size():
 		if is_inf(_scores[i]):
 			continue
 		best = maxf(best, _scores[i])
@@ -555,7 +685,7 @@ static func _consider(ctx: SimContext, p: SimPlayer, team: int, carrier: int, ba
 	if is_inf(best):
 		return
 	var temperature: float = lerpf(TEMP_POOR, TEMP_GOOD, p.attrs.decisions) * maxf(best - worst, 1e-5)
-	for i in 4:
+	for i in KIND_NAMES.size():
 		_weights[i] = 0.0 if is_inf(_scores[i]) else exp((_scores[i] - best) / temperature)
 	var kind: int = maxi(ctx.rng.weighted_index(_weights), 0)
 	if kind == NONE:
@@ -587,11 +717,14 @@ static func note_offer(mate_id: int, share: float) -> void:
 	_best_weight[mate_id] = maxf(_best_weight[mate_id], share)
 
 
-static func _commit(ctx: SimContext, pid: int, kind: int, point: Vector3) -> void:
+static func _commit(ctx: SimContext, pid: int, kind: int, point: Vector3, in_window: bool = false) -> void:
 	_intent[pid] = kind
 	_point[pid] = point
 	_offered[pid] = 0
 	_best_weight[pid] = 0.0
+	_born[pid] = 1 if in_window else 0
+	if in_window:
+		born[kind] += 1
 	_until[pid] = ctx.tick_index + int(float(HOLD_SECONDS[kind]) * float(SimConsts.TICK_HZ))
 	_since[pid] = ctx.tick_index
 	made[kind] += 1
@@ -609,6 +742,17 @@ static func _commit(ctx: SimContext, pid: int, kind: int, point: Vector3) -> voi
 ## Retires every intent whose window has closed, and charges the player the rest
 ## that follows it. Losing the ball retires the lot: the question they were all
 ## answers to has gone away.
+##
+## **A run a turnover ended is not a run he finished**, and the rest is charged in
+## proportion to how much of it he made. Losing the ball retires every intent
+## instantly, so before this a man whose idea was cut off after half a second paid
+## the same four to ten seconds as a man who had sprinted a full window — and
+## possession here changes every few seconds. Measured over ten minutes on seed 7,
+## a run a turnover ended had served 52% of its window and was charged all of
+## `REST_SECONDS` for it, with two men of nine sitting out any given assignment
+## pass. It is the more honest physiology as well as the thing that puts bodies
+## back on the pitch: a run that was run pays for itself, a run that was called
+## off does not.
 static func _expire(ctx: SimContext) -> void:
 	for i in _intent.size():
 		var kind: int = _intent[i]
@@ -623,7 +767,10 @@ static func _expire(ctx: SimContext) -> void:
 		# A run the team's own turnover cut off mid-stride is counted apart from
 		# one that simply was not found. They fail for opposite reasons and the
 		# fix for one is no use against the other.
-		if ctx.ball.last_touch_player == i and ctx.ball.last_touch_tick >= _since[i]:
+		var served: float = clampf(float(ctx.tick_index - _since[i])
+			/ maxf(float(HOLD_SECONDS[kind]) * float(SimConsts.TICK_HZ), 1.0), 0.0, 1.0)
+		var got_it := ctx.ball.last_touch_player == i and ctx.ball.last_touch_tick >= _since[i]
+		if got_it:
 			received[kind] += 1
 		elif ctx.active_shot_tick >= _since[i]:
 			# The possession ended in a shot while he was running. Whoever has the
@@ -637,15 +784,23 @@ static func _expire(ctx: SimContext) -> void:
 			shot[kind] += 1
 		elif ctx.possession_team != p.team:
 			cut_short[kind] += 1
+			cut_served[kind] += served
+			cut_n[kind] += 1
 		# And what the man on the ball made of it while it lasted, which is the
 		# half of the judgement `received` cannot make: a run that was never on
 		# anybody's list and a run that was on every list and never chosen both
 		# come back as "not found".
 		offered[kind] += _offered[i]
 		weight[kind] += _best_weight[i]
+		if _born[i] == 1:
+			born_offered[kind] += _offered[i]
+			born_weight[kind] += _best_weight[i]
+			born_received[kind] += 1 if got_it else 0
 		_intent[i] = NONE
-		var rest: float = float(REST_SECONDS[kind]) * lerpf(1.3, 0.7, p.attrs.work_rate)
+		_born[i] = 0
+		var rest: float = float(REST_SECONDS[kind]) * served * lerpf(1.3, 0.7, p.attrs.work_rate)
 		_ready[i] = ctx.tick_index + int(rest * float(SimConsts.TICK_HZ))
+		_rest_kind[i] = kind
 
 
 # --- The three ways of offering ---------------------------------------------
@@ -746,6 +901,92 @@ static func _behind_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector
 	# Into the channel he already occupies, drifting a little toward goal.
 	var point := Vector3(depth * dir, 0.0, p.pos.z * 0.85)
 	return ctx.pitch.clamp_to_pitch(point, 2.0)
+
+
+## How far a man will run to attack a cross, and how far from the ball he can be
+## and still be part of the move.
+const BOX_MAX_RUN := 26.0
+const BOX_RANGE := 42.0
+## Whether he is there for it: 1 if he arrives inside the window, decaying to 0
+## across `BOX_LATE`. One function, so the target he picks and the score the run
+## gets are the same question asked once.
+static func _box_reach(p: SimPlayer, point: Vector3) -> float:
+	var arrive := SimValueField.time_to_arrive(p, point, 0.0)
+	return clampf(1.0 - maxf(arrive - BOX_WINDOW, 0.0) / BOX_LATE, 0.0, 1.0)
+
+
+## How long a man has to get there, from the moment he sets off.
+##
+## Not the flight of the cross, and that mistake cost a whole measurement: scored
+## against the flight alone -- about 1.25 s -- the run was worthless to anybody
+## further than a dozen metres out, and the gate opened 29 times a match while
+## **no player ever attacked a cross**. A run into the box is made before the
+## ball is struck. The striker goes when he sees the winger's head come up, and
+## what he has is that lead plus the flight.
+const BOX_WINDOW := 3.0
+## And how much later than that a run is still worth making. A ball at the back
+## post is often met by a man still running on to it.
+const BOX_LATE := 1.2
+
+
+## Where a man attacks a cross.
+##
+## The other half of `SimDecision._add_crosses`, and neither is worth anything
+## without it. The cross was built to be aimed at the grass rather than at a
+## shirt, precisely so it would not need a body standing in the area first --
+## but a ball into an area with nobody arriving is still a ball to the
+## goalkeeper, and that is what it measured: eleven crosses over three seeds,
+## one completed, no shots, with 0.12 players beyond the last defender at any
+## moment in the match.
+##
+## So this is the run that meets it, and the geometry is deliberately the same
+## geometry. The three targets are the three the cross is aimed at, and the
+## situation that triggers the run is the situation that generates the ball:
+## a teammate on it, wide, in the final third. Two men go, by the quota above,
+## and they sort themselves onto different posts because each is scored on his
+## own race -- the near man wins the near post and the far man the far one
+## without anybody coordinating them.
+static func _box_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3) -> Vector3:
+	if not SimRole.is_attacking(p.role) and p.role != SimRole.CM:
+		return Vector3.INF
+	if p.dist_to(ball) > BOX_RANGE:
+		return Vector3.INF
+	var dir := ctx.pitch.attack_dir(team)
+	# The cross situation, and it is `_add_crosses`'s own test on the ball rather
+	# than a second opinion about when a cross is on.
+	if ball.x * dir <= ctx.pitch.half_length / 3.0 \
+			or absf(ball.z) <= ctx.pitch.half_width * SimDecision.CROSS_WIDE:
+		return Vector3.INF
+	# Not from a standing start beyond the last man: that is not attacking a
+	# cross, it is waiting offside for one.
+	var line := SimReferee.believed_offside_line(ctx, p) * dir
+	if p.pos.x * dir > line + BEHIND_ONSIDE_SLACK:
+		return Vector3.INF
+	var goal := ctx.pitch.target_goal(team)
+	var side: float = signf(ball.z)
+	if side == 0.0:
+		side = 1.0
+	var targets := [
+		Vector3(goal.x - dir * 5.5, 0.0, side * ctx.pitch.goal_half_width),
+		Vector3(goal.x - dir * ctx.pitch.penalty_spot_dist, 0.0, 0.0),
+		Vector3(goal.x - dir * 8.0, 0.0, -side * ctx.pitch.goal_half_width * 1.15),
+	]
+	var best := Vector3.INF
+	var best_worth := 0.0
+	for t in targets:
+		var point: Vector3 = t
+		var run := p.dist_to(point)
+		# Long enough to be a run and short enough to be finished while the ball
+		# is still worth arriving for, on the same reasoning as `BEHIND_MAX_RUN`.
+		if run < 2.0 or run > BOX_MAX_RUN:
+			continue
+		var worth := ctx.value.xt_at(team, point, ctx.pitch) * _box_reach(p, point)
+		if worth > best_worth:
+			best_worth = worth
+			best = point
+	if is_inf(best.x):
+		return Vector3.INF
+	return ctx.pitch.clamp_to_pitch(best, 2.0)
 
 
 # --- Shared valuation -------------------------------------------------------
@@ -859,6 +1100,8 @@ static func _resize(n: int) -> void:
 	_since.resize(n)
 	_offered.resize(n)
 	_best_weight.resize(n)
+	_rest_kind.resize(n)
+	_born.resize(n)
 	_clear()
 
 
@@ -871,15 +1114,48 @@ static func _clear() -> void:
 		_since[i] = 0
 		_offered[i] = 0
 		_best_weight[i] = 0.0
-	made.resize(4)
-	received.resize(4)
-	cut_short.resize(4)
-	travel.resize(4)
-	forward.resize(4)
-	offered.resize(4)
-	weight.resize(4)
-	shot.resize(4)
-	for i in 4:
+		_rest_kind[i] = NONE
+		_born[i] = 0
+	regain_passes.resize(2)
+	regain_men.resize(2)
+	regain_rest_left.resize(2)
+	regain_far.resize(2)
+	regain_held.resize(2)
+	regain_considered.resize(2)
+	for w in 2:
+		regain_passes[w] = 0
+		regain_men[w] = 0
+		regain_rest_left[w] = 0.0
+		regain_far[w] = 0
+		regain_held[w] = 0
+		regain_considered[w] = 0
+	regain_live.resize(KIND_NAMES.size() * 2)
+	regain_resting.resize(KIND_NAMES.size() * 2)
+	for i in regain_live.size():
+		regain_live[i] = 0
+		regain_resting[i] = 0
+	born.resize(KIND_NAMES.size())
+	born_offered.resize(KIND_NAMES.size())
+	born_weight.resize(KIND_NAMES.size())
+	born_received.resize(KIND_NAMES.size())
+	cut_served.resize(KIND_NAMES.size())
+	cut_n.resize(KIND_NAMES.size())
+	for i in KIND_NAMES.size():
+		born[i] = 0
+		born_offered[i] = 0
+		born_weight[i] = 0.0
+		born_received[i] = 0
+		cut_served[i] = 0.0
+		cut_n[i] = 0
+	made.resize(KIND_NAMES.size())
+	received.resize(KIND_NAMES.size())
+	cut_short.resize(KIND_NAMES.size())
+	travel.resize(KIND_NAMES.size())
+	forward.resize(KIND_NAMES.size())
+	offered.resize(KIND_NAMES.size())
+	weight.resize(KIND_NAMES.size())
+	shot.resize(KIND_NAMES.size())
+	for i in KIND_NAMES.size():
 		made[i] = 0
 		received[i] = 0
 		cut_short[i] = 0

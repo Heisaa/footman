@@ -59,6 +59,8 @@ func setup(config: SimMatchConfig) -> void:
 	SimOffBall.reset()
 	SimMovement.reset()
 	SimDecision.reset()
+	SimAblation.reset()
+	SimChoices.reset()
 	ctx.config = config
 	ctx.rng = SimRng.new(config.seed_value)
 	ctx.env = config.env
@@ -113,9 +115,15 @@ func setup(config: SimMatchConfig) -> void:
 	ctx.phase = SimConsts.Phase.KICKOFF
 	ctx.score = [0, 0]
 	ctx.possession_count = [0, 0]
+	ctx.possession_id = -1
+	ctx.possession_start_tick = 0
+	ctx.possession_start_pos = Vector3.ZERO
+	ctx.possession_last_pos = Vector3.ZERO
+	ctx.possession_attack_dir = 1.0
 	ctx.last_pass_from = -1
 	ctx.last_pass_to = -1
 	ctx.last_pass_tick = -100000
+	ctx.last_pass_arrival_tick = -100000
 	_pending_restart = {}
 	_dead_ball_ticks = 0
 	_fetcher_id = -1

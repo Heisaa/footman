@@ -60,6 +60,16 @@ var active_shot_tick := -1
 var last_pass_from := -1
 var last_pass_to := -1
 var last_pass_tick := -100000
+## And when it got there, which is the tick both priors are actually measured
+## from. Measured on the losing candidates, the return-ball bias was applied to
+## a third of the decisions in the match at a mean of 1.11 against a constant of
+## 1.45, and flipped 0.4% of them: the window ran from the strike, so the flight
+## and the receiver's first touch spent three quarters of it before he ever
+## looked up. The passer's run half had the same clock, so both halves had
+## decayed to nothing by the moment they were meant to meet.
+##
+## Behind `last_pass_tick` means the ball is still on its way.
+var last_pass_arrival_tick := -100000
 
 ## A pass has been played to a player who was offside when it was struck.
 ## Offside is evaluated at the moment of the passing impulse, which is trivially
@@ -109,6 +119,44 @@ var belief_ticks := PackedInt32Array()
 ## (PLAN.md §3.3) -- this is a cached derivation, refreshed each tick.
 var possession_team := -1
 var possession_player := -1
+## A monotonic id for the spell of possession running now, stamped onto every
+## event by `log_event`.
+##
+## Links 4 and 5 of the chain -- `docs/DIAGNOSTICS.md`, "The chain". It exists to
+## make "and what became of it" a filter rather than a guess. Every
+## instrument in `tools/diagnostics.gd` used to pair a touch with its consequence
+## by looking a few seconds up the log, which desynchronises at the first attempt
+## that never resolves -- one such pairing reported 20% against an actual 78%.
+## With an id on both ends there is nothing to desynchronise.
+##
+## A spell is a run of one team being the side in possession. It ends when the
+## other team takes over and it ends at every dead ball, because a restart sets
+## `ball.last_touch_player` to -1 and drives this to -1 with it. That second rule
+## is what makes a free kick to the side that already had the ball a boundary: it
+## would otherwise be a possession that swallowed the foul that interrupted it,
+## and the foul is the outcome worth counting.
+##
+## Nothing in `sim/` reads it back. It is derived, like `possession_team` above.
+var possession_id := -1
+var possession_start_tick := 0
+var possession_start_pos := Vector3.ZERO
+## The last place the ball was while this spell was live and the ball was in
+## play. Not the same as where it is when the spell ends, and the difference is
+## not small: a spell that ends at a dead ball ends one tick after the restart has
+## already teleported the ball to the throw-in spot or the centre circle, so
+## reading the position then measured the restart rather than the football. Every
+## possession that ended in a goal came back at forty-four metres *lost*, which is
+## the distance from a goalmouth to a kick-off.
+var possession_last_pos := Vector3.ZERO
+## Which way this team was attacking when the spell started.
+##
+## Kept rather than read at the end, because `SimPitch` only ever knows where the
+## ends are pointing *now* and they swap at the interval. A spell straddling that
+## swap would have its ground gain measured against the wrong goal and come back
+## with the sign reversed -- the same trap `docs/DIAGNOSTICS.md` records for
+## anything reading a position out of the log, priced in advance here so nothing
+## downstream has to know about it.
+var possession_attack_dir := 1.0
 ## Ticks the current possession has lasted, used for phase-of-play transitions.
 var possession_ticks := 0
 ## Per-team tick counts, for the possession statistic.
@@ -338,9 +386,25 @@ func update_possession() -> void:
 	if possession_team == previous:
 		possession_ticks += 1
 	else:
+		# The spell that is ending is logged before the id moves on, so the event
+		# carries its own id like everything else that happened inside it.
+		if previous >= 0:
+			_end_possession(previous)
+		if possession_team >= 0:
+			possession_id += 1
+			# The touch that won it, not the tick this was noticed on. Possession
+			# is derived at the top of a tick and a touch is played in the middle
+			# of one, so a spell always begins a tick before anything here can see
+			# it -- and dated from here, a spell excluded its own first touch and
+			# included the opponent's winning one.
+			possession_start_tick = tick_index if ball.last_touch_tick < 0 else ball.last_touch_tick
+			possession_start_pos = ball.ground_pos()
+			possession_attack_dir = pitch.attack_dir(possession_team)
 		possession_ticks = 0
 	if possession_team >= 0 and in_play:
 		possession_count[possession_team] += 1
+	if in_play:
+		possession_last_pos = ball.ground_pos()
 
 
 ## Ball position projected onto the ground plane.
@@ -348,7 +412,32 @@ func ball_ground() -> Vector3:
 	return ball.ground_pos()
 
 
+## What the spell was, at the moment it stopped being one.
+##
+## Deliberately facts and not a verdict. What ended it is derivable from the
+## events already carrying this id -- a shot, a failed pass, a duel, the set piece
+## awarded -- and deriving it here would put a taxonomy nothing in `sim/` uses
+## inside the simulation. `tools/diagnostics.gd` owns that reading.
+##
+## `gained` is metres toward the goal this team was attacking, so it is signed and
+## needs no half-time correction: `attack_dir` already knows which way they were
+## going when the spell ran.
+func _end_possession(team: int) -> void:
+	var here := possession_last_pos
+	log_event(SimTelemetry.Ev.POSSESSION_END, {
+		"team": team,
+		"ticks": tick_index - possession_start_tick,
+		"from": possession_start_pos,
+		"to": here,
+		"gained": (here.x - possession_start_pos.x) * possession_attack_dir,
+		# Which way they were going, so nothing reading this back has to work it
+		# out from the half. Every instrument that has tried has got it wrong once.
+		"dir": possession_attack_dir,
+	})
+
+
 func log_event(kind: int, data: Dictionary = {}) -> void:
+	data["poss"] = possession_id
 	telemetry.log_event(kind, tick_index, data)
 
 

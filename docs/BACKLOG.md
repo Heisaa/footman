@@ -106,26 +106,55 @@ omission in a table rather than a design choice.
 
 | | Proposal | Where | Goals |
 |---|---|---|---|
-| 8b | Price a ball played in behind as a man arriving, not as a landing spot | `SimValueField.xt_at` | + |
+| 8b | ~~Price a ball played in behind as a man arriving~~ half built — `SimDecision.CLEAR_CARRY_SECONDS`; the map is still single-step | `SimValueField.xt_at` | + |
 | 10 | The third man | `SimPatterns` | + |
-| 11 | Separate a ball into space from a ball to feet | `SimDecision.pass_tolerance` | + |
+| 11 | ~~Separate a ball into space from a ball to feet~~ built — `SimDecision.SPACE_TOLERANCE` | `SimDecision.pass_tolerance` | + |
 | 12 | Check the passer can perceive the option at all | `SimPerception` | ? |
 | 13 | What losing it costs the shape, not just the ball | `SimDecision.score_of` | - |
+| 21 | ~~A ball in behind has no length term~~ built — `SimDecision.behind_length_bias` | `SimDecision._add_passes` | ? |
+| 22 | The ball in behind is a seventh of every pass, and it is not the length | `SimDecision`, `SimOffBall._behind_point` | ? |
 
-**(8b) is the largest of these, and it is the residue of a job half done.**
-`_arrival_gain` is built and credits a pass with the threat the receiver builds
-carrying it on. What remains is that expected threat itself is single-step: it
-sees where the *ball* stops, so a ball played in behind is priced as its landing
-spot on the map rather than as a man running onto it with the defence turned.
-Until that is priced, the engine keeps preferring the safe square ball.
-`possession_value` patches the same hole from the other side, and its
-`TERRITORY` tilt now patches the flat map underneath it.
+**(22) is what (21) did not answer, and it was measured rather than assumed.**
+The length term reshaped the pass exactly as it was meant to — through balls over
+thirty metres halved — and left the *count* alone, 207 against 211 over three
+seeds. So the frequency does not come from the length.
 
-**(11): the flag half exists.** `_pass_success` takes an `into_space` argument and
-uses it to change how arrival is judged, but the striking tolerance is
-`pass_tolerance(distance) = 2.0 + distance * 0.06` — distance only. A ball that
-must arrive in a runner's stride and a ball to a standing man's feet are held to
-the same standard.
+The level does, and cutting it is not the answer either. `BEHIND_WORTH` at 0.75
+took through balls from 207 to 161 and moved their share of all passes from 14.3%
+to 14.1%, because the whole passing game shrank with it — 479 passes a match to
+383. A fifth of the football for two tenths of a percentage point.
+
+Which leaves the two places that have not been looked at: how many men are put on
+a run in behind in the first place (`SimOffBall._behind_point` and its quota), and
+whether `_shortlist` should be offering the carrier a through ball to more than one
+of them at a time. Neither is a bias, and neither has an instrument yet — `The ball
+in behind, as a strike` counts the balls played, not the candidates behind them.
+
+**(8b) is half built.** `_arrival_gain` credits a pass with the threat the
+receiver builds carrying it on, and it now asks how far he actually gets: a man
+with nobody between him and the goal carries it 2.6 s rather than the 0.9 s
+charged to a man in a crowd. That was worth the whole of the gap it was written
+for — a through ball's `gain` went from 0.038 against the winner's 0.097 to 0.100
+against 0.101, and through balls played went 54 to 75 over five seeds.
+`docs/STATUS.md`, "The ball in behind, and the two gates in front of it".
+
+**What remains is the map.** Expected threat is still single-step: the same
+twenty-five metres out is worth the same whether the back four is in front of the
+receiver or behind him, and nothing but the receiver's own carry knows a line has
+been broken. `possession_value` patches the same hole from the other side, and its
+`TERRITORY` tilt patches the flat map underneath it.
+
+**Before touching any of that, read `A man was running in behind`.** Two gates in
+front of the value were holding the pass, and one of them still is: the carrier is
+out of striking range of the run 41-62% of the time, which is
+`SimTouch.strike_range` saying he is facing the wrong way. A value knob cannot
+reach a candidate that is never generated, and this project has now been caught by
+that three times.
+
+**(11) is built.** `SPACE_TOLERANCE` is 1.8 and the measurement that found it is in
+`docs/STATUS.md`, "What the pass model said about the balls it played": the through
+ball's `struck` read 0.72 against a pass to feet's 0.90, and the model priced the
+balls it played at 0.29 while 65% of them arrived.
 
 **(13) is the counterweight `TERRITORY` is missing**, and the burst has been
 waiting on the same thing since it was written. `loss` says what the ball is worth
@@ -166,6 +195,72 @@ keeper as a body in the shooting line, so the engine's answer when it fires is t
 not shoot. The attacking answers do not exist: the chip, the ball round him, the
 square pass across the face of an empty goal.
 
+## Instruments that tie a decision to what came of it
+
+Four proposals from one question: how to see the *causal* link between a decision
+and an outcome, rather than turning a number and hoping.
+
+All but one are built, all in `docs/DIAGNOSTICS.md`. `--ablate` covers the links
+between the constant and the pick. `SimContext.possession_id` and "What became of the
+ball" cover the join from a touch to what came of it. "Chains" walks four intended
+chains link by link and `./run.sh chains --against` diffs them across a change, and
+"The coin the softmax tossed" separates what a decision caused from what it merely
+sat beside.
+
+| | Proposal | Where | Goals |
+|---|---|---|---|
+| 19 | Paired-run contrast | `tools/headless_main.gd` | - |
+
+**19 — paired-run contrast.** `contrast --seed 7 --set SimDecision.TERRITORY=0.75`,
+and the weakest of the four despite looking like the obvious one. Two runs of one seed
+diverge into different football within seconds of the first different decision, so the
+diff measures a different match rather than the knob. Its one honest output is the
+divergence tick: a knob that never diverges is dead, and that is worth five seconds.
+Take the quantity off `--ablate` or off `Chains` instead, across several seeds.
+
+## The break on the regain
+
+Half of everything won was given straight back. Measured over three seeds at ten
+minutes: **48-53% of regains still have the ball after three seconds**, 64-68% of
+all spells end intercepted or picked off loose against 7-10% tackled, and the
+possessions that end `picked off loose` last 2.3 s and contain 0.4-0.7 passes.
+The first touch after winning it clean is a pass 79% of the time.
+
+**20a, 20b, 20c and 20d are all done, and three of the four answers were not the
+ones expected.** `docs/STATUS.md`, "A run a turnover ended is not a run he
+finished", has the numbers. In short:
+
+- **20a** is built: `The two seconds after a regain`, in `tools/diagnostics.gd`,
+  with the eligibility gate counted in `SimOffBall._sample_regain` and the window
+  carried onto the last line of `Did he have a safe pass?`. Every row is a pair,
+  the window against the rest of the match, because a row on its own cannot say
+  the window is special.
+- **20b** went in. Not for the reason it was proposed — the rest cooldown turned
+  out to be a tax the whole match pays, not one the counter pays — but because
+  the mechanism underneath it was exactly as described: a run a turnover ended
+  had served 52% of its window and was charged all of `REST_SECONDS`. `_expire`
+  now charges that share. Men considered in the window 2.84 to 3.56, runs in
+  behind 36 to 58 on seed 7, and `break_bias` went from flipping 0.0% of its
+  decisions to 2.3%.
+- **20c** needs nothing. `break_on` means 0.41-0.44 over the 18-21% of decisions
+  taken inside the window, with the opposition line priced at 1.70x and the
+  distribution spread across the whole range. The input is healthy; the option is
+  what is rare.
+- **20d** needs nothing either, and its premise was wrong. `secure` reads
+  1.33-1.36x across the window rather than 1.7x, because `break_on` cancels it as
+  the counter comes on, which is the mechanic doing exactly what it says.
+
+**What is left is the carrier, and it is 8b.** A runner in behind now exists in
+449 decisions over five seeds against 306 before, and a through ball is offered in
+214 of them. The run half is answered and the pass half is not: `received` on a
+run begun in the window is 4-14%, and a run in behind holds 27% of the softmax at
+its best moment. That is `_shortlist` and what a ball in behind is worth once it
+is on the list.
+
+**What not to do: raise `BREAK_BIAS`.** It is 2.6, and it loses to `success`
+rather than to its own size. A bigger multiplier on an option that is rarely
+generated is the fix this whole set of instruments exists to prevent.
+
 ## Open owner questions
 
 - Is there a skill difference between the two teams in the main scene game?
@@ -195,17 +290,23 @@ is the old approach and put the most visible defects last.
    three individual behaviours a viewer can see and name. `docs/STATUS.md`,
    "Support is an angle problem", is the measurement that says positioning cannot
    substitute for them.
-4. **8b** — pricing a ball played in behind as a man arriving rather than a
-   landing spot. The largest job here, and the one that decides whether the
-   engine ever plays a forward pass that looks like a footballer's idea.
-5. **10, 11, 12** — small passing work. Cheap, and worth taking whenever one of
-   the above is blocked or waiting on the owner.
+4. **8b** — half done: the receiver's carry is priced, the map is not. What is
+   left of it is a multi-step expected threat, and the cheaper thing in front of
+   it is the carrier turning to face a run he cannot currently reach.
+5. ~~**20** — the break on the regain.~~ Done, and it turned into 8b: the men now
+   run, and the ball still does not go to them.
+6. **10, 11, 12** — small passing work. Cheap, and worth taking whenever one of
+   the above is blocked or waiting on the owner. **11 is done.**
 6. **2** — the two things `expected_goals` is still blind to. Real, but a
    valuation correction rather than a behaviour, so almost nothing about it is
    visible by eye.
 7. **14, 15** — the attribute bookkeeping. Nothing a viewer can see, and neither
    costs more than an afternoon, but (15) is a squad the player pays for and does
    not get and (14) is two attributes being charged for and never delivered.
+
+**19 sits outside this order.** It is an instrument rather than a behaviour, so it
+moves nothing on the grass. Worth taking whenever a change is about to be judged
+by whether an outcome moved.
 
 **5** and **3** are expected to cost goals, and the compressed match is already
 short of them. That is a band move to report, not a reason to reorder.

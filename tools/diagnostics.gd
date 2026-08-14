@@ -749,6 +749,776 @@ static func _why_it_lost() -> void:
 		])
 
 
+## What a spell of possession produced, and what had been played in it.
+##
+## The first table any of this was for. Every other block here counts acts -- how
+## many carries, how many through balls, how far each went -- and none of them can
+## say what came of one, because a count has no way of reaching forward. Joining on
+## `poss` is what makes it reachable: every event carries the spell it happened in,
+## so "what became of the ball" is a filter over a group rather than a guess at a
+## tick window. See `SimContext.possession_id`.
+##
+## Fates are precedence-ordered, not last-event-wins. A shot that goes out for a
+## corner logs the corner second, and reading backwards would file the possession
+## as a ball out of play and lose the only thing about it that mattered.
+const POSS_FATES := [
+	"a goal", "a shot", "offside", "a foul won", "a set piece won",
+	"a foul conceded", "out of play", "tackled", "intercepted",
+	"picked off loose", "lost otherwise",
+]
+const PF_GOAL := 0
+const PF_SHOT := 1
+const PF_OFFSIDE := 2
+const PF_FOUL_WON := 3
+const PF_SET_WON := 4
+const PF_FOUL_CONCEDED := 5
+const PF_OUT := 6
+const PF_TACKLED := 7
+const PF_INTERCEPTED := 8
+## The ball nobody took off anybody: a loose one the other side reached first. It
+## is the largest single way this engine loses the ball and it logs no duel and no
+## cut-out pass, so without a row of its own it sat inside "lost otherwise" and
+## looked like a gap in the instrument rather than a fact about the football.
+const PF_LOOSE := 9
+const PF_OTHER := 10
+
+## The kinds worth a row in the lower table. Every kind is counted; only these are
+## printed, because a first touch appears in nearly every spell and says nothing
+## about what the spell was.
+const POSS_TOUCH_ROWS := [
+	SimTelemetry.Touch.DRIBBLE, SimTelemetry.Touch.GROUND_PASS,
+	SimTelemetry.Touch.THROUGH_BALL, SimTelemetry.Touch.LOFTED_PASS,
+	SimTelemetry.Touch.CROSS, SimTelemetry.Touch.HEADER,
+	SimTelemetry.Touch.CLEARANCE,
+]
+
+
+## Two joins, and they are not interchangeable.
+##
+## **The fate comes off the tag.** Possession is derived at the top of a tick, so
+## the event that ends a spell -- the tackle, the cut-out pass, the whistle -- is
+## logged while that spell is still the live one and carries its id. That is what
+## makes the fate a filter over a group instead of a guess.
+##
+## **The contents come off the tick interval**, `[t - ticks, t]` off the end event.
+## The touch that *wins* the ball is also logged a tick before this notices, so by
+## tag it belongs to the spell it ended rather than the one it began, and a spell
+## counted by tag is one touch short at the front. Read by interval, a deflection
+## came back as a possession with no touches in it.
+##
+## **A shot is a content, not an ending event**, and getting that wrong cost two
+## goes. A first-time strike off a loose ball is itself the touch that wins the
+## ball, so it is tagged to the spell it ended -- the *opposition's* -- and four of
+## seed 7's five goals were being thrown away by a team check that was right to
+## reject them. Shots and goals are therefore matched to the spell whose team owned
+## the ball at that tick, by the same interval join as the touches.
+##
+## Neither is a positional pairing and neither can desynchronise; the interval is
+## exact rather than a window guessed in seconds.
+## Every spell of possession, with what it produced and how far it got.
+##
+## Built once and handed to the three blocks that read it, because deriving it
+## three times would be three chances for three subtly different answers to the
+## same question.
+static func _possession_table(ctx: SimContext, events: Array) -> Dictionary:
+	var ends := {}
+	var by_poss := {}
+	for e in events:
+		var poss := int(e.get("poss", -1))
+		if poss < 0:
+			continue
+		if int(e["ev"]) == SimTelemetry.Ev.POSSESSION_END:
+			ends[poss] = e
+		if not by_poss.has(poss):
+			by_poss[poss] = []
+		by_poss[poss].append(e)
+	# Touches in tick order, so a spell's own can be taken off its interval.
+	var touch_at := PackedInt32Array()
+	var touch_team := PackedInt32Array()
+	var touch_kind := PackedInt32Array()
+	var touch_pos := PackedVector3Array()
+	for e in events:
+		if int(e["ev"]) != SimTelemetry.Ev.TOUCH:
+			continue
+		touch_at.append(int(e["t"]))
+		touch_team.append(int(e.get("team", -1)))
+		touch_kind.append(int(e["kind"]))
+		touch_pos.append(e.get("from", Vector3.ZERO))
+
+	# Shots and own goals, to be matched to a spell by team and tick rather than by
+	# the id they were logged under.
+	var shot_at := PackedInt32Array()
+	var shot_team := PackedInt32Array()
+	var shot_on := PackedInt32Array()
+	var shot_goal := PackedInt32Array()
+	for e in events:
+		var by := int(e.get("p", -1))
+		if by < 0 or by >= ctx.players.size():
+			continue
+		if int(e["ev"]) == SimTelemetry.Ev.SHOT:
+			shot_at.append(int(e["t"]))
+			shot_team.append(ctx.players[by].team)
+			shot_on.append(1 if bool(e.get("on_target", false)) or bool(e.get("goal", false)) else 0)
+			shot_goal.append(1 if bool(e.get("goal", false)) else 0)
+		elif int(e["ev"]) == SimTelemetry.Ev.GOAL and bool(e.get("own_goal", false)):
+			# The one goal that logs no shot. Credited to the side it counts for.
+			shot_at.append(int(e["t"]))
+			shot_team.append(SimConsts.other_team(ctx.players[by].team))
+			shot_on.append(1)
+			shot_goal.append(1)
+
+	var third := ctx.pitch.half_length / 3.0
+	var out := {}
+	for poss in ends:
+		var end: Dictionary = ends[poss]
+		var team := int(end["team"])
+		var rows: Array = by_poss[poss]
+		var last := int(end["t"])
+		var first := last - int(end.get("ticks", 0))
+		# The direction they were attacking, off the event rather than off the
+		# pitch, which only knows where the ends point now.
+		var dir := float(end.get("dir", 1.0))
+		var kinds := {}
+		var touched := 0
+		var passed := 0
+		var deepest := -INF
+		var area := false
+		var area_when := -1
+		var final_when := -1
+		var third_x := ctx.pitch.half_length / 3.0
+		for i in touch_at.size():
+			if touch_at[i] < first or touch_at[i] > last or touch_team[i] != team:
+				continue
+			touched += 1
+			var k := touch_kind[i]
+			if SimTelemetry.is_pass_kind(k):
+				passed += 1
+			kinds[k] = true
+			var p: Vector3 = touch_pos[i]
+			deepest = maxf(deepest, p.x * dir)
+			if p.x * dir > third_x:
+				final_when = maxi(final_when, touch_at[i])
+			if absf(p.z) <= ctx.pitch.penalty_half_width \
+					and absf(p.x - dir * ctx.pitch.half_length) <= ctx.pitch.penalty_depth:
+				area = true
+				area_when = maxi(area_when, touch_at[i])
+		var to: Vector3 = end.get("to", Vector3.ZERO)
+		deepest = maxf(deepest, to.x * dir)
+		var shot := false
+		var on_target := false
+		var goal := false
+		# The last tick each of these happened at, so a chain that starts at a
+		# decision can ask whether it happened *after* that decision. Without it a
+		# through ball played in the eightieth second of a move is credited with a
+		# box entry from the tenth.
+		var shot_when := -1
+		var goal_when := -1
+		for i in shot_at.size():
+			if shot_at[i] < first or shot_at[i] > last or shot_team[i] != team:
+				continue
+			shot = true
+			shot_when = maxi(shot_when, shot_at[i])
+			on_target = on_target or shot_on[i] == 1
+			if shot_goal[i] == 1:
+				goal = true
+				goal_when = maxi(goal_when, shot_at[i])
+		# The fate takes the shot from here rather than from the log again, so the
+		# chain and the table above it cannot disagree about how many there were.
+		# They did: the chain printed 8 against the block's 19.
+		var fate := _poss_fate(ctx, team, rows)
+		if goal:
+			fate = PF_GOAL
+		elif shot:
+			fate = mini(fate, PF_SHOT)
+		out[poss] = {
+			"team": team,
+			"fate": fate,
+			"first": first,
+			"last": last,
+			"dir": dir,
+			"end_x": to.x * dir,
+			"seconds": float(end.get("ticks", 0)) / float(SimConsts.TICK_HZ),
+			"gained": float(end.get("gained", 0.0)),
+			"touches": touched,
+			"passes": passed,
+			"kinds": kinds,
+			"middle": deepest > -third,
+			"final": deepest > third,
+			"area": area,
+			"shot": shot,
+			"on_target": on_target,
+			"goal": goal,
+			# The last tick each happened at, or -1. For the chains that begin at a
+			# decision rather than at a spell.
+			"final_when": final_when,
+			"area_when": area_when,
+			"shot_when": shot_when,
+			"goal_when": goal_when,
+		}
+	return out
+
+
+static func _what_became_of_it(table: Dictionary) -> void:
+	if table.is_empty():
+		return
+
+	var n := PackedInt32Array()
+	var seconds := PackedFloat32Array()
+	var ground := PackedFloat32Array()
+	var touches := PackedInt32Array()
+	var passes := PackedInt32Array()
+	n.resize(POSS_FATES.size())
+	seconds.resize(POSS_FATES.size())
+	ground.resize(POSS_FATES.size())
+	touches.resize(POSS_FATES.size())
+	passes.resize(POSS_FATES.size())
+	# Which spells each touch kind appeared in, and what those spells produced.
+	var kind_n := {}
+	var kind_shot := {}
+	var kind_ground := {}
+
+	for poss in table:
+		var row: Dictionary = table[poss]
+		var fate: int = row["fate"]
+		var gained: float = row["gained"]
+		n[fate] += 1
+		seconds[fate] += row["seconds"]
+		ground[fate] += gained
+		touches[fate] += int(row["touches"])
+		passes[fate] += int(row["passes"])
+		for k in row["kinds"]:
+			kind_n[k] = int(kind_n.get(k, 0)) + 1
+			kind_ground[k] = float(kind_ground.get(k, 0.0)) + gained
+			if fate == PF_SHOT or fate == PF_GOAL:
+				kind_shot[k] = int(kind_shot.get(k, 0)) + 1
+
+	var total := table.size()
+	print("\nWhat became of the ball  (%d spells of possession that ended)" % total)
+	print("  %-16s %7s %7s %9s %8s %9s %8s" % [
+		"ended in", "count", "share", "seconds", "touches", "passes", "ground"])
+	for f in POSS_FATES.size():
+		if n[f] == 0:
+			continue
+		var count := float(n[f])
+		print("  %-16s %7d %6.0f%% %9.1f %8.1f %9.1f %+7.1f m" % [
+			POSS_FATES[f], n[f], 100.0 * count / float(total),
+			seconds[f] / count, float(touches[f]) / count,
+			float(passes[f]) / count, ground[f] / count,
+		])
+
+	# The join, and the reason for the whole field. It is an observational split
+	# and not a causal one: a spell containing a cross is a spell that had already
+	# reached the byline, so the shot rate beside it is partly the situation and
+	# partly the pass. `docs/BACKLOG.md` 17 is the version that separates them.
+	print("  and what had been played in it, by the spells containing one")
+	print("  %-16s %7s %7s %11s %10s" % [
+		"", "spells", "share", "-> a shot", "ground"])
+	for k in POSS_TOUCH_ROWS:
+		var kn := int(kind_n.get(k, 0))
+		if kn < 10:
+			continue
+		print("  %-16s %7d %6.0f%% %10.0f%% %+9.1f m" % [
+			SimTelemetry.touch_name(k), kn, 100.0 * float(kn) / float(total),
+			100.0 * float(kind_shot.get(k, 0)) / float(kn),
+			float(kind_ground.get(k, 0.0)) / float(kn),
+		])
+
+
+## Where a tie stops counting as one. The bounds are on the *propensity* -- how
+## likely the engine was to play the kind it played -- rather than on a gap in
+## goal probability, because the propensity is the thing that has to be near a coin
+## flip and a score gap only tells you that through a temperature that varies by
+## player. Between 0.40 and 0.60 the arms are assigned within a fifth of even.
+const TIE_LOW := 0.40
+const TIE_HIGH := 0.60
+## Below this an arm is not worth printing at all, and below `TIE_SOLID` it is
+## printed and tagged, on the same rule the batch runner uses for a metric under
+## the sample size it needs. Ten minutes of football holds about 130 near-ties
+## spread over nine pairs, so at diagnose length every row here is tagged and the
+## measurement wants a full-length match. Widening the band to reach a sample is
+## fitting the instrument to the run rather than to the question: at 0.35 to 0.65
+## the carry arm's shot rate moved from 8% to 28% on the same seed, which is the
+## noise saying so.
+const TIE_MIN_ARM := 10
+const TIE_SOLID := 40
+## How long after the decision the side still having the ball counts as keeping it.
+const TIE_KEPT := 3.0
+
+
+## The one comparison here that is not confounded. See `SimChoices`.
+##
+## Every other split in this file compares what happened after a carry with what
+## happened after a pass, and every one of them is a fact about the situations
+## carries get chosen in as much as about carrying. This conditions on the
+## decisions the engine was **undecided** about -- where the two kinds of act held
+## between 40% and 60% of the weight between them -- and on those, which one got
+## played was settled by `ctx.rng` and by nothing else. The gap between the arms is
+## therefore caused by the choice.
+##
+## Read `p` first. It is the mean chance the arm's kind had of being played, and if
+## the two sides of a row are not close to even the conditioning has not worked and
+## the rest of the row is worth nothing.
+##
+## Two limits, both real. It is a *local* effect: it says what the pass was worth
+## instead of the carry on the decisions where they were nearly equal, which is a
+## population the engine picked, not one football cares about especially. And the
+## outcome is the spell's, so a decision three seconds from a turnover is scored
+## on a possession it barely influenced.
+static func _near_ties(table: Dictionary) -> void:
+	if SimChoices.count() == 0 or table.is_empty():
+		return
+	# pair key -> [arm 0 stats, arm 1 stats], each [n, shots, ground, kept, p sum].
+	var pairs := {}
+	var considered := 0
+	for r in SimChoices.count():
+		var kind_a := SimChoices.at(r, SimChoices.R_KIND_A)
+		var kind_b := SimChoices.at(r, SimChoices.R_KIND_B)
+		var played_kind := SimChoices.at(r, SimChoices.R_PLAYED)
+		# Which of the two kinds came out, or neither: a third kind winning is not
+		# a trial of these two, and dropping it is a selection on the coin rather
+		# than on the situation, which is the one that would bias this.
+		var played := 0 if played_kind == kind_a else (1 if played_kind == kind_b else -1)
+		if played < 0:
+			continue
+		considered += 1
+		var p_a := SimChoices.p_of(r)
+		var p_played: float = p_a if played == 0 else 1.0 - p_a
+		if p_played < TIE_LOW or p_played > TIE_HIGH:
+			continue
+		var poss := SimChoices.at(r, SimChoices.R_POSS)
+		if not table.has(poss):
+			continue
+		var row: Dictionary = table[poss]
+		# Ordered so the same pair of kinds is one row whichever way round the
+		# scores came out this time.
+		var lo: int = mini(kind_a, kind_b)
+		var hi: int = maxi(kind_a, kind_b)
+		var arm: int = 0 if (kind_a if played == 0 else kind_b) == lo else 1
+		var key := lo * 100 + hi
+		if not pairs.has(key):
+			pairs[key] = [
+				PackedFloat32Array([0, 0, 0, 0, 0]), PackedFloat32Array([0, 0, 0, 0, 0])]
+		var stats: PackedFloat32Array = pairs[key][arm]
+		var tick := SimChoices.at(r, SimChoices.R_TICK)
+		stats[0] += 1.0
+		stats[1] += 1.0 if (row["shot"] or row["goal"]) else 0.0
+		stats[2] += float(row["end_x"]) - SimChoices.progress_of(r)
+		stats[3] += 1.0 if float(int(row["last"]) - tick) >= TIE_KEPT * float(SimConsts.TICK_HZ) else 0.0
+		stats[4] += p_played
+
+	print("\nThe coin the softmax tossed  (%d of %d decisions were near-ties)" % [
+		_tie_total(pairs), considered])
+	var keys := pairs.keys()
+	keys.sort_custom(func(x, y): return _tie_n(pairs[x]) > _tie_n(pairs[y]))
+	var printable := 0
+	for key in keys:
+		if pairs[key][0][0] >= TIE_MIN_ARM and pairs[key][1][0] >= TIE_MIN_ARM:
+			printable += 1
+	if printable == 0:
+		# A bare header over nothing reads as a broken block. The measurement is
+		# fine; the run is short.
+		print("  none of the %d pairs has %d in both arms yet — this wants a full-length match"
+			% [keys.size(), TIE_MIN_ARM])
+		return
+	print("  %-22s %8s %6s %11s %12s %10s %7s" % [
+		"between", "played", "n", "-> a shot", "ground on", "kept 3 s", "p"])
+	var dropped := 0
+	for key in keys:
+		var arms: Array = pairs[key]
+		var lo: int = int(key) / 100
+		var hi: int = int(key) % 100
+		if arms[0][0] < TIE_MIN_ARM or arms[1][0] < TIE_MIN_ARM:
+			dropped += 1
+			continue
+		var label := "%s v %s" % [SimDebug.ACTION_NAMES[lo], SimDebug.ACTION_NAMES[hi]]
+		var thin: bool = arms[0][0] < TIE_SOLID or arms[1][0] < TIE_SOLID
+		for arm in 2:
+			var s: PackedFloat32Array = arms[arm]
+			print("  %-22s %8s %6d %10.1f%% %+11.1f m %9.0f%% %7.2f  %s" % [
+				label if arm == 0 else "", SimDebug.ACTION_NAMES[lo if arm == 0 else hi],
+				int(s[0]), 100.0 * s[1] / s[0], s[2] / s[0], 100.0 * s[3] / s[0], s[4] / s[0],
+				"noisy at n=%d" % int(s[0]) if thin else "",
+			])
+			label = ""
+	if dropped > 0:
+		print("  and %d pairs under %d in an arm, not printed" % [dropped, TIE_MIN_ARM])
+
+
+static func _tie_n(arms: Array) -> float:
+	return arms[0][0] + arms[1][0]
+
+
+static func _tie_total(pairs: Dictionary) -> int:
+	var n := 0.0
+	for key in pairs:
+		n += _tie_n(pairs[key])
+	return int(n)
+
+
+## The chain from having the ball to scoring, one link at a time.
+##
+## The block to reach for when a change went in, the goals did not move, and
+## nobody can say where it stopped. A count of shots says the attack failed; this
+## says which link failed, and the links have different owners.
+##
+## **The stages are shares of the population, not nested subsets**, and the first
+## version of this got that wrong in the direction that matters. Counted as a strict
+## funnel -- each stage only reached through the one above -- a shot struck from
+## outside the penalty area was stopped at the box row and never counted, and the
+## chain printed 8 shots against the 14 the block above it had just reported. An
+## instrument that disagrees with the one beside it is the one that is wrong.
+##
+## So each stage is counted on its own within the population the first row defines,
+## and both columns are printed: the share of the whole, and the share of the row
+## above. **The second can pass 100%**, and where it does it is telling you the
+## stages genuinely overlap rather than nest -- this engine shooting from outside
+## the box, or a regain reaching the final third quicker than three seconds.
+const CHAIN_SHOT := [
+	"had the ball", "into the middle third", "into the final third",
+	"into the penalty area", "a shot", "on target", "a goal",
+]
+## The counter, which is a different chain with a different first link. It is here
+## because `--ablate` said `break_bias` -- the whole counter-attacking prior, a 2.6x
+## multiplier -- had never once changed which option was played, so this is where to
+## look for what a regain actually turns into. `The two seconds after a regain` is
+## the same question asked of the window rather than of the spell.
+const CHAIN_REGAIN := [
+	"won it back in play", "still had it after 3 s", "out of their own third",
+	"into the final third", "a shot",
+]
+
+## The two chains that start at a decision rather than at a spell, and the reason
+## `SimChoices` records which kinds were generated at all.
+##
+## Their first three links are invisible to every other instrument here. A cross
+## that was never a candidate and a cross that was scored and beaten are the same
+## absence in every count in the project, and they are different jobs: the first is
+## `_add_passes` not offering it in a situation that called for it, the second is
+## what it is worth once offered. A crossable moment that produced nothing leaves no
+## event in the log at all, so nothing reading the log can find it.
+##
+## The population is a decision, not a spell, so a move offering three crossable
+## moments counts three times and its outcome is counted three times with it. That
+## is the right weighting for "of the moments that called for a cross, how many
+## became one" and the wrong one for counting crosses; `Passes by kind` does that.
+## Everything from `then ...` on is conditional on the act having been played *and*
+## on happening after it -- `CHAIN_GATE` is that stage. Counted the way the spell
+## chains are, over the whole population, the cross chain reported 22 spells
+## reaching the area against 5 crosses played, which is 440% and is measuring
+## attacks that never crossed at all.
+const CHAIN_CROSS := [
+	"wide in their half", "a cross was offered", "it scored best", "it was played",
+	"then into the area", "then a shot", "then a goal",
+]
+const CHAIN_BEHIND := [
+	"a runner in behind", "a through ball offered", "it scored best", "it was played",
+	"then the final third", "then into the area", "then a shot",
+]
+const CHAIN_GATE := 3
+## What counts as wide enough to be looking for a cross, as a fraction of the half
+## width. The same 0.45 `SimDecision._add_passes` tests before calling a lofted ball
+## a cross, so the situation and the candidate are drawn on one line.
+const CROSS_WIDE := 0.45
+
+
+## The chains as numbers rather than as a table, so a run can be saved and set
+## against a later one. See `./run.sh chains`.
+static func chain_counts(ctx: SimContext, table: Dictionary) -> Dictionary:
+	var shot_chain := PackedInt32Array()
+	var regain_chain := PackedInt32Array()
+	shot_chain.resize(CHAIN_SHOT.size())
+	regain_chain.resize(CHAIN_REGAIN.size())
+	var fates := PackedInt32Array()
+	fates.resize(POSS_FATES.size())
+	for poss in table:
+		var row: Dictionary = table[poss]
+		fates[int(row["fate"])] += 1
+		_advance(shot_chain, [
+			true, row["middle"], row["final"], row["area"],
+			row["shot"], row["on_target"], row["goal"]])
+		# A spell that began in open play, which is what a regain is: the one
+		# before it ended with the ball being taken rather than with a whistle.
+		var before: Dictionary = table.get(int(poss) - 1, {})
+		var open := not before.is_empty() and int(before["fate"]) >= PF_TACKLED
+		_advance(regain_chain, [
+			open, row["seconds"] >= TIE_KEPT, row["middle"], row["final"], row["shot"]])
+	var chains: Array = [
+		{"name": "Into a shot", "labels": CHAIN_SHOT, "counts": Array(shot_chain)},
+		{"name": "After winning it back", "labels": CHAIN_REGAIN, "counts": Array(regain_chain)},
+	]
+	for chain in _decision_chains(ctx, table):
+		chains.append(chain)
+	return {"spells": table.size(), "chains": chains, "fates": Array(fates)}
+
+
+## The cross and the ball in behind, off `SimChoices` rather than off the log. See
+## `CHAIN_CROSS`.
+static func _decision_chains(ctx: SimContext, table: Dictionary) -> Array:
+	var cross := PackedInt32Array()
+	var behind := PackedInt32Array()
+	cross.resize(CHAIN_CROSS.size())
+	behind.resize(CHAIN_BEHIND.size())
+	if SimChoices.count() == 0:
+		return []
+	var wide := ctx.pitch.half_width * CROSS_WIDE
+	for r in SimChoices.count():
+		var row: Dictionary = table.get(SimChoices.at(r, SimChoices.R_POSS), {})
+		if row.is_empty():
+			continue
+		var best := SimChoices.at(r, SimChoices.R_KIND_A)
+		var played := SimChoices.at(r, SimChoices.R_PLAYED)
+		var at := SimChoices.at(r, SimChoices.R_TICK)
+		_advance(cross, [
+			SimChoices.lateral_of(r) > wide and SimChoices.progress_of(r) > 0.0,
+			SimChoices.generated(r, SimDecision.Action.CROSS),
+			best == SimDecision.Action.CROSS,
+			played == SimDecision.Action.CROSS,
+			int(row["area_when"]) >= at, int(row["shot_when"]) >= at,
+			int(row["goal_when"]) >= at], CHAIN_GATE)
+		_advance(behind, [
+			SimChoices.has_flag(r, SimChoices.F_RUNNER_BEHIND),
+			SimChoices.generated(r, SimDecision.Action.THROUGH_BALL),
+			best == SimDecision.Action.THROUGH_BALL,
+			played == SimDecision.Action.THROUGH_BALL,
+			int(row["final_when"]) >= at, int(row["area_when"]) >= at,
+			int(row["shot_when"]) >= at], CHAIN_GATE)
+	return [
+		{"name": "The cross", "labels": CHAIN_CROSS, "counts": Array(cross)},
+		{"name": "The ball in behind", "labels": CHAIN_BEHIND, "counts": Array(behind)},
+	]
+
+
+## Everything `./run.sh chains` saves for one match. Read off the same table the
+## printed blocks read, so a saved run and a printed one cannot disagree.
+static func measure(m: SimMatch) -> Dictionary:
+	return chain_counts(m.ctx, _possession_table(m.ctx, m.ctx.telemetry.events))
+
+
+static func _chains(ctx: SimContext, table: Dictionary) -> void:
+	if table.is_empty():
+		return
+	var data := chain_counts(ctx, table)
+	print("\nChains  (%d spells of possession; `of above` can pass 100%%, see the source)"
+		% table.size())
+	for chain in data["chains"]:
+		_print_chain(chain["name"], chain["labels"], chain["counts"])
+
+
+## Counts one row into every stage it reached.
+##
+## Stage 0 is the population: a chain that only applies to some rows says so there,
+## and nothing outside it is counted at all. Everything up to `gate` is then counted
+## on its own rather than through the stage above, because these stages overlap
+## imperfectly and forcing them to nest loses the overlap -- which was a real
+## finding both times it happened.
+##
+## `gate` is where that stops. Past it a stage only counts if the gate stage held,
+## because "and then it reached the box" is a claim about the act at the gate and
+## not about the population. A chain whose stages are all properties of the same
+## spell leaves it at 0 and behaves as before.
+static func _advance(counts: PackedInt32Array, stages: Array, gate: int = 0) -> void:
+	if not bool(stages[0]):
+		return
+	var open := bool(stages[gate])
+	for i in stages.size():
+		if i > gate and not open:
+			return
+		if bool(stages[i]):
+			counts[i] += 1
+
+
+static func _print_chain(name: String, labels: Array, counts: Array) -> void:
+	print("  %-28s %6s %8s %9s" % [name, "n", "of all", "of above"])
+	for i in labels.size():
+		var of_all := ""
+		var of_previous := ""
+		if counts[0] > 0:
+			of_all = "%5.0f%%" % (100.0 * float(counts[i]) / float(counts[0]))
+		if i > 0 and counts[i - 1] > 0:
+			of_previous = "%5.0f%%" % (100.0 * float(counts[i]) / float(counts[i - 1]))
+		print("    %-26s %6d %8s %9s" % [labels[i], counts[i], of_all, of_previous])
+
+
+## Two saved runs, stage by stage. See `./run.sh chains`.
+##
+## **Read the conversion columns, not the counts.** A change that produces more
+## possessions moves every count in the chain and has told you nothing about where
+## it landed; a change that moves a *conversion* has changed what happens at that
+## link, which is the question. The counts are printed because a conversion over
+## nothing is noise and you need to see which rows have a population.
+##
+## The arrow marks the largest conversion moves. It is a pointer, not a verdict:
+## these are single runs of a handful of seeds, and `n` beside it is what decides
+## whether the move is real.
+const DIFF_MARK := 4.0
+
+
+static func chain_diff(before: Dictionary, after: Dictionary) -> void:
+	print("Chain diff   before %s   after %s" % [_run_label(before), _run_label(after)])
+	# The same seeds do not play the same amount of football once the engine has
+	# changed -- a run came back 20 minutes against 23 -- so every count in the
+	# `after` column is inflated by the extra. The conversions are immune, which is
+	# why they are the column to read; the outcomes below are put on a rate.
+	var b_min := float(before.get("minutes", 0.0))
+	var a_min := float(after.get("minutes", 0.0))
+	if b_min > 0.0 and absf(a_min - b_min) / b_min > 0.05:
+		print("  the two runs are %.0f%% apart on match clock: read the conversions, not the counts"
+			% (100.0 * absf(a_min - b_min) / b_min))
+	var b_chains: Array = before.get("chains", [])
+	var a_chains: Array = after.get("chains", [])
+	for i in mini(b_chains.size(), a_chains.size()):
+		var b: Dictionary = b_chains[i]
+		var a: Dictionary = a_chains[i]
+		var labels: Array = a["labels"]
+		var bc: Array = b["counts"]
+		var ac: Array = a["counts"]
+		print("\n  %-26s %8s %8s %7s %11s %10s" % [
+			a["name"], "before", "after", "n", "of above", "moved"])
+		for k in labels.size():
+			var b_n: int = int(bc[k]) if k < bc.size() else 0
+			var a_n: int = int(ac[k]) if k < ac.size() else 0
+			var conversion := ""
+			var moved := ""
+			if k > 0 and int(bc[k - 1]) > 0 and int(ac[k - 1]) > 0:
+				var b_pc := 100.0 * float(b_n) / float(int(bc[k - 1]))
+				var a_pc := 100.0 * float(a_n) / float(int(ac[k - 1]))
+				conversion = "%3.0f%% -> %3.0f%%" % [b_pc, a_pc]
+				moved = "%+6.1f %s" % [a_pc - b_pc, "<-" if absf(a_pc - b_pc) >= DIFF_MARK else ""]
+			print("    %-24s %8d %8d %+7d %11s %10s" % [
+				labels[k], b_n, a_n, a_n - b_n, conversion, moved])
+
+	# The outcome the chains are an explanation of, so a run that moved nothing at
+	# the end says so on one line instead of being read out of seven.
+	var b_fates: Array = before.get("fates", [])
+	var a_fates: Array = after.get("fates", [])
+	if b_fates.is_empty() or a_fates.is_empty():
+		return
+	# Per 90 minutes of the match clock actually played, on the rule the batch
+	# runner follows: two runs of the same seeds are not two runs of the same
+	# length once the engine between them has changed.
+	var b_rate := 90.0 / maxf(b_min, 0.01)
+	var a_rate := 90.0 / maxf(a_min, 0.01)
+	print("\n  %-26s %8s %8s %8s   per 90" % ["ended in", "before", "after", "moved"])
+	for f in mini(b_fates.size(), a_fates.size()):
+		if int(b_fates[f]) == 0 and int(a_fates[f]) == 0:
+			continue
+		var b_per := float(b_fates[f]) * b_rate
+		var a_per := float(a_fates[f]) * a_rate
+		print("    %-24s %8.1f %8.1f %+8.1f" % [POSS_FATES[f], b_per, a_per, a_per - b_per])
+
+
+static func _run_label(run: Dictionary) -> String:
+	return "%d matches, %.0f min, %d spells" % [
+		int(run.get("matches", 0)), float(run.get("minutes", 0.0)), int(run.get("spells", 0))]
+
+
+## Sums one match's measurement into a run. Chains add stage by stage; a run is
+## several matches so that a diff is not reading one seed's weather.
+static func accumulate(run: Dictionary, one: Dictionary, minutes: float) -> void:
+	run["matches"] = int(run.get("matches", 0)) + 1
+	run["minutes"] = float(run.get("minutes", 0.0)) + minutes
+	run["spells"] = int(run.get("spells", 0)) + int(one["spells"])
+	run["fates"] = _sum_into(run.get("fates", []), one["fates"])
+	var chains: Array = run.get("chains", [])
+	var from: Array = one["chains"]
+	if chains.is_empty():
+		for c in from:
+			chains.append({"name": c["name"], "labels": c["labels"], "counts": []})
+	for i in mini(chains.size(), from.size()):
+		chains[i]["counts"] = _sum_into(chains[i]["counts"], from[i]["counts"])
+	run["chains"] = chains
+
+
+static func _sum_into(into: Array, add: Array) -> Array:
+	while into.size() < add.size():
+		into.append(0)
+	for i in add.size():
+		into[i] = int(into[i]) + int(add[i])
+	return into
+
+
+## What one spell produced, best outcome first. See `POSS_FATES`.
+static func _poss_fate(ctx: SimContext, team: int, rows: Array) -> int:
+	var fate := PF_OTHER
+	for e in rows:
+		var f := _fate_of_event(ctx, team, e)
+		if f >= 0 and f < fate:
+			fate = f
+	return fate
+
+
+static func _fate_of_event(ctx: SimContext, team: int, e: Dictionary) -> int:
+	# `SHOT` and `GOAL` are deliberately absent: they are matched to a spell by team
+	# and tick in `_possession_table`, not by the id they were logged under. See the
+	# note there on why a shot is a content rather than an ending event.
+	match int(e["ev"]):
+		SimTelemetry.Ev.OFFSIDE:
+			return PF_OFFSIDE
+		SimTelemetry.Ev.FOUL:
+			var fouler := int(e.get("p", -1))
+			if fouler < 0 or fouler >= ctx.players.size():
+				return -1
+			return PF_FOUL_CONCEDED if ctx.players[fouler].team == team else PF_FOUL_WON
+		SimTelemetry.Ev.SET_PIECE:
+			# A restart to the other side is the ball given away; one to this side
+			# is a corner or a throw kept, which is not the same outcome at all.
+			return PF_SET_WON if int(e.get("team", -1)) == team else PF_OUT
+		SimTelemetry.Ev.DUEL:
+			var winner := int(e.get("winner", -1))
+			if winner < 0 or winner >= ctx.players.size():
+				return -1
+			return PF_TACKLED if ctx.players[winner].team != team else -1
+		SimTelemetry.Ev.PASS_OUTCOME:
+			return -1 if bool(e.get("ok", false)) else PF_INTERCEPTED
+		SimTelemetry.Ev.RECOVERY:
+			var by := int(e.get("p", -1))
+			if by < 0 or by >= ctx.players.size():
+				return -1
+			return PF_LOOSE if ctx.players[by].team != team else -1
+	return -1
+
+
+## Whether each term in the score ever changed what got played. Off unless
+## `--ablate` was passed; see `SimAblation` for what the columns separate.
+##
+## The three columns to read in order are `in`, `on score`, `flips`. They fail
+## differently and the fixes are in different files: a term at `in` 0% is not
+## wired to the situation it was written for, one at `on score` ~0 is applied and
+## does not vary, and one at `flips` 0% with a real `on score` is being beaten by
+## something bigger. Only the third is a judgement call.
+##
+## `flips` is a share of the decisions the term applied to, not of every decision
+## in the match, because a term can only change a pick where it is present at all.
+static func _what_a_term_is_worth() -> void:
+	if SimAblation.decisions <= 0.0:
+		return
+	print("\nWhere a term changes the decision  (%d decisions, one term neutralised at a time)"
+		% int(SimAblation.decisions))
+	print("  %-20s %-22s %6s %10s %9s %8s   %s" % [
+		"term", "value where it applies", "in", "on score", "moves p", "flips", "commonest flip"])
+	for term in SimAblation.TERMS:
+		var applied := SimAblation.at(term, SimAblation.APPLIED)
+		if applied <= 0.0:
+			print("  %-20s %-22s %5.0f%%   %8s %9s %8s   %s" % [
+				SimAblation.TERM_NAMES[term], "never applied", 0.0, "-", "-", "-", ""])
+			continue
+		var vn := SimAblation.at(term, SimAblation.VAL_N)
+		var value := "-"
+		if vn > 0.0:
+			value = "%.3f - %.3f - %.3f" % [
+				SimAblation.at(term, SimAblation.VAL_LO),
+				SimAblation.at(term, SimAblation.VAL_SUM) / vn,
+				SimAblation.at(term, SimAblation.VAL_HI)]
+		print("  %-20s %-22s %5.0f%%   %8.5f %8.3f %7.1f%%   %s" % [
+			SimAblation.TERM_NAMES[term], value,
+			100.0 * applied / SimAblation.decisions,
+			SimAblation.at(term, SimAblation.DSCORE) / applied,
+			SimAblation.at(term, SimAblation.TVD) / applied,
+			100.0 * SimAblation.at(term, SimAblation.FLIPS) / applied,
+			SimAblation.flip_text(term),
+		])
+
+
 ## And what the pass model made of the ones that lost: the five factors their
 ## `success` is a product of. A success of 0.05 is one number and could be any of
 ## a dozen faults; these five say which.
@@ -802,18 +1572,42 @@ static func _why_the_pass_lost(events: Array) -> void:
 			rate,
 		])
 	print("    a ball in the air has no `in time` and no `lane`; both read 1.00 for it")
-	# The last column is the calibration, and it is the only thing here that can
-	# say the model is wrong rather than merely strict.
+	print("\n  and of the ones it played  (`said` against `completed` is the calibration)")
+	print("    %-11s %8s %8s %8s %9s %8s %9s %11s" % [
+		"", "space", "in time", "lane", "control", "struck", "said", "completed"])
+	for kind in SimDecision.Action.size():
+		if not SimDecision.is_pass(kind):
+			continue
+		var n := SimDecision.lost_at(kind, SimDecision.PLAYED_N)
+		if n < 1.0:
+			continue
+		var touch: int = PASS_TOUCH_OF.get(kind, -1)
+		var res: int = int(resolved.get(touch, 0))
+		var rate := "  -" if res == 0 else "%9.0f%%" % (100.0 * float(ok.get(touch, 0)) / float(res))
+		print("    %-11s %8.2f %8.2f %8.2f %9.2f %8.2f %9.2f %10s" % [
+			SimDebug.ACTION_NAMES[kind],
+			SimDecision.lost_at(kind, SimDecision.PLAYED_SPACE) / n,
+			SimDecision.lost_at(kind, SimDecision.PLAYED_IN_TIME) / n,
+			SimDecision.lost_at(kind, SimDecision.PLAYED_LANE) / n,
+			SimDecision.lost_at(kind, SimDecision.PLAYED_CONTROL) / n,
+			SimDecision.lost_at(kind, SimDecision.PLAYED_STRUCK) / n,
+			SimDecision.lost_at(kind, SimDecision.PLAYED_MODEL) / n,
+			rate,
+		])
+	# `said` against `completed` is the calibration, and it is the only thing here
+	# that can say the model is wrong rather than merely strict.
 	#
-	# It is not like-for-like and must not be read as if it were. `success` is the
-	# best *rejected* candidate of its kind; `completed` is what the ones that got
-	# played actually did, and those are the top of the same distribution, so the
-	# right-hand column should sit above the left. What it should not do is sit an
-	# order of magnitude above it. A model saying 0.05 for a ball the engine
-	# completes two times in three is not being strict, it is disagreeing with its
-	# own physics -- and that is a defect, not a tuning preference.
-	print("    `completed` is what the ones that were played did: selection puts it above")
-	print("    `success`, and only a gap far larger than that is the model being wrong")
+	# The pair to its left is not like-for-like and must not be read as if it were.
+	# `success` is the best *rejected* candidate of its kind; `completed` is what
+	# the ones that got played actually did, and those are the top of the same
+	# distribution, so the right-hand column sits above the left by however hard
+	# that kind is selected -- which for a through ball is fourteen rejections per
+	# ball played. `said` is the same model on the same balls as `completed`, so a
+	# gap there is the model disagreeing with the engine's own physics, which is a
+	# defect rather than a tuning preference.
+	print("    `success` is the best rejected ball of its kind and `completed` is what the")
+	print("    played ones did, so the gap between them is mostly selection. `said` is the")
+	print("    model on those same played balls: that pair is the calibration")
 
 
 static func _cut_short_parts() -> PackedStringArray:
@@ -955,6 +1749,297 @@ static func _offering(ctx: SimContext) -> void:
 	])
 
 
+## Why a man making the run was never offered the ball.
+##
+## The population is a runner, not a decision: every teammate who is running in
+## behind at the moment somebody decides, filed under the first gate that refused
+## him. `Chains` says the run exists three times more often than the pass is
+## offered and cannot say why, and the answer decides which layer the work is in —
+## `_shortlist` keeping six of ten is a different job from a body-orientation
+## range clamp, and both are upstream of everything `xt_at` is worth.
+static func _why_no_ball_in_behind() -> void:
+	var total := 0.0
+	for i in SimDecision.behind_gate.size():
+		total += SimDecision.behind_gate[i]
+	if total < 1.0:
+		return
+	print("\nA man was running in behind  (%d times somebody was deciding while he ran)" % int(total))
+	var parts := PackedStringArray()
+	for i in SimDecision.behind_gate.size():
+		parts.append("%s %.0f%%" % [SimDecision.BEHIND_GATES[i],
+			100.0 * SimDecision.behind_gate[i] / total])
+	print("    %s" % ",  ".join(parts))
+	print("    the first gate that refused him, in the order the gates are applied")
+
+
+const BEHIND_BUCKETS := [12.0, 18.0, 24.0, 30.0, 1e9]
+const BEHIND_LABELS := ["under 12 m", "12 - 18 m", "18 - 24 m", "24 - 30 m", "30 m +"]
+## What became of one. `BF_FOR_HIM` is the only one that is the pass working:
+## every other row is a ball that went somewhere, including the ones the log
+## files as completed.
+const BEHIND_FATES := [
+	"the man it was for", "another teammate", "an opponent", "nobody at all",
+]
+const BF_FOR_HIM := 0
+const BF_MATE := 1
+const BF_THEM := 2
+const BF_NOBODY := 3
+
+
+## The ball played in behind, as a strike rather than as a choice.
+##
+## `Passes by kind` gives it one mean length and one completion rate, and neither
+## can see the thing the eye sees first: a ball in behind is aimed *past* a man on
+## purpose, so whether it was a good ball is not "did it reach a teammate" but
+## "was it hit at a weight he could run onto". Those come apart completely. A
+## through ball blasted 30 m into the channel and collected by the keeper is
+## resolved, is not completed, and looks in every count exactly like one cut out
+## by a defender — and the fixes are in different places.
+##
+## Three columns carry it, and they are all ratios against the receiver rather
+## than absolute numbers:
+##
+##   `arrives` against the pace he runs at. The ball's speed as it reaches the aim
+##   point. Above his top speed it is a ball he cannot catch even with a clear run
+##   at it, whatever else was true of the pass.
+##   `aimed ahead` against `he covers`. How far in front of him it was played,
+##   against how far he can get while it is travelling. Over 1.0 is a ball aimed
+##   at a yard he will not reach.
+##   `reached him` — the intended man, not any teammate. `Passes by kind` counts a
+##   through ball scuffed to the nearest centre back's feet as a completion.
+##
+## Every quantity is off the strike itself (`struck`, `lead`, `dist` on the
+## attempt) rather than reconstructed from the 5 Hz trace, which at 16 m/s moves
+## three metres between samples.
+static func _the_ball_in_behind(ctx: SimContext, events: Array) -> void:
+	var n := BEHIND_LABELS.size()
+	var count := PackedInt32Array(); count.resize(n)
+	var length := PackedFloat32Array(); length.resize(n)
+	var struck := PackedFloat32Array(); struck.resize(n)
+	var arrives := PackedFloat32Array(); arrives.resize(n)
+	var lead := PackedFloat32Array(); lead.resize(n)
+	var covers := PackedFloat32Array(); covers.resize(n)
+	var got_it := PackedInt32Array(); got_it.resize(n)
+	var fates := PackedInt32Array(); fates.resize(BEHIND_FATES.size())
+	var too_fast := 0
+	var too_far := 0
+	var total := 0
+	# Ground passes to feet, as the control. The same three columns on the pass
+	# the engine plays six times as often are what say whether the numbers below
+	# are a fact about the through ball or about every pass in the match.
+	var feet := 0
+	var feet_struck := 0.0
+	var feet_arrives := 0.0
+	var feet_lead := 0.0
+
+	# Attempt to outcome by passer, oldest first: the same join `_passing_quality`
+	# makes, and for the same reason. An attempt that never resolves -- the ball
+	# that runs out of play, which is most of what is wrong here -- would
+	# otherwise shift every pairing after it onto somebody else's pass.
+	var pending := {}
+	var rows := []
+	for e in events:
+		var ev: int = e["ev"]
+		if ev == SimTelemetry.Ev.PASS_ATTEMPT and e.has("struck"):
+			var p: int = e["p"]
+			if not pending.has(p):
+				pending[p] = []
+			pending[p].append(rows.size())
+			rows.append({"e": e, "receiver": -1, "ok": false})
+		elif ev == SimTelemetry.Ev.PASS_OUTCOME:
+			var p2: int = e["p"]
+			if pending.has(p2) and not pending[p2].is_empty():
+				var idx: int = pending[p2].pop_front()
+				rows[idx]["receiver"] = int(e.get("receiver", -1))
+				rows[idx]["ok"] = bool(e.get("ok", false))
+
+	for rec in rows:
+		var e: Dictionary = rec["e"]
+		var kind := int(e["kind"])
+		var d: float = maxf(float(e.get("dist", 0.0)), 0.6)
+		var v: float = float(e.get("struck", 0.0))
+		var travel: float = ctx.ballistics.ground_travel_time(d, v, ctx.env)
+		# Off the two-phase law the strike was solved against, never off `travel`
+		# and the blended decel -- see `SimBallistics.ground_pace_after`.
+		var at_target: float = ctx.ballistics.ground_pace_after(v, d, ctx.env)
+		if kind == SimTelemetry.Touch.GROUND_PASS:
+			feet += 1
+			feet_struck += v
+			feet_arrives += at_target
+			feet_lead += float(e.get("lead", 0.0))
+			continue
+		if kind != SimTelemetry.Touch.THROUGH_BALL:
+			continue
+		var to: int = int(e.get("target", -1))
+		if to < 0 or to >= ctx.players.size():
+			continue
+		var mate := ctx.players[to]
+		# His legs at the moment it was struck, off the event -- `max_speed` is
+		# fatigue-capped and falls across a match, so reading it here would judge
+		# a first-minute ball against tenth-minute legs.
+		var top: float = maxf(float(e.get("rmax", 0.0)), 0.1)
+		var reach: float = top * travel
+		var ahead: float = float(e.get("lead", 0.0))
+
+		var band := 0
+		while band < n - 1 and d > BEHIND_BUCKETS[band]:
+			band += 1
+		total += 1
+		count[band] += 1
+		length[band] += d
+		struck[band] += v
+		arrives[band] += at_target
+		lead[band] += ahead
+		covers[band] += reach
+		if at_target > top:
+			too_fast += 1
+		if ahead > reach:
+			too_far += 1
+
+		var receiver: int = int(rec["receiver"])
+		var fate := BF_NOBODY
+		if receiver == to:
+			fate = BF_FOR_HIM
+			got_it[band] += 1
+		elif receiver >= 0 and receiver < ctx.players.size():
+			fate = BF_MATE if ctx.players[receiver].team == mate.team else BF_THEM
+		fates[fate] += 1
+
+	if total == 0:
+		return
+	print("\nThe ball in behind, as a strike  (%d played)" % total)
+	print("  %-12s %6s %7s %8s %9s %12s %10s %12s" % [
+		"", "n", "share", "struck", "arrives", "aimed ahead", "he covers", "reached him"])
+	for i in n:
+		if count[i] == 0:
+			continue
+		var c := float(count[i])
+		print("  %-12s %6d %6.0f%% %6.1f m/s %7.1f m/s %10.1f m %8.1f m %11.0f%%" % [
+			BEHIND_LABELS[i], count[i], 100.0 * c / float(total),
+			struck[i] / c, arrives[i] / c, lead[i] / c, covers[i] / c,
+			100.0 * float(got_it[i]) / c,
+		])
+	if feet > 0:
+		print("  %-12s %6d %7s %6.1f m/s %7.1f m/s %10.1f m %8s %12s" % [
+			"to feet", feet, "-", feet_struck / float(feet),
+			feet_arrives / float(feet), feet_lead / float(feet), "-", "-"])
+	print("  arriving faster than the man can run   %d of %d (%.0f%%)" % [
+		too_fast, total, 100.0 * float(too_fast) / float(total)])
+	print("  aimed further ahead than he can reach  %d of %d (%.0f%%)" % [
+		too_far, total, 100.0 * float(too_far) / float(total)])
+	var parts := PackedStringArray()
+	for i in BEHIND_FATES.size():
+		parts.append("%s %d (%.0f%%)" % [BEHIND_FATES[i], fates[i],
+			100.0 * float(fates[i]) / float(total)])
+	print("  who got it:  " + ",  ".join(parts))
+
+
+## What the side that has just won the ball had to work with, over the two
+## seconds it had won it.
+##
+## Every other block here answers over a match, and a match is the wrong
+## population for the counter-attack: `secure`, `break_bias` and
+## `SimOffBall.BREAK_RUN` all fire inside `SimDecision.REGAIN_WINDOW` and nothing
+## measured them there. "The counter is not on" has three causes — nobody is
+## *eligible* to run, they are eligible and the run scores badly, or they run and
+## the man on the ball never picks them — they live in three different files, and
+## `Offering for the ball` gives one number for all three.
+##
+## Read top to bottom, and stop at the first row that is wrong.
+##
+##   the first line is eligibility. `resting` is `SimOffBall._expire` charging
+##   `REST_SECONDS` — up to 10 s for a run in behind — the instant possession
+##   changes, which is the instant before this window opens.
+##   the second is scoring: of the men who were considered, how many took a run.
+##   the third is the carrier: what he made of the runs that were taken.
+##   the fourth is `break_on` itself, which both multipliers are lerped through.
+static func _after_the_regain() -> void:
+	if SimOffBall.regain_passes.size() != 2 or SimOffBall.regain_passes[1] == 0:
+		return
+	var kinds := SimOffBall.KIND_NAMES.size()
+	print("\nThe two seconds after a regain  (`secure`, `break_bias` and BREAK_RUN all fire here)")
+	print("  the side in possession, per man per assignment pass")
+	print("  %-14s %8s %9s %9s %9s %9s %11s" % [
+		"", "passes", "running", "resting", "too far", "a pattern", "considered"])
+	for w in 2:
+		var passes := float(SimOffBall.regain_passes[w])
+		if passes == 0.0:
+			continue
+		var live := 0
+		var resting := 0
+		for kind in kinds:
+			live += SimOffBall.regain_live[w * kinds + kind]
+			resting += SimOffBall.regain_resting[w * kinds + kind]
+		print("  %-14s %8d %9.2f %9.2f %9.2f %9.2f %11.2f" % [
+			"in the window" if w == 1 else "the rest of it", int(passes),
+			float(live) / passes, float(resting) / passes,
+			float(SimOffBall.regain_far[w]) / passes,
+			float(SimOffBall.regain_held[w]) / passes,
+			float(SimOffBall.regain_considered[w]) / passes,
+		])
+		if resting > 0:
+			var parts := PackedStringArray()
+			for kind in range(1, kinds):
+				var n: int = SimOffBall.regain_resting[w * kinds + kind]
+				if n > 0:
+					parts.append("%s %.0f%%" % [SimOffBall.KIND_NAMES[kind],
+						100.0 * float(n) / float(resting)])
+			print("      resting from %s, %.1f s still to serve" % [
+				", ".join(parts), SimOffBall.regain_rest_left[w] / float(resting)])
+	var cuts := 0
+	var served := 0.0
+	var cut_parts := PackedStringArray()
+	for kind in range(1, kinds):
+		cuts += SimOffBall.cut_n[kind]
+		served += SimOffBall.cut_served[kind]
+		if SimOffBall.cut_n[kind] > 0:
+			cut_parts.append("%s %.0f%%" % [SimOffBall.KIND_NAMES[kind],
+				100.0 * SimOffBall.cut_served[kind] / float(SimOffBall.cut_n[kind])])
+	if cuts > 0:
+		print("  a run a turnover ended had served %.0f%% of its window  (%s)" % [
+			100.0 * served / float(cuts), ", ".join(cut_parts)])
+		print("    and is charged that share of `REST_SECONDS`, not the whole of it")
+
+	var born := 0
+	for kind in SimOffBall.KIND_NAMES.size():
+		born += SimOffBall.born[kind]
+	if born > 0:
+		print("  and the runs that were begun in the window")
+		print("    %-10s %8s %9s %8s %10s" % ["", "taken", "offered", "best w", "received"])
+		for kind in range(1, SimOffBall.KIND_NAMES.size()):
+			var n: int = SimOffBall.born[kind]
+			if n == 0:
+				continue
+			print("    %-10s %8d %8.0f%% %7.0f%% %9.0f%%" % [
+				SimOffBall.KIND_NAMES[kind], n,
+				100.0 * float(SimOffBall.born_offered[kind]) / float(n),
+				100.0 * SimOffBall.born_weight[kind] / float(n),
+				100.0 * float(SimOffBall.born_received[kind]) / float(n),
+			])
+	else:
+		print("  no run of any kind was begun inside the window")
+
+	if SimDecision.break_in_window > 0.0:
+		var w := SimDecision.break_in_window
+		print("  break_on, over the %.0f decisions taken inside it (%.0f%% of all %.0f)" % [
+			w, 100.0 * w / maxf(SimDecision.break_decisions, 1.0), SimDecision.break_decisions])
+		print("    mean %.2f, their line priced at %.2f x, and `secure` on the square ball %.2f x" % [
+			SimDecision.break_on_sum / w, SimDecision.break_exposed_sum / w,
+			SimDecision.break_secure_sum / w])
+		var cells := PackedStringArray()
+		for i in SimDecision.break_hist.size():
+			var label := ""
+			if i == 0:
+				label = "under %.2f" % float(SimDecision.BREAK_BUCKETS[0])
+			elif i == SimDecision.BREAK_BUCKETS.size():
+				label = "%.2f up" % float(SimDecision.BREAK_BUCKETS[i - 1])
+			else:
+				label = "%.2f-%.2f" % [float(SimDecision.BREAK_BUCKETS[i - 1]),
+					float(SimDecision.BREAK_BUCKETS[i])]
+			cells.append("%s %.0f%%" % [label, 100.0 * float(SimDecision.break_hist[i]) / w])
+		print("    %s" % "   ".join(cells))
+
+
 ## Whether the man on the ball actually has a safe pass, which is not the same
 ## question as whether he has a teammate near him.
 ##
@@ -995,6 +2080,15 @@ static func _safe_options(ctx: SimContext) -> void:
 	var blocked := 0
 	var marked := 0
 	var safe_total := 0
+	# And the same four numbers over the seconds after a regain, which is a
+	# different question with the same shape: a side that has just won it back and
+	# has nothing safe on is a side that gives it straight back. See
+	# `_after_the_regain`.
+	var win_mask := _regain_mask(ctx, trace.size())
+	var win_samples := 0
+	var win_none := 0
+	var win_safe := 0
+	var win_forward := 0
 
 	for i in range(1, trace.size()):
 		var sample := trace[i]
@@ -1059,6 +2153,13 @@ static func _safe_options(ctx: SimContext) -> void:
 			one += 1
 		if safe_fwd > 0:
 			forward_safe += 1
+		if i < win_mask.size() and win_mask[i] == team + 1:
+			win_samples += 1
+			win_safe += safe
+			if safe == 0:
+				win_none += 1
+			if safe_fwd > 0:
+				win_forward += 1
 
 	if samples == 0:
 		return
@@ -1074,6 +2175,34 @@ static func _safe_options(ctx: SimContext) -> void:
 		100.0 * float(none_at_all) / n, 100.0 * float(one) / n,
 		100.0 * float(forward_safe) / n,
 	])
+	if win_samples > 0:
+		var w := float(win_samples)
+		print("  and in the %.1f s after a regain: %.1f safe, none at all %3.0f%%, a forward one %3.0f%%" % [
+			SimDecision.REGAIN_WINDOW, float(win_safe) / w,
+			100.0 * float(win_none) / w, 100.0 * float(win_forward) / w,
+		])
+
+
+## Which trace samples fall inside a regain window, and for whom: 0 for none,
+## `team + 1` for the side that has just won it back.
+##
+## Off the recovery events, so the window here is the same one
+## `SimDecision.regain_urgency` opens — a sample is in it when the side holding
+## the ball won it back within `REGAIN_WINDOW`. A sample the other side holds is
+## not in anybody's window, which is why the mask carries the team rather than a
+## bit.
+static func _regain_mask(ctx: SimContext, samples: int) -> PackedInt32Array:
+	var mask := PackedInt32Array()
+	mask.resize(samples)
+	var window := int(SimDecision.REGAIN_WINDOW * float(SimConsts.TICK_HZ))
+	for e in ctx.telemetry.events:
+		if e["ev"] != SimTelemetry.Ev.RECOVERY:
+			continue
+		var from := int(ceil(float(e["t"]) / float(SimConsts.TRACE_TICKS)))
+		var to := int(float(int(e["t"]) + window) / float(SimConsts.TRACE_TICKS))
+		for i in range(maxi(from, 0), mini(to + 1, samples)):
+			mask[i] = int(e["team"]) + 1
+	return mask
 
 
 ## Distance from a point to a line segment, flattened to the ground plane.
@@ -2412,6 +3541,7 @@ static func _shooting(ctx: SimContext, events: Array) -> void:
 		scored += goals[i]
 	print("  goals %d, from %s" % [scored, _goal_bands(goals, n)])
 	_shot_fates(events)
+	_save_funnel(events)
 	# A shot total is two quite different things added together: chances created,
 	# and second balls hammered back at the goal after the first was parried or
 	# blocked. Only the first is a measure of the attack, and only the split says
@@ -2453,6 +3583,71 @@ static func _shot_fates(events: Array) -> void:
 	for k in keys:
 		var c: int = fates[k]
 		print("    %-18s %4d   %3.0f%%" % [k, c, 100.0 * float(c) / float(total)])
+
+
+## Which stage of the save model resolved each shot the keeper faced.
+##
+## The fate table above says how many goal-bound shots were kept out. It cannot
+## say why, and the two answers want opposite fixes. `SimKeeper._shot_response`
+## resolves a save in two stages that multiply — the reach envelope, then
+## `save_chance` — and only the second carries a calibration. A shot beaten for
+## reach logged nothing at all, so the compound rate was the only figure
+## available: a keeper whose envelope is too small and one whose roll is too low
+## produced the same number.
+##
+## `ball ... away, reach ...` is the mean of the two on the beaten rows, in the
+## keeper's own reach space rather than in metres of grass — `_closest_approach`
+## stretches height by `VERTICAL_REACH_RATIO`, so a top corner is further away
+## than the same offset along the floor. A gap of half a metre is a keeper who
+## nearly got there and a gap of three is one who was never in it.
+##
+## The population is smaller than the goal-bound rows above and is meant to be. A
+## shot a defender blocks before the keeper commits never reaches him, and one
+## struck from six yards can be in the net before his reaction time is up — those
+## are goals the save model never had an opinion about, and counting them here
+## would blame it for them. The last line is the other direction: `Goalkeeping`
+## counts every ball the forecast had going in, deflections and sliced clearances
+## included, and those are not shots.
+static func _save_funnel(events: Array) -> void:
+	var faced := 0
+	var reached := 0
+	var saved := 0
+	var beaten_margin := 0.0
+	var beaten_reach := 0.0
+	var saves := 0
+	for e in events:
+		if e["ev"] == SimTelemetry.Ev.SAVE:
+			saves += 1
+			continue
+		if e["ev"] != SimTelemetry.Ev.SHOT or not e.has("k_reached"):
+			continue
+		faced += 1
+		if bool(e["k_reached"]):
+			reached += 1
+			if bool(e["k_saved"]):
+				saved += 1
+		else:
+			beaten_margin += float(e.get("k_margin", 0.0))
+			beaten_reach += float(e.get("k_reach", 0.0))
+	if faced == 0:
+		return
+	var f := float(faced)
+	var beaten := faced - reached
+	print("  the save model resolved %d of them" % faced)
+	if beaten > 0:
+		print("    beaten for reach   %4d   %3.0f%%   ball %.1f m away, reach %.1f m" % [
+			beaten, 100.0 * float(beaten) / f,
+			beaten_margin / float(beaten), beaten_reach / float(beaten),
+		])
+	if reached > saved:
+		print("    reached, not held  %4d   %3.0f%%" % [
+			reached - saved, 100.0 * float(reached - saved) / f,
+		])
+	print("    saved              %4d   %3.0f%%" % [saved, 100.0 * float(saved) / f])
+	if saves > saved:
+		print("    %d saves in the match, so %d were on balls that were not logged shots" % [
+			saves, saves - saved,
+		])
 
 
 static func _goal_bands(goals: PackedInt32Array, n: int) -> String:
@@ -2551,8 +3746,16 @@ static func report(m: SimMatch) -> void:
 	_locomotion(ctx)
 	_chasing(ctx)
 	_offering(ctx)
+	_why_no_ball_in_behind()
+	_the_ball_in_behind(ctx, events)
+	_after_the_regain()
+	var possessions := _possession_table(ctx, events)
+	_what_became_of_it(possessions)
+	_chains(ctx, possessions)
+	_near_ties(possessions)
 	_why_it_lost()
 	_why_the_pass_lost(events)
+	_what_a_term_is_worth()
 	_safe_options(ctx)
 	_team_lines(ctx)
 	_giving_up_ground(ctx)

@@ -149,6 +149,14 @@ static func playable_height(player: SimPlayer, ball_y: float) -> bool:
 ## action funnels through here.
 static func apply(ctx: SimContext, player: SimPlayer, kind: int, vel: Vector3, spin: Vector3, target_id: int = -1, extra: Dictionary = {}) -> void:
 	var before := ctx.ball.pos
+	# The pass has arrived. Read here, before the ball's own memory below is
+	# overwritten, because "it came straight from the passer" is the whole test:
+	# the man it was played to is touching it and nobody has touched it since it
+	# left. A deflection, an interception or a scramble fails that and leaves the
+	# arrival unstamped, so a ball won back three seconds later is not a one-two.
+	if player.id == ctx.last_pass_to and ctx.ball.last_touch_player == ctx.last_pass_from \
+			and ctx.last_pass_arrival_tick < ctx.last_pass_tick:
+		ctx.last_pass_arrival_tick = ctx.tick_index
 	ctx.ball.launch(vel, spin)
 	ctx.ball.last_touch_player = player.id
 	ctx.ball.last_touch_team = player.team
@@ -552,7 +560,7 @@ static func ground_pass(ctx: SimContext, player: SimPlayer, target: Vector3, arr
 	var spin := -Vector3.UP.cross(vel.normalized()) * (roll_rate * PASS_BACKSPIN_FRACTION)
 
 	apply(ctx, player, kind, vel, spin, target_id, {"dist": distance})
-	_log_pass_attempt(ctx, player, kind, target, target_id, expected_value, distance)
+	_log_pass_attempt(ctx, player, kind, target, target_id, expected_value, distance, vel.length())
 
 
 ## Lofted pass or cross. `curl` is sidespin in rad/s, signed.
@@ -572,7 +580,7 @@ static func lofted_pass(ctx: SimContext, player: SimPlayer, target: Vector3, fli
 	vel.y = maxf(vel.y, 1.0)
 
 	apply(ctx, player, kind, vel, spin, target_id, {"dist": distance})
-	_log_pass_attempt(ctx, player, kind, aim, target_id, expected_value, distance)
+	_log_pass_attempt(ctx, player, kind, aim, target_id, expected_value, distance, vel.length())
 
 
 ## Shot at a point in the goal mouth. `power` is 0..1 over the shot speed range.
@@ -998,7 +1006,7 @@ static func poke(ctx: SimContext, player: SimPlayer, kind: int = SimTelemetry.To
 	apply(ctx, player, kind, vel, Vector3.ZERO)
 
 
-static func _log_pass_attempt(ctx: SimContext, player: SimPlayer, kind: int, target: Vector3, target_id: int, expected_value: float, distance: float) -> void:
+static func _log_pass_attempt(ctx: SimContext, player: SimPlayer, kind: int, target: Vector3, target_id: int, expected_value: float, distance: float, struck: float) -> void:
 	player.passes_attempted += 1
 	# Offside is judged at the instant of the impulse, so the referee is told
 	# here rather than watching for it.
@@ -1014,16 +1022,35 @@ static func _log_pass_attempt(ctx: SimContext, player: SimPlayer, kind: int, tar
 		body = player.heading_dir().dot(line.normalized())
 	# Read before the memory below is overwritten: this pass is a give-and-go
 	# return if the man it is going to is the man it came from.
+	# Counted from the arrival, like the bias that produced it: a first-time
+	# return stamps its own arrival a few lines above, in `apply`.
 	var window := int(SimDecision.GIVE_AND_GO_WINDOW * float(SimConsts.TICK_HZ))
 	var give_and_go := target_id >= 0 and ctx.last_pass_to == player.id \
-		and ctx.last_pass_from == target_id and ctx.tick_index - ctx.last_pass_tick <= window
+		and ctx.last_pass_from == target_id \
+		and ctx.last_pass_arrival_tick >= ctx.last_pass_tick \
+		and ctx.tick_index - ctx.last_pass_arrival_tick <= window
 	# Which offer, if any, this ball was played to. Recorded because a pass to a
 	# man standing still and a pass to the same man arriving on a run he
 	# committed to are indistinguishable in every other field of this event --
 	# same passer, same receiver, same length, same place.
 	var call := 0
+	# How far in front of the man it was aimed, and it is the only field that can
+	# say a ball was played *past* him rather than to him. Every other field is
+	# the same for both: same passer, same receiver, same length, same place. A
+	# ball in behind is aimed ahead of the receiver on purpose, so the number is
+	# only wrong against what he can cover while it travels -- which is `struck`
+	# and `dist`, the two beside it.
+	var lead := 0.0
+	# And how fast he could run at the moment it was struck. Read here rather than
+	# looked up when the log is read, because `max_speed` is fatigue-capped and
+	# falls across a match: a ball hit in the first minute was being judged against
+	# the legs its receiver had in the tenth, which made every early through ball
+	# read as harder to catch than it was.
+	var rmax := 0.0
 	if target_id >= 0 and target_id < ctx.players.size():
 		call = SimOffBall.intent_of(ctx, ctx.players[target_id])
+		lead = SimConsts.horizontal_length(target - ctx.players[target_id].pos)
+		rmax = ctx.players[target_id].max_speed()
 	# The give-and-go's whole memory. Recorded here rather than in the decision
 	# layer because this is where a pass becomes a fact rather than a candidate.
 	ctx.last_pass_from = player.id
@@ -1045,4 +1072,11 @@ static func _log_pass_attempt(ctx: SimContext, player: SimPlayer, kind: int, tar
 		# post-match screen uses it to explain why a pass was played.
 		"xv": expected_value,
 		"dist": distance,
+		# The two halves of "how hard was it hit": what left the boot, and how far
+		# ahead of the receiver it was aimed. Nothing else in the log has either --
+		# `dist` is passer to aim point, which is the same for a ball rolled into
+		# a man's path and one blasted through it.
+		"struck": struck,
+		"lead": lead,
+		"rmax": rmax,
 	})

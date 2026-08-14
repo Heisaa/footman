@@ -7,7 +7,7 @@ subject; read the one covering a layer before you change that layer.
 
 - `docs/GLOSSARY.md` — what the words mean: carry, hold, burst, room, pressure vs challenge
 - `docs/THE_FOOTBALL.md` — every behaviour a viewer can see, and whether the engine has it
-- `docs/DIAGNOSTICS.md` — what each `diagnose` block, the live overlay and a batch can and cannot see
+- `docs/DIAGNOSTICS.md` — what each `diagnose` block, the live overlay and a batch can and cannot see, and **the chain**: the six links from a constant to a goal, and which instrument says which one broke
 - `docs/INVARIANTS.md` — the architectural rules, the compressed clock, and why each matters
 - `docs/PITFALLS.md` — real bugs that were invisible from the code
 - `docs/STATUS.md` — phase status, and what every mechanic measured
