@@ -24,7 +24,7 @@ When one is built, move the row and put the account in `docs/STATUS.md`.
 |---|---|---|
 | Pass to feet | built | `SimDecision._add_passes` |
 | Through ball in behind | built | `_add_passes` |
-| Lofted pass, cross | built | `_add_passes` |
+| Lofted pass, cross | partial — aimed where he is going, still weighted to land on him rather than short and roll on (`docs/BACKLOG.md` 23) | `_add_passes` |
 | Shot, with a chosen placement | built | `_add_shot`, `_pick_shot_aim` |
 | Clearance | built | `_add_clear` |
 | Carry, eight probed directions | built | `_add_dribbles` |
