@@ -730,6 +730,9 @@ static func _why_it_lost() -> void:
 		print("  a turnover was priced at %.2f x its threat, mean, with the defensive line %.0f%% up the pitch" % [
 			SimDecision.exposure_sum / SimDecision.exposure_n,
 			100.0 * SimDecision.exposure_line / SimDecision.exposure_n])
+	if SimDecision.stretch_n > 0.0:
+		print("  and stretched at %.2f x on top, mean over candidates, worst %.2f x" % [
+			SimDecision.stretch_sum / SimDecision.stretch_n, SimDecision.stretch_hi])
 	print("  %-13s %7s %15s %17s %17s %9s" % [
 		"", "times", "success", "gain", "loss", "score gap"])
 	for kind in SimDecision.Action.size():
@@ -1522,16 +1525,6 @@ static func _what_a_term_is_worth() -> void:
 ## And what the pass model made of the ones that lost: the five factors their
 ## `success` is a product of. A success of 0.05 is one number and could be any of
 ## a dozen faults; these five say which.
-## The touch kind each pass action is logged as, so the model can be set beside
-## what the ball actually did.
-const PASS_TOUCH_OF := {
-	SimDecision.Action.GROUND_PASS: SimTelemetry.Touch.GROUND_PASS,
-	SimDecision.Action.LOFTED_PASS: SimTelemetry.Touch.LOFTED_PASS,
-	SimDecision.Action.THROUGH_BALL: SimTelemetry.Touch.THROUGH_BALL,
-	SimDecision.Action.CROSS: SimTelemetry.Touch.CROSS,
-}
-
-
 static func _why_the_pass_lost(events: Array) -> void:
 	var any := false
 	for kind in SimDecision.Action.size():
@@ -1558,7 +1551,7 @@ static func _why_the_pass_lost(events: Array) -> void:
 		var n := SimDecision.lost_at(kind, SimDecision.LOST_N)
 		if n < 1.0:
 			continue
-		var touch: int = PASS_TOUCH_OF.get(kind, -1)
+		var touch: int = SimDecision.PASS_TOUCH.get(kind, -1)
 		var res: int = int(resolved.get(touch, 0))
 		var rate := "  -" if res == 0 else "%9.0f%%" % (100.0 * float(ok.get(touch, 0)) / float(res))
 		print("    %-11s %8.2f %8.2f %8.2f %9.2f %8.2f %9.2f %10s" % [
@@ -1571,7 +1564,8 @@ static func _why_the_pass_lost(events: Array) -> void:
 			SimDecision.lost_at(kind, SimDecision.LOST_SUCCESS) / n,
 			rate,
 		])
-	print("    a ball in the air has no `in time` and no `lane`; both read 1.00 for it")
+	print("    a ball in the air has no `in time` and no `lane`, and a ball on the floor has")
+	print("    no `control`; each reads 1.00 rather than as a gap. See `receiver_touch`")
 	print("\n  and of the ones it played  (`said` against `completed` is the calibration)")
 	print("    %-11s %8s %8s %8s %9s %8s %9s %11s" % [
 		"", "space", "in time", "lane", "control", "struck", "said", "completed"])
@@ -1581,7 +1575,7 @@ static func _why_the_pass_lost(events: Array) -> void:
 		var n := SimDecision.lost_at(kind, SimDecision.PLAYED_N)
 		if n < 1.0:
 			continue
-		var touch: int = PASS_TOUCH_OF.get(kind, -1)
+		var touch: int = SimDecision.PASS_TOUCH.get(kind, -1)
 		var res: int = int(resolved.get(touch, 0))
 		var rate := "  -" if res == 0 else "%9.0f%%" % (100.0 * float(ok.get(touch, 0)) / float(res))
 		print("    %-11s %8.2f %8.2f %8.2f %9.2f %8.2f %9.2f %10s" % [
@@ -1608,6 +1602,67 @@ static func _why_the_pass_lost(events: Array) -> void:
 	print("    `success` is the best rejected ball of its kind and `completed` is what the")
 	print("    played ones did, so the gap between them is mostly selection. `said` is the")
 	print("    model on those same played balls: that pair is the calibration")
+	_how_wrong_the_model_is()
+
+
+## And the same calibration one ball at a time, which is what says *which* factor
+## is wrong. See `SimDecision.CALIB_BUCKETS`.
+##
+## Two questions, and the table above can answer neither. Is the model ordered --
+## does a ball it likes more actually arrive more often -- and is each factor
+## charging for something the match resolves? A factor that reads the same on the
+## balls that arrived and on the ones that did not is a constant wearing a
+## probability's clothes, and its whole contribution is the amount the model is
+## out by.
+static func _how_wrong_the_model_is() -> void:
+	var buckets := SimDecision.CALIB_BUCKETS.size() + 1
+	var n := 0.0
+	for kind in SimDecision.Action.size():
+		for b in buckets:
+			n += SimDecision.calib_at(kind, b, SimDecision.CAL_N)
+	if n < 1.0:
+		return
+	print("\n  is it ordered?  (%d played balls that resolved, by what the model said)" % int(n))
+	print("    %-13s %7s %8s %11s" % ["said", "balls", "said", "arrived"])
+	for b in buckets:
+		var count := 0.0
+		var said := 0.0
+		var ok := 0.0
+		for kind in SimDecision.Action.size():
+			count += SimDecision.calib_at(kind, b, SimDecision.CAL_N)
+			said += SimDecision.calib_at(kind, b, SimDecision.CAL_SAID)
+			ok += SimDecision.calib_at(kind, b, SimDecision.CAL_OK)
+		if count < 1.0:
+			continue
+		var label := ""
+		if b == 0:
+			label = "under %.2f" % float(SimDecision.CALIB_BUCKETS[0])
+		elif b == SimDecision.CALIB_BUCKETS.size():
+			label = "%.2f up" % float(SimDecision.CALIB_BUCKETS[b - 1])
+		else:
+			label = "%.2f - %.2f" % [
+				float(SimDecision.CALIB_BUCKETS[b - 1]), float(SimDecision.CALIB_BUCKETS[b])]
+		print("    %-13s %7d %8.2f %10.0f%%" % [label, int(count), said / count, 100.0 * ok / count])
+	print("\n  and which factor knew  (each kind, split by what became of the ball)")
+	print("    %-11s %6s %9s %12s %9s" % ["", "balls", "arrived", "given away", "spread"])
+	for kind in SimDecision.Action.size():
+		if not SimDecision.is_pass(kind):
+			continue
+		var lost_n := SimDecision.calib_part_at(kind, false, -1)
+		var ok_n := SimDecision.calib_part_at(kind, true, -1)
+		if lost_n < 1.0 or ok_n < 1.0:
+			continue
+		print("    %s" % SimDebug.ACTION_NAMES[kind])
+		for k in SimDecision.PARTS:
+			var good := SimDecision.calib_part_at(kind, true, k) / ok_n
+			var bad := SimDecision.calib_part_at(kind, false, k) / lost_n
+			print("      %-9s %6d %9.2f %12.2f %9.2f" % [
+				PART_NAMES[k], int(ok_n + lost_n), good, bad, good - bad])
+	print("    a factor at zero spread decided nothing: it is a constant, and the model")
+	print("    is out by it")
+
+
+const PART_NAMES := ["space", "in time", "lane", "control", "struck"]
 
 
 static func _cut_short_parts() -> PackedStringArray:

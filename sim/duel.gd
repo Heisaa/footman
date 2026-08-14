@@ -325,6 +325,10 @@ static func _resolve_pass_outcome(ctx: SimContext, receiver: SimPlayer, complete
 	var success := completed and receiver.team == passer.team
 	if success:
 		passer.passes_completed += 1
+	# And back to the model that priced it, which is the only place its claim can
+	# be set beside the ball rather than beside an average. A tally and nothing
+	# else; nothing in `sim/` reads it back.
+	SimDecision.note_pass_outcome(passer_id, ball.last_touch_kind, success)
 	ctx.log_event(SimTelemetry.Ev.PASS_OUTCOME, {
 		"p": passer_id,
 		"team": passer.team,

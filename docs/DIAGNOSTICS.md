@@ -139,6 +139,11 @@ engine's sits at 28% up the pitch, so the multiplier averaged 1.16 and never var
 **A constant whose input range you have not measured is a constant that may be doing
 nothing**, and this line is how you tell within one run.
 
+The `stretched at` line under it is the same check for `turnover_stretch`, the
+per-candidate half of the turnover price: mean over every candidate scored, and the
+worst single multiplier seen. A mean pinned at 1.00 or at `STRETCH_MAX` means the
+recovery thresholds sit outside what the engine's shapes actually do.
+
 Underneath it, **`what the pass model made of them`** breaks that `success` into the
 five factors it is a product of, for the pass kinds. This is the table to read when
 `success` is the answer, because a product of 0.05 is one number and could be one
@@ -155,15 +160,37 @@ times for every one that gets played and an ordinary pass loses twice, so the sa
 gap means different things in the two rows, and reading it as a calibration is how a
 model that is picking well gets mistaken for one that is wrong.
 
-The second table is the same five factors and the same model on the balls it
+The second table is the same factors and the same model on the balls it
 actually **played**, against the completion rate of those same balls. That pair is
-like-for-like. Measured, every kind sits 1.3 to 1.5 times its own claim — the
-residual is the model asking a stricter question than `completed` does — except the
-through ball, which sat at 2.2 and had `struck` at 0.72 against a pass to feet's
-0.90. `SPACE_TOLERANCE` is what that found: a ball into space was being graded
-against the boot of a standing receiver. The same instrument then said the cross
-claims 0.15 to 0.21 and completes at about that, which is the model being right
-about a bad ball rather than wrong about a good one.
+like-for-like. It found `SPACE_TOLERANCE` — a ball into space was being graded
+against the boot of a standing receiver, `struck` 0.72 against a pass to feet's
+0.90 — and it then said the cross claims 0.15 to 0.21 and completes at about that,
+which is the model being right about a bad ball rather than wrong about a good one.
+
+**A mean against a mean says the model is out by a factor and stops there**, and
+that is where this instrument ran out. It cannot tell one term charging for
+something the match never does from every term being a little strict, and those are
+different repairs in different functions.
+
+**`is it ordered?` and `which factor knew` are the same calibration one ball at a
+time**, which can. `SimDecision.note_pass_outcome` files each played ball's claim
+against what became of that ball, so both tables are the same population resolved
+individually rather than averaged.
+
+- **`is it ordered?`** buckets the balls by what the model said and prints what they
+  did. A model that is merely strict still *rises* across the buckets; one that does
+  not rise is not a model. Read this before touching a factor: an ordered model that
+  sits low is a level problem, and a flat one is a structural one.
+- **`which factor knew`** is the diagnosis. Each factor's mean on the balls that
+  arrived, beside its mean on the ones that did not. **A factor with no spread
+  decided nothing, and the model is out by the whole of it** — it is a constant
+  wearing a probability's clothes, and it will never explain a single ball.
+
+That is what it found. `control` came back at 0.86 on the balls that arrived and
+0.85 on the ones that did not, and `in time` at 0.96 against 0.99 — a term leaning
+the wrong way. Between them a flat 18% off every pass in the match, from two terms
+neither of which could move. `receiver_touch` and `_in_time` are the repairs, and
+the ground pass went from `said` 0.56 against 82% completed to 0.69 against 84%.
 
 **The `gain` column is not comparable across kinds.** A shot carries a gain of 1.0 by
 construction — the gain *is* the goal, and the scoring multiplies it by the chance of
@@ -423,6 +450,46 @@ A constant reaches a goal down six links, and each can break on its own:
 
 `./run.sh chains --against` is the command, and it asks links 4 to 6 again about a
 change rather than about a match.
+
+**`./run.sh strike` is link 0, and it is the one nothing else can reach.** Every
+link above asks what a term did to a decision. None of them asks whether the term
+described the *ball*. `execution_accuracy` claimed to share one error model with
+`_perturb`, and the two had drifted so far apart that the engine believed it could
+drop a thirty-metre ball inside seven metres of a spot 84% of the time when it does
+it a third of the time. The bench strikes the real ball with the real perturbation
+and integrates it to where it lands: no match, no ticks, 300 strikes a row, instant.
+
+Read the axes separately, which is the whole design. The sideways pair was right
+the entire time the long pair was out by four, and `struck` is their product — a
+single number cannot tell a model that is fine on one axis from one that is
+hopeless on the other. `docs/STATUS.md`, "The model of the strike had never been
+set beside the strike".
+
+The `bias` column is the long axis signed, because an RMS cannot tell a scatter
+from a systematic short, and those are different faults: scatter is the player's,
+a bias is the solver's. It is what the driven pass's launch was fitted with, and
+what found the roller landing 0.8-2.2 m short of the two-phase law at every
+distance — the law assumes a no-spin slide and the executed ball is launched
+with backspin.
+
+**Anything that touches `_perturb`, `aim_sigma`, `weight_sigma` or the lofted
+solver wants this run afterwards.** It is the only thing that can say the decision
+layer is still being told the truth.
+
+**The chain says a term reached the pick. It does not say the term was right.**
+`_pass_success`'s `control` factor would pass links 1 to 3 outright — it has a real
+input range, it varies by receiver, and it moves the score — and it was still worth
+nothing, because the balls it liked did not arrive any more often than the ones it
+did not. A term inside a *probability* has a seventh question the six do not ask:
+**did the thing it predicted happen?** `which factor knew`, under
+`what the pass model made of them`, is the only block that asks it, and
+`docs/PITFALLS.md`, "A factor with no spread is a constant", is what it found.
+
+**And a term can be about the wrong player.** `_lofted_success` priced every cross
+with `passing` while `SimTouch.lofted_pass` struck it with `crossing`. That term
+passes links 1 to 3 outright — it is present, it varies, it moves the score. It was
+simply asking about an attribute the ball never touches, and only reading the two
+call sites side by side finds it.
 
 **Read them in order.** A term that never reaches the pick cannot be blamed for an
 outcome, and a link that broke at 2 makes every measurement below it noise about

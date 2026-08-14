@@ -110,10 +110,13 @@ omission in a table rather than a design choice.
 | 10 | The third man | `SimPatterns` | + |
 | 11 | ~~Separate a ball into space from a ball to feet~~ built — `SimDecision.SPACE_TOLERANCE` | `SimDecision.pass_tolerance` | + |
 | 12 | Check the passer can perceive the option at all | `SimPerception` | ? |
-| 13 | What losing it costs the shape, not just the ball | `SimDecision.score_of` | - |
+| 13 | ~~What losing it costs the shape, not just the ball~~ built — `SimDecision.turnover_stretch` | `SimDecision.score_of` | - |
 | 21 | ~~A ball in behind has no length term~~ built — `SimDecision.behind_length_bias` | `SimDecision._add_passes` | ? |
 | 22 | ~~The ball in behind is a seventh of every pass~~ answered — `SimDecision.BEHIND_BREAK` | `SimDecision._add_passes` | ? |
 | 23 | A ball over the top should land short of the runner, not on him | `SimDecision._add_passes` | + |
+| 24 | The arrival contest is a neutral race, and the terms fail together | `SimDecision._pass_success` | ? |
+| 25 | ~~Nothing in the score pays for ground~~ built — `TERRITORY` 0.75, counterweighted by 13 | `SimDecision.score_of` | + |
+| 26 | The driven ball as its own candidate, not just its own strike | `SimDecision._add_passes`, `_pass_success` | ? |
 
 **(22) was neither the length nor the level, and both were tried.** The length term
 reshaped the pass and left the count alone, 207 against 211 over three seeds.
@@ -164,19 +167,50 @@ that three times.
 ball's `struck` read 0.72 against a pass to feet's 0.90, and the model priced the
 balls it played at 0.29 while 65% of them arrived.
 
-**(13) is the counterweight `TERRITORY` is missing**, and the burst has been
-waiting on the same thing since it was written. `loss` says what the ball is worth
-to the opponent where they win it and nothing about what shape the side is in when
-they do. A long ball forward and a short ball square are lost in the same currency,
-so the only thing holding the engine back from hitting the long one is `success`.
-`docs/STATUS.md`, "Passing forward, and the term that was missing", is the
-measurement: territory has to stay small because this does not exist. It is a
-second-order term on every candidate, so it wants care -- see the burst's own note
-in `_add_dribbles`, which declines to paper it over with a coefficient.
+**(25) and (13) are built, as one piece of work.** `SimDecision.turnover_stretch`
+prices what losing it stretched costs — the counterpress question, per candidate,
+off the nearest outfielder's time to the loss point — and with that counterweight
+in, `TERRITORY` went to 0.75, the size measured to produce hoofball without it.
+It did not this time: long forward balls 16% of passes at 60-69% completion,
+possessions still three to eight passes, final third up. `docs/STATUS.md`, "A
+turnover is priced by who can press it, and territory is paid in full".
+
+**(24) is what is left of the underconfidence, and it is `space`.** Two of the five
+factors turned out to be constants and are gone -- `receiver_touch` and `_in_time`,
+`docs/STATUS.md`, "The pass model was underconfident" -- and the ground pass went
+from `said` 0.56 against 82% completed to 0.69 against 84%. The residual is 1.2x and
+it is one term.
+
+`space` is `control_at`, a *share* of the grass weighted by arrival time, read as the
+probability we end up with the ball. On a ball rolled to a man's feet those are
+different questions: the share prices a neutral race for loose grass, and the
+receiver is standing on it, facing it, with the ball weighted to him. `is it
+ordered?` says where it bites -- close at the top (0.89 said, 92% arrived), light in
+the middle (0.46 said, 72%), which is the contested ball.
+
+Two things in it, and neither is a constant. **The arrival contest does not know the
+ball was aimed at somebody**: a defender arriving level with the receiver reads 0.5.
+And **the terms fail together and are multiplied as if they did not** -- the defender
+who lowers `space` lowers `lane`, and a ball struck under pressure is struck worse,
+so a product of three correlated failures over-counts the failure.
+
+**Do not close it with a scale factor on `space`.** `which factor knew` found the two
+constants by their zero spread and would read a third one exactly the same way.
 
 **(12) is a question, not a finding.** Nothing has been checked. Perception gates
 what a player knows, and an option outside it can never be generated — which
 would look exactly like a player ignoring an obvious ball.
+
+**(26) is the other half of the driven pass.** The strike is built: a firm ground
+pass leaves the boot low, skims, spins and sits down (`SimBallistics.ground_launch`),
+and the bench holds it to the pass model's claims. What the model still cannot say
+is why a footballer drives one: the ball is airborne over the middle of its journey,
+where the leg in the lane cannot cut it, and it costs the receiver a harder first
+touch. That is a candidate scored differently from the roller beside it —
+`_lane_survival` forgiving the hops, `receiver_touch` charging the arrival — plus
+the ground-curl the physics lacks (a rolling ball with sidespin runs straight
+here). Until then the driven ball is priced as a roller, which the bench says is
+honest to within a couple of metres on the long axis.
 
 ## Keeping the ball without spending a body
 
@@ -286,29 +320,31 @@ By how wrong the match looks without it, cheapest-first within that. This is a
 re-sort: the list used to be ordered by which items raised goals per match, which
 is the old approach and put the most visible defects last.
 
-1. **5** — blocks that cost the shooter, a keeper who narrows the angle, and
+1. ~~**25** — nothing in the score pays for ground.~~ Done, with **13** inside it:
+   the stretch term is the counterweight and `TERRITORY` 0.75 is the payment.
+2. **5** — blocks that cost the shooter, a keeper who narrows the angle, and
    defenders who do not let a carrier walk to the six-yard line. The engine gets
    into the penalty area about four times as often as football does, and once
    there nothing much resists. That is the largest single thing an eye watching a
    match would name, and it is deep defensive behaviour that is simply absent.
-2. **3** — parry versus hold. About a third of shots are second attempts within
+3. **3** — parry versus hold. About a third of shots are second attempts within
    four seconds of the last, so a scramble that football sees occasionally is the
    normal way this engine finishes an attack. Visible on screen every time.
-3. **Shielding, drawing the foul, beating a man** — the retention answer, and
+4. **Shielding, drawing the foul, beating a man** — the retention answer, and
    three individual behaviours a viewer can see and name. `docs/STATUS.md`,
    "Support is an angle problem", is the measurement that says positioning cannot
    substitute for them.
-4. **8b** — half done: the receiver's carry is priced, the map is not. What is
+5. **8b** — half done: the receiver's carry is priced, the map is not. What is
    left of it is a multi-step expected threat, and the cheaper thing in front of
    it is the carrier turning to face a run he cannot currently reach.
-5. ~~**20** — the break on the regain.~~ Done, and it turned into 8b: the men now
+6. ~~**20** — the break on the regain.~~ Done, and it turned into 8b: the men now
    run, and the ball still does not go to them.
-6. **10, 11, 12** — small passing work. Cheap, and worth taking whenever one of
+7. **10, 11, 12** — small passing work. Cheap, and worth taking whenever one of
    the above is blocked or waiting on the owner. **11 is done.**
-6. **2** — the two things `expected_goals` is still blind to. Real, but a
+8. **2** — the two things `expected_goals` is still blind to. Real, but a
    valuation correction rather than a behaviour, so almost nothing about it is
    visible by eye.
-7. **14, 15** — the attribute bookkeeping. Nothing a viewer can see, and neither
+9. **14, 15** — the attribute bookkeeping. Nothing a viewer can see, and neither
    costs more than an afternoon, but (15) is a squad the player pays for and does
    not get and (14) is two attributes being charged for and never delivered.
 

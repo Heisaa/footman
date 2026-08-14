@@ -99,8 +99,12 @@ const CUSHION_BEST := 0.8
 ## fraction of this, so it is a scale rather than a threshold -- nothing is
 ## clamped by it except a ball that is worse than all four at once.
 const DIFFICULTY_MAX := 1.6
-## Backspin on a firmly struck ground pass, as a fraction of the rolling rate.
-const PASS_BACKSPIN_FRACTION := 0.55
+## Sidespin on a driven pass, in rad/s of yaw, scaled by technique. Zero-mean:
+## one man wraps it round with the inside, the next steers it with the outside,
+## and the bend is a property of the strike rather than an aim the model owes.
+## Sized against the bench's sideways column, which has to stay inside `said`.
+const PASS_CURL_SIGMA := 1.6
+const PASS_CURL_CLAMP := 1.4
 ## A lofted ball carries sidespin and nothing else, and that is deliberate.
 ##
 ## Backspin was tried here, because a ball struck underneath really does come off
@@ -369,6 +373,85 @@ static func weight_sigma(player: SimPlayer, skill: float) -> float:
 	return lerpf(0.19, 0.055, clampf((skill + player.attrs.technique) * 0.5, 0.0, 1.0))
 
 
+## The base aim error of each strike, in one place, because the model and the
+## strike have to read the same number or `execution_accuracy` is describing a
+## ball nobody hits. They did not: the lofted model used 0.085 and the lofted
+## strike 0.07, and nothing could see it.
+##
+## The two air numbers still differ, and now on purpose. `./run.sh strike` rolls
+## the real ball against the integrator and says the *model* is right on the
+## sideways axis — 4.19 m said against 4.52 m at thirty metres — because a ball in
+## the air lands further out than the yaw at the boot implies: it inherits the
+## spread of its own range. `AIR_MODEL_AIM_BASE` is that, and the bench is what
+## keeps it honest. If it were pulled down to `AIR_AIM_BASE` for tidiness the one
+## axis that works would stop working.
+const GROUND_AIM_BASE := 0.055
+const AIR_AIM_BASE := 0.07
+const AIR_MODEL_AIM_BASE := 0.085
+
+## How much harder a ball in the air is to weight than one on the floor, and how
+## much of the aim error goes into the launch angle rather than across it. Both
+## were literals inside the two strikes; they are read by the model now, so they
+## cannot drift from it.
+const LOFT_WEIGHT_SCALE := 1.15
+const ELEVATION_SHARE := 0.75
+
+
+## The flight time a lofted ball is asked for. A function of the distance alone,
+## which is what lets the model work out the angle it leaves the boot at.
+##
+## There is a floor under it and it is not a taste question: below a certain
+## flight time the only way to cover the ground is to strike the ball harder than
+## a person can, and the solver will do it. Measured against the integrator, the
+## knee where launch speed runs away sits at about 0.2 + 0.045 d.
+static func lofted_flight(distance: float) -> float:
+	return clampf(0.2 + distance * 0.045, 0.7, 2.25)
+
+
+## The spread of where a struck ball finishes, along its own line.
+##
+## This was `weight_sigma * distance` — a linear map from a weight error to a
+## range error — and range is not linear in the strike. A ball in the air carries
+## `v^2 sin(2t)/g` and a ball on the grass decays as `v^2/2a`, so a weight factor
+## `w` moves the finishing point by `w^2`. It is the same square the `arrival_pace`
+## note records for the pace at the far end, in the other axis, and it was missed
+## in the same place twice.
+##
+## Rolled against the integrator by `./run.sh strike`, 300 strikes a row, the old
+## term was out by three on the floor and by four in the air:
+##
+##     lofted 20 m   said 2.12 m   rolled 10.22 m
+##     lofted 30 m   said 3.18 m   rolled 14.12 m
+##     lofted 40 m   said 4.24 m   rolled 17.28 m
+##
+## on the axis a ball in the air fails on, while the sideways axis was right the
+## whole time. That is why no aggregate ever showed it: the two errors are in
+## different directions and a single `struck` is their product.
+##
+## **`AIR_RANGE_SPREAD` is measured, not derived, and that is deliberate.** The
+## first version of this was a closed form — the square law plus the launch angle
+## the ball leaves at, `dR/R = 2 dt / tan(2t)` — and it reproduced the total at
+## thirty and forty metres. It was still wrong: cutting the elevation error to a
+## third moved the real ball by 7% where the formula said 60%, so the split was
+## wrong even though the sum was right. Drag, the solver and the `vel.y` floor all
+## live in that number and no closed form survived its own check. The bench is the
+## authority, and re-running it is what says whether this is still true after
+## anything in `_perturb` moves.
+static func long_sigma(player: SimPlayer, skill: float, distance: float, in_air: bool) -> float:
+	# Twice the weight error on the floor, because the ball stops where its speed
+	# runs out and that goes as the square of the strike.
+	var scale := AIR_RANGE_SPREAD if in_air else 2.0
+	return scale * weight_sigma(player, skill) * distance
+
+
+## How many times his weight error a ball in the air finishes off its mark by.
+## Off `./run.sh strike`: 4.8, 4.4 and 4.1 at twenty, thirty and forty metres, and
+## a flat number in the middle of that is closer to the ball than the shape the
+## closed form gave, which ran the wrong way across the range.
+const AIR_RANGE_SPREAD := 4.4
+
+
+
 ## Probability that a struck ball actually lands within `tolerance` of where it
 ## was aimed, given the same error model the execution uses.
 ##
@@ -376,11 +459,33 @@ static func weight_sigma(player: SimPlayer, skill: float) -> float:
 ## forty-metre ball because the target square looks good, having no idea the
 ## player cannot hit it. Sharing `aim_sigma` means tuning the error model
 ## automatically retunes what the engine is willing to attempt.
-static func execution_accuracy(ctx: SimContext, player: SimPlayer, skill: float, distance: float, base_sigma: float, tolerance: float, dir: Vector3 = Vector3.ZERO) -> float:
+static func execution_accuracy(ctx: SimContext, player: SimPlayer, skill: float, distance: float, base_sigma: float, tolerance: float, dir: Vector3 = Vector3.ZERO, long_axis: int = LONG_NONE) -> float:
 	var sigma := aim_sigma(ctx, player, skill, distance, base_sigma, dir)
-	var lateral := sigma * distance
-	var longitudinal := weight_sigma(player, skill) * distance
-	return _within(tolerance, lateral) * _within(tolerance, longitudinal)
+	var lateral := _within(tolerance, sigma * distance)
+	if long_axis == LONG_NONE:
+		return lateral
+	return lateral * _within(tolerance,
+		long_sigma(player, skill, distance, long_axis == LONG_AIR))
+
+
+## Whether a ball misses by being the wrong length, and by which law.
+##
+## Not every ball does, and charging them all alike is what this used to do. A
+## ball rolled at a man's feet and overhit by five metres has not missed him -- it
+## runs through him on the same line and he takes it moving. What that costs is
+## the pace it arrives at, which is real and is priced where it belongs, in
+## `arrival_pace` and the through ball's `arriving faster than the man can run`.
+##
+## A ball aimed at *grass* is the opposite. Nobody is standing on the spot to
+## catch a long one, so five metres past is five metres the runner has to make up,
+## and the ball in behind fails exactly this way. Same for anything in the air,
+## which stops where it lands.
+##
+## `LONG_GROUND` is the rolling law and `LONG_AIR` the flying one; `long_sigma`
+## has both and the difference between them is a factor of three.
+const LONG_NONE := 0
+const LONG_GROUND := 1
+const LONG_AIR := 2
 
 
 ## P(|X| < r) for a zero-mean normal, via the usual logistic approximation to
@@ -401,7 +506,7 @@ static func _perturb(ctx: SimContext, vel: Vector3, sigma_rad: float, weight_sig
 		var hl := horiz.length()
 		if hl > 1e-4:
 			var axis := horiz.cross(Vector3.UP) / hl
-			var pitch_err: float = ctx.rng.gauss_clamped(0.0, sigma_rad * 0.75 * elevation_scale, 2.8)
+			var pitch_err: float = ctx.rng.gauss_clamped(0.0, sigma_rad * ELEVATION_SHARE * elevation_scale, 2.8)
 			out = out.rotated(axis, pitch_err)
 	var weight: float = 1.0 + ctx.rng.gauss_clamped(0.0, weight_sigma_v, 2.5)
 	return out * clampf(weight, 0.45, 1.7)
@@ -550,14 +655,34 @@ static func ground_pass(ctx: SimContext, player: SimPlayer, target: Vector3, arr
 	var delta := SimConsts.horizontal(target - ctx.ball.pos)
 	var distance: float = maxf(delta.length(), 0.6)
 	var dir := delta / distance
-	var speed := ctx.ballistics.ground_pass_speed(distance, arrive_pace, ctx.env)
+	# The whole shape of the strike — speed, skim and the backspin that matches —
+	# comes from one place, `SimBallistics.ground_launch`, so the ball that is
+	# solved is the ball that is struck. A throw is always rolled out flat.
+	var speed: float
+	var drive := 0.0
+	if is_thrown(kind):
+		speed = ctx.ballistics.ground_pass_speed(distance, arrive_pace, ctx.env)
+	else:
+		var launch := ctx.ballistics.ground_launch(distance, arrive_pace, ctx.env)
+		speed = launch["speed"]
 
-	var sigma := aim_sigma(ctx, player, player.attrs.passing, distance, 0.055, dir)
+	var sigma := aim_sigma(ctx, player, player.attrs.passing, distance, GROUND_AIM_BASE, dir)
 	var vel := _perturb(ctx, dir * speed, sigma, weight_sigma(player, player.attrs.passing), 0.0)
 	vel.y = 0.0
-	var roll_rate := vel.length() / SimConsts.BALL_RADIUS
-	# Backspin proportional to how firmly the ball is struck.
-	var spin := -Vector3.UP.cross(vel.normalized()) * (roll_rate * PASS_BACKSPIN_FRACTION)
+	# The skim and the backspin are re-read off the *perturbed* speed, so an
+	# overhit ball is driven a little harder and flatter, the way it came off
+	# the boot, rather than wearing the intended strike's shape.
+	if not is_thrown(kind):
+		drive = SimBallistics.drive_loft(vel.length())
+	vel.y = drive
+	var roll_rate := SimConsts.horizontal_length(vel) / SimConsts.BALL_RADIUS
+	var spin := -Vector3.UP.cross(SimConsts.horizontal(vel).normalized()) \
+		* (roll_rate * SimBallistics.drive_backspin(drive))
+	# And the curl that rides on the driven ball. Zero-mean: one man wraps it
+	# with the inside of the boot, the next steers it with the outside.
+	if drive > 0.0:
+		spin += Vector3.UP * (ctx.rng.gauss_clamped(0.0, PASS_CURL_SIGMA, PASS_CURL_CLAMP)
+			* player.attrs.technique)
 
 	apply(ctx, player, kind, vel, spin, target_id, {"dist": distance})
 	_log_pass_attempt(ctx, player, kind, target, target_id, expected_value, distance, vel.length())
@@ -575,8 +700,8 @@ static func lofted_pass(ctx: SimContext, player: SimPlayer, target: Vector3, fli
 	var line := SimConsts.horizontal(aim - ctx.ball.pos)
 	var distance := line.length()
 
-	var sigma := aim_sigma(ctx, player, skill, distance, 0.07, line)
-	vel = _perturb(ctx, vel, sigma, weight_sigma(player, skill) * 1.15, 1.0)
+	var sigma := aim_sigma(ctx, player, skill, distance, AIR_AIM_BASE, line)
+	vel = _perturb(ctx, vel, sigma, weight_sigma(player, skill) * LOFT_WEIGHT_SCALE, 1.0)
 	vel.y = maxf(vel.y, 1.0)
 
 	apply(ctx, player, kind, vel, spin, target_id, {"dist": distance})

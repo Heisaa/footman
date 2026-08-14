@@ -86,7 +86,9 @@ const LOST_STRIDE := 23
 ## Named for what they mean rather than for either model's internals, so the two
 ## can share a table. A ball in the air has no `IN_TIME` and no `LANE` -- it
 ## cannot be cut out along the ground, which is the whole difference between it
-## and a pass -- and both come back as 1.0 for it rather than as a gap.
+## and a pass -- and a ball on the floor has no `CONTROL`, because a first touch
+## does not decide whether a pass arrives; see `receiver_touch`. Each comes back
+## as 1.0 for the model that does not have it rather than as a gap.
 const PART_SPACE := 0
 const PART_IN_TIME := 1
 const PART_LANE := 2
@@ -187,6 +189,47 @@ static var lost := PackedFloat32Array()
 ## Scratch for the tally: the best-scoring candidate of each kind this decision.
 static var _best_of_kind := PackedInt32Array()
 
+## --- The model against what became of the ball ------------------------------
+##
+## `PLAYED_MODEL` beside `completed` says the model is out by a factor and stops
+## there. It is a mean against a mean, so it cannot say whether the factor is one
+## term charging for something that never happens or every term being a little
+## strict, and those are different repairs in different functions.
+##
+## What separates them is the same balls resolved one at a time. A factor that is
+## a probability of something the match can actually do is *higher on the balls
+## that arrived than on the ones that did not*; a factor that is a flat discount
+## on a thing nothing resolves reads the same on both, and its whole contribution
+## is a constant the model is wrong by.
+##
+## Buckets of the product carry the other half: a model that is strict but ordered
+## rises across them, and one that is not ordered at all is not a model.
+const CALIB_BUCKETS := [0.25, 0.40, 0.55, 0.70, 0.85]
+const CAL_N := 0
+const CAL_SAID := 1
+const CAL_OK := 2
+const CAL_SLOTS := 3
+## Per pass kind and bucket: how many balls, what the model said, how many arrived.
+static var calib := PackedFloat32Array()
+## And per pass kind and outcome (0 given away, 1 arrived): a count and the
+## factors summed.
+##
+## Per kind, because the kinds are two different models sharing a table and a
+## factor can be a constant in one and the whole story in the other. Pooled, the
+## ground pass is three quarters of every played ball and the aerial branch cannot
+## be seen at all.
+static var calib_parts := PackedFloat32Array()
+const CALIB_PART_STRIDE := PARTS + 1
+const CALIB_KIND_STRIDE := 2 * CALIB_PART_STRIDE
+
+## What the model claimed about the ball a man has in flight, kept until it
+## resolves. One entry per player, because a man has one ball in flight at a time
+## -- so the claim and the outcome are the same ball, and not a join by order that
+## an unresolved pass would shift onto somebody else's.
+static var _flight := PackedFloat32Array()
+static var _flight_kind := PackedInt32Array()
+static var _flight_action := PackedInt32Array()
+
 
 ## Clears the rejection tally. Called from `SimMatch.setup` with the rest of the
 ## static state, because a static outlives the match that filled it.
@@ -198,6 +241,9 @@ static func reset() -> void:
 	exposure_sum = 0.0
 	exposure_line = 0.0
 	exposure_n = 0.0
+	stretch_sum = 0.0
+	stretch_n = 0.0
+	stretch_hi = 0.0
 	break_decisions = 0.0
 	break_in_window = 0.0
 	break_on_sum = 0.0
@@ -209,6 +255,15 @@ static func reset() -> void:
 	behind_gate.resize(BEHIND_GATES.size())
 	for i in behind_gate.size():
 		behind_gate[i] = 0.0
+	calib.resize(Action.size() * (CALIB_BUCKETS.size() + 1) * CAL_SLOTS)
+	for i in calib.size():
+		calib[i] = 0.0
+	calib_parts.resize(Action.size() * CALIB_KIND_STRIDE)
+	for i in calib_parts.size():
+		calib_parts[i] = 0.0
+	_flight.resize(0)
+	_flight_kind.resize(0)
+	_flight_action.resize(0)
 
 
 ## One slot of the tally, for the diagnostics to read.
@@ -219,7 +274,7 @@ static func lost_at(kind: int, slot: int) -> float:
 
 ## Files every kind that was on the list and did not get played, against the one
 ## that did.
-static func _note_rejections(chosen: int) -> void:
+static func _note_rejections(passer: int, chosen: int) -> void:
 	if lost.size() != Action.size() * LOST_STRIDE:
 		reset()
 	if _best_of_kind.size() != Action.size():
@@ -233,6 +288,7 @@ static func _note_rejections(chosen: int) -> void:
 			_best_of_kind[kind] = i
 	var won: Dictionary = _candidates[chosen]
 	var won_kind := int(won["action"])
+	_note_in_flight(passer, won_kind, chosen)
 	if is_pass(won_kind):
 		var won_at := chosen * PARTS
 		if won_at + PARTS <= _cand_parts.size():
@@ -272,6 +328,78 @@ static func _note_rejections(chosen: int) -> void:
 				lost[base + LOST_LANE] += _cand_parts[at + PART_LANE]
 				lost[base + LOST_CONTROL] += _cand_parts[at + PART_CONTROL]
 				lost[base + LOST_STRUCK] += _cand_parts[at + PART_STRUCK]
+
+
+## The touch each pass action is struck as, so a claim made about a candidate can
+## be matched to the ball that resolves. One map, because two would drift.
+const PASS_TOUCH := {
+	Action.GROUND_PASS: SimTelemetry.Touch.GROUND_PASS,
+	Action.LOFTED_PASS: SimTelemetry.Touch.LOFTED_PASS,
+	Action.THROUGH_BALL: SimTelemetry.Touch.THROUGH_BALL,
+	Action.CROSS: SimTelemetry.Touch.CROSS,
+}
+
+
+## Files what the model said about the ball this man is about to strike, and
+## clears the slot for anything that is not a pass, so a claim can never outlive
+## the decision that made it.
+static func _note_in_flight(passer: int, action: int, chosen: int) -> void:
+	if passer < 0:
+		return
+	if _flight_kind.size() <= passer:
+		_flight_kind.resize(passer + 1)
+		_flight_action.resize(passer + 1)
+		_flight.resize((passer + 1) * PARTS)
+	var at := chosen * PARTS
+	if not is_pass(action) or at + PARTS > _cand_parts.size():
+		_flight_kind[passer] = -1
+		return
+	_flight_kind[passer] = int(PASS_TOUCH.get(action, -1))
+	_flight_action[passer] = action
+	for k in PARTS:
+		_flight[passer * PARTS + k] = _cand_parts[at + k]
+
+
+## And what became of it, from wherever the pass resolves. `touch` is checked
+## against the claim so a restart -- a throw-in is a pass kind and never came out
+## of a decision -- cannot be filed against the last ball this man played.
+static func note_pass_outcome(passer: int, touch: int, ok: bool) -> void:
+	if passer < 0 or passer >= _flight_kind.size():
+		return
+	if _flight_kind[passer] != touch or touch < 0:
+		return
+	var action := _flight_action[passer]
+	_flight_kind[passer] = -1
+	if calib.size() != Action.size() * (CALIB_BUCKETS.size() + 1) * CAL_SLOTS:
+		reset()
+	var model := 1.0
+	for k in PARTS:
+		model *= _flight[passer * PARTS + k]
+	var b := 0
+	while b < CALIB_BUCKETS.size() and model >= float(CALIB_BUCKETS[b]):
+		b += 1
+	var base := (action * (CALIB_BUCKETS.size() + 1) + b) * CAL_SLOTS
+	calib[base + CAL_N] += 1.0
+	calib[base + CAL_SAID] += model
+	if ok:
+		calib[base + CAL_OK] += 1.0
+	var side := action * CALIB_KIND_STRIDE + (1 if ok else 0) * CALIB_PART_STRIDE
+	calib_parts[side] += 1.0
+	for k in PARTS:
+		calib_parts[side + 1 + k] += _flight[passer * PARTS + k]
+
+
+## One bucket of one kind, for the diagnostics to read.
+static func calib_at(kind: int, bucket: int, slot: int) -> float:
+	var i := (kind * (CALIB_BUCKETS.size() + 1) + bucket) * CAL_SLOTS + slot
+	return calib[i] if i >= 0 and i < calib.size() else 0.0
+
+
+## And one factor of one kind, on the balls that arrived or the ones that did not.
+## `slot` is -1 for the count and a `PART_*` otherwise.
+static func calib_part_at(kind: int, arrived: bool, slot: int) -> float:
+	var i := kind * CALIB_KIND_STRIDE + (1 if arrived else 0) * CALIB_PART_STRIDE + slot + 1
+	return calib_parts[i] if i >= 0 and i < calib_parts.size() else 0.0
 
 
 ## The kinds whose `success` is a product of the five factors above.
@@ -665,6 +793,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 			var length_bias := 1.0 / (1.0 + raw_distance * 0.21)
 			var call := _call_bias(ctx, mate)
 			var give_go := _give_and_go_bias(ctx, player, mate_id)
+			var touch := receiver_touch(mate)
 			_note_factor(SimAblation.F_FOCUS, gain - arrival - xt)
 			_note_factor(SimAblation.F_ARRIVAL, arrival)
 			_note_factor(SimAblation.F_OFF_BALANCE, off_balance)
@@ -673,6 +802,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 			_note_factor(SimAblation.F_SECURE, secure)
 			_note_factor(SimAblation.F_CALL, call)
 			_note_factor(SimAblation.F_GIVE_GO, give_go)
+			_note_factor(SimAblation.F_TOUCH, touch)
 			_candidates.append({
 				"action": Action.GROUND_PASS,
 				"target": mate_id,
@@ -689,7 +819,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				"pace": pace,
 				# Football's pass-length distribution is heavily short. Without
 				# this the engine plays a Hollywood ball every time.
-				"bias": tactics.retention_bias() * length_bias * secure * call * give_go,
+				"bias": tactics.retention_bias() * length_bias * secure * call * give_go * touch,
 			})
 			_keep_parts()
 			_keep_factors()
@@ -776,6 +906,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				var t_arrival := _arrival_gain(ctx, player.team, target, believed, mate, t_travel)
 				var t_call := _call_bias(ctx, mate)
 				var t_length := behind_length_bias(t_distance)
+				var t_touch := receiver_touch(mate)
 				_note_factor(SimAblation.F_FOCUS, t_xt * t_focus - t_xt)
 				_note_factor(SimAblation.F_ARRIVAL, t_arrival)
 				_note_factor(SimAblation.F_OFF_BALANCE, off_balance)
@@ -783,6 +914,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				_note_factor(SimAblation.F_LENGTH, t_length)
 				_note_factor(SimAblation.F_CALL, t_call)
 				_note_factor(SimAblation.F_BREAK, brk)
+				_note_factor(SimAblation.F_TOUCH, t_touch)
 				_candidates.append({
 					"action": Action.THROUGH_BALL,
 					"target": mate_id,
@@ -798,7 +930,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 					# same mismatch the carry had between its scored touch and
 					# its played one, in the other half of the decision layer.
 					"pace": t_pace,
-					"bias": tactics.direct_bias() * t_length * t_call * brk,
+					"bias": tactics.direct_bias() * t_length * t_call * brk * t_touch,
 				})
 				_keep_parts()
 				_keep_factors()
@@ -810,17 +942,11 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 		if raw_distance <= air_reach and (raw_distance > LOFTED_FROM or (box_target and raw_distance > 12.0)):
 			# Flight time, which is the whole character of a ball in the air: ask
 			# for a long one and the solver lobs it, ask for a short one and it
-			# drives it.
-			#
-			# There is a floor under this and it is not a taste question. Below a
-			# certain flight time the only way to cover the distance is to strike
-			# the ball harder than a person can, and the solver will do it — a
-			# 45 m pass asked for in 1.8 s comes out at 37 m/s. Measured against
-			# the integrator, the knee where launch speed starts to run away sits
-			# at about 0.2 + 0.045 d, and that is what this is. It used to be
-			# 0.75 + 0.032 d, a quarter of a second of hang above the knee at
-			# every distance a lofted pass is actually played over.
-			var flight: float = clampf(0.2 + raw_distance * 0.045, 0.7, 2.25)
+			# drives it. `SimTouch.lofted_flight` owns the rule and its own note
+			# has the knee it sits on -- it was a second copy here and a third in
+			# `_add_crosses`, and the accuracy model now needs the same number to
+			# work out the angle the ball leaves at.
+			var flight: float = SimTouch.lofted_flight(raw_distance)
 			# Where he is going, not where he is pointing. This was
 			# `believed + mate.vel * flight * 0.55` -- dead reckoning on the
 			# velocity he happens to have, which is the exact defect `_lead_point`
@@ -964,7 +1090,7 @@ static func _add_crosses(ctx: SimContext, player: SimPlayer, uncontrolled: bool)
 		var distance := SimConsts.horizontal_length(point - from)
 		if distance < CROSS_FROM or distance > SimTouch.strike_range(player, point - from, MAX_LOFTED_PASS):
 			continue
-		var flight: float = clampf(0.2 + distance * 0.045, 0.7, 2.25)
+		var flight: float = SimTouch.lofted_flight(distance)
 		# Who is attacking it. Not who is standing there.
 		var mate := -1
 		var soonest := INF
@@ -996,7 +1122,7 @@ static func _add_crosses(ctx: SimContext, player: SimPlayer, uncontrolled: bool)
 		return
 
 	var mate: SimPlayer = ctx.players[best_mate]
-	var success := _lofted_success(ctx, player, best_point, best_flight, mate)
+	var success := _lofted_success(ctx, player, best_point, best_flight, mate, Action.CROSS)
 	var distance := SimConsts.horizontal_length(best_point - from)
 	var xt := ctx.value.xt_at(player.team, best_point, ctx.pitch)
 	var focus := tactics.focus_at(best_point.z, ctx.pitch)
@@ -1400,9 +1526,9 @@ static func _pass_success(ctx: SimContext, player: SimPlayer, from: Vector3, to:
 	var in_time := 1.0
 	if not into_space:
 		var receiver_time := SimValueField.time_to_arrive(receiver, to, receiver.reaction)
-		in_time = 1.0 / (1.0 + exp(-(travel + 0.3 - receiver_time) / 0.45))
-	var lane := _lane_survival(ctx, player, from, to, travel, LANE_TAIL if into_space else 0.0)
-	var control: float = lerpf(0.72, 0.99, receiver.attrs.first_touch)
+		in_time = _in_time(travel + 0.3 - receiver_time,
+			SimConsts.horizontal_length(to - receiver.pos))
+	var lane := _lane_survival(ctx, player, from, to, travel, LANE_TAIL if into_space else FEET_TAIL)
 	var distance := SimConsts.horizontal_length(to - from)
 	# The line is handed to the accuracy estimate, not just its length, so the ball
 	# the passer would have to hit blind off his back foot is priced as the harder
@@ -1410,9 +1536,85 @@ static func _pass_success(ctx: SimContext, player: SimPlayer, from: Vector3, to:
 	# the facing model shows up only as passes going astray -- never as a player
 	# choosing to turn, or to give it to the man he can see instead.
 	var tolerance := pass_tolerance(distance) * (SPACE_TOLERANCE if into_space else 1.0)
-	var struck := SimTouch.execution_accuracy(ctx, player, player.attrs.passing, distance, 0.055, tolerance, to - from)
-	_note_parts(space, in_time, lane, control, struck)
-	return clampf(space * in_time * lane * control * struck, 0.0, 0.99)
+	# A ball into space is aimed at grass and a ball to feet is aimed at a man, so
+	# only the first of them can be the wrong *length*. See `SimTouch.LONG_NONE`.
+	var struck := SimTouch.execution_accuracy(ctx, player, player.attrs.passing, distance,
+		SimTouch.GROUND_AIM_BASE, tolerance, to - from,
+		SimTouch.LONG_GROUND if into_space else SimTouch.LONG_NONE)
+	# A ball along the floor has no `control` term. See `receiver_touch`: whether
+	# the man takes it cleanly is not whether the ball reaches him, and it is
+	# priced on what the pass is worth instead.
+	_note_parts(space, in_time, lane, 1.0, struck)
+	return clampf(space * in_time * lane * struck, 0.0, 0.99)
+
+
+## How sure the receiver is of being where the ball is going. `margin` is the
+## ball's journey less his own; `run` is how far he has to travel for it.
+##
+## The width was a flat 0.45 s, and a flat width is what made this a constant. A
+## man standing on the spot the ball is rolled to has a margin of a second and a
+## half, and a logistic never reaches one, so he was charged four per cent for a
+## race he is not running -- on every pass in the match, in a term that could
+## therefore never explain one.
+##
+## Measured over 358 played balls that resolved, `in time` came back at 0.96 on
+## the ones that arrived and 0.99 on the ones that did not: a term that knew
+## nothing, and leaned very slightly the wrong way. That is the signature of a
+## constant, and `docs/DIAGNOSTICS.md` now names it as one.
+##
+## The width is the running instead. A race over no ground has no uncertainty in
+## it; a race over twenty metres has most of a second, because a slip, a marker
+## picking him up, or a stride misread is what the uncertainty in a race *is*, and
+## none of it happens to a man who is already standing there.
+static func _in_time(margin: float, run: float) -> float:
+	var width: float = IN_TIME_WIDTH_FLOOR + run * IN_TIME_WIDTH_PER_M
+	return clampf(1.0 / (1.0 + exp(-margin / width)), 0.0, 1.0)
+
+const IN_TIME_WIDTH_FLOOR := 0.12
+const IN_TIME_WIDTH_PER_M := 0.05
+
+
+## How much of the far end of a lane belongs to the arrival rather than to the
+## journey, for a ball played to feet.
+##
+## `LANE_TAIL` says the last defender is charged twice when the two halves of the
+## pass model are divided exactly at the target -- he stands by it, so `space`
+## counts him, and the last stride of the lane runs past him, so `_lane_survival`
+## counts him again. That was found and fixed for the ball into space and left at
+## zero here, on the reasoning that nothing else had priced the man marking him.
+## `control_at` is what prices him, and always was.
+##
+## It is shorter than `LANE_TAIL` because it is the range over which `control_at`
+## actually has an opinion, and that is not the same range. A defender six metres
+## off a target the receiver is standing on arrives a second and a half behind him
+## and is weighed at `exp(-1.5 / 0.42)`, which is two per cent; at two metres he is
+## weighed at a fifth, which is a real charge. Two metres is where the double count
+## lives.
+const FEET_TAIL := 2.0
+
+
+## What the receiver's first touch is worth, as a discount on the ball rather than
+## on its arrival.
+##
+## This was the `control` factor of `_pass_success`, `lerpf(0.72, 0.99, ...)`, and
+## it was in the wrong model. A pass in this engine completes when a teammate
+## reaches the ball, whatever he then does with it -- `SimDuel._resolve_pass_outcome`
+## is the whole rule -- so a first touch cannot decide whether the pass arrives,
+## and the term was a flat fourteen per cent charged against an event the match
+## never produces. The instrument said so plainly: 0.86 on the balls that arrived
+## and 0.85 on the ones that did not, a spread of one point.
+##
+## What it prices is real and stays, one model along. A man who cannot take it
+## cleanly is worth less to give it to, because less of the position he is put in
+## survives his first touch -- and *that* the engine does simulate, in
+## `SimTouch.first_touch`. So it is a bias on the value of the ball, where it
+## changes which man gets picked without claiming the pass will not get there.
+##
+## The aerial branch keeps its own version and should: `_lofted_success`'s
+## `aerial` term is whether he wins the header, and losing a header is the other
+## side heading it, which is exactly the pass failing to arrive.
+static func receiver_touch(receiver: SimPlayer) -> float:
+	return lerpf(0.72, 0.99, receiver.attrs.first_touch)
 
 
 ## How far off a pass can land and still be a pass. A longer ball gives the
@@ -1460,17 +1662,68 @@ const SPACE_TOLERANCE := 1.8
 const AERIAL_TOLERANCE := 1.8
 
 
-static func _lofted_success(ctx: SimContext, player: SimPlayer, to: Vector3, flight: float, receiver: SimPlayer) -> float:
+static func _lofted_success(ctx: SimContext, player: SimPlayer, to: Vector3, flight: float, receiver: SimPlayer, kind: int = Action.LOFTED_PASS) -> float:
 	# A ball in the air cannot be cut out along the ground, but it is harder to
 	# control and easier to attack in the air.
 	var arrival := ctx.value.control_at_time(ctx, to, player.team, flight, player.id)
 	var aerial: float = lerpf(0.55, 0.95, (receiver.attrs.heading + receiver.attrs.jumping) * 0.5)
 	var distance := SimConsts.horizontal_length(to - ctx.ball.pos)
-	var struck := SimTouch.execution_accuracy(ctx, player, player.attrs.passing, distance, 0.085, pass_tolerance(distance) * AERIAL_TOLERANCE, to - ctx.ball.pos)
+	# The skill the ball is *struck* with. `SimTouch.lofted_pass` hits a cross with
+	# `crossing` and this priced every one of them with `passing`, so a winger who
+	# can cross and cannot pass was talked out of the ball he is in the side for,
+	# and a passer who cannot cross was talked into it. Link 1 of the chain: an
+	# attribute that never reaches the ball it belongs to.
+	var skill: float = player.attrs.crossing if kind == Action.CROSS else player.attrs.passing
+	var struck := SimTouch.execution_accuracy(ctx, player, skill, distance,
+		SimTouch.AIR_MODEL_AIM_BASE, pass_tolerance(distance) * AERIAL_TOLERANCE,
+		to - ctx.ball.pos, SimTouch.LONG_AIR)
+	# And where it goes when it does not go there, because a ball in the air that
+	# misses its spot is a loose ball and not a turnover.
+	#
+	# `struck` used to multiply straight through, which prices every ball that
+	# lands off the mark as the other side's. It is not. It drops twelve metres
+	# further on and somebody wins it there, and often enough that is us. Charging
+	# the full loss is the same mistake `receiver_touch` was: a factor claiming an
+	# outcome the match does not produce.
+	#
+	# So the miss is priced where it lands. `long_sigma` is how far off the ball
+	# goes and the engine now knows that honestly, which is what makes this
+	# answerable at all -- before `./run.sh strike` the model thought the scatter
+	# was a quarter of its real size, so there was nothing to scatter *to*.
+	var lands := lerpf(_scattered(ctx, player, to, flight, distance, skill), arrival, struck)
+	# Reported as the share of the aim point's worth that survives the scatter, so
+	# the `struck` column still says how well the ball was hit and the five factors
+	# still multiply out to the number the softmax was handed.
+	var delivered: float = clampf(lands / maxf(arrival, 1e-4), 0.0, 1.0)
 	# `struck` carries the passer's own skill as well here, and the two terms a
 	# ground ball has and this one does not come back as 1.0 rather than as a gap.
-	_note_parts(arrival, 1.0, 1.0, aerial, struck * lerpf(0.7, 0.95, player.attrs.passing))
-	return clampf(arrival * aerial * struck * lerpf(0.7, 0.95, player.attrs.passing), 0.0, 0.97)
+	_note_parts(arrival, 1.0, 1.0, aerial, delivered * lerpf(0.7, 0.95, skill))
+	return clampf(arrival * aerial * delivered * lerpf(0.7, 0.95, skill), 0.0, 0.97)
+
+
+## Who owns the grass a mis-hit ball actually lands on, as the mean of the two
+## ways it misses.
+##
+## Both, rather than the long one, because they are not the same miss and taking
+## either alone leans the model. A ball hit short drops among the bodies it was
+## aimed at, one of whom is our man arriving on it; a ball hit long clears all of
+## them and runs on, which for a cross is the keeper's or the byline's. One is
+## kinder than the aim point and one is harsher.
+##
+## It is two more `control_at_time` queries per aerial candidate, which is the one
+## thing here nobody has measured -- `perf` is the owner's to run. They are pruned
+## the same way every other control query is, and the aerial candidates are a
+## handful per decision, so the expectation is that it does not show.
+static func _scattered(ctx: SimContext, player: SimPlayer, to: Vector3, flight: float,
+		distance: float, skill: float) -> float:
+	var line := SimConsts.horizontal(to - ctx.ball.pos)
+	if line.length_squared() < 1e-6:
+		return 0.0
+	var off := line.normalized() * SimTouch.long_sigma(player, skill, distance, true)
+	var long_ball := _keep_in_play(ctx, to + off)
+	var short_ball := _keep_in_play(ctx, to - off)
+	return 0.5 * (ctx.value.control_at_time(ctx, long_ball, player.team, flight, player.id)
+		+ ctx.value.control_at_time(ctx, short_ball, player.team, flight, player.id))
 
 
 ## How much of the far end of a lane belongs to the destination rather than to
@@ -1488,8 +1741,10 @@ const LANE_TAIL := 6.0
 ## Probability no opponent intercepts along the line. Only opponents actually
 ## near the line are considered, which keeps this cheap.
 ##
-## `tail` is how much of the far end to leave to the destination model. Zero for
-## a ball to feet, where nothing else has priced the man marking him.
+## `tail` is how much of the far end to leave to the destination model:
+## `LANE_TAIL` for a ball into space, `FEET_TAIL` for one to feet. Neither is zero,
+## and the note that said a ball to feet had nothing else pricing the man marking
+## him was wrong -- `control_at` prices him, and always did.
 static func _lane_survival(ctx: SimContext, player: SimPlayer, from: Vector3, to: Vector3, travel: float, tail: float = 0.0) -> float:
 	var survival := 1.0
 	var seg := SimConsts.horizontal(to - from)
@@ -2065,12 +2320,13 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 	# Pace, acceleration and the room already won decide whether it comes off,
 	# and all three are in the race above.
 	#
-	# What the score does not carry is that the knock commits him past the ball:
-	# lose this one and the opponent has possession *and* a man behind it, where
-	# losing a short touch leaves the carrier still in the contest. That is a
-	# cost to the shape rather than to the ball's position, and a single-step
-	# model has no vocabulary for it -- the same limit POSSESSION_VALUE exists to
-	# patch. Left unmodelled rather than papered over with a coefficient.
+	# The knock commits him past the ball: lose this one and the opponent has
+	# possession *and* a man behind it, where losing a short touch leaves the
+	# carrier still in the contest. That cost waited here unmodelled for a long
+	# time rather than be papered over with a coefficient, and is now priced
+	# where every candidate pays it -- `turnover_stretch` in `score_of` reads
+	# the arrival point, and the arrival of a burst is exactly where the
+	# nearest recovering shirt is furthest away.
 	var b_xt := ctx.value.xt_at(player.team, arrival, ctx.pitch)
 	var b_focus := tactics.focus_at(arrival.z, ctx.pitch)
 	_note_factor(SimAblation.F_FOCUS, b_xt * b_focus - b_xt)
@@ -2246,31 +2502,33 @@ const POSSESSION_VALUE := 0.013
 ## *forward* pass score worse. Territory has to be priced where the bias cannot
 ## reach it, which is here, beside `POSSESSION_VALUE` and added after it.
 ##
-## At 0.4 a possession runs from three fifths of the average on your own goal
-## line to seven fifths of it on theirs: 0.0001 of goal probability per metre up
-## the pitch. An ordinary fifteen-metre ball forward is worth about a ninth of
-## the ball itself, the same ball backwards costs the same again, and it is
-## charged twice, because a turnover there hands the opponent a possession by the
-## same measure. It stays a small correction where expected threat is steep --
-## 0.018 against 0.3 inside the box -- and is the whole positional signal where
-## the map is flat, which is the region the ball would not leave.
+## An ordinary ball forward is worth a slice of the ball itself, the same ball
+## backwards costs the same again, and it is charged twice, because a turnover
+## hands the opponent a possession by the same measure. It stays a small
+## correction where expected threat is steep -- against 0.3 inside the box -- and
+## is the whole positional signal where the map is flat, which is the region the
+## ball would not leave.
 ##
-## The size is held down by a mechanic that does not exist. Territory is credited
-## in metres, so the ball that gains most of it is the long one, and a long ball
-## escapes the length bias entirely because this term is added after it. What
-## should be paying for that is the cost of losing it stretched -- the same thing
-## the knock past a man cannot price, three hundred lines up -- and nothing in a
-## single-step model can say it. `success` carries what there is: 0.47 on a thirty
-## metre ball against 0.9 on a short one.
+## The size was 0.4 for as long as its counterweight did not exist. Territory is
+## credited in metres, so the ball that gains most of it is the long one, a long
+## ball escapes the length bias because this term is added after it, and measured
+## at 0.75 in that engine the side stopped playing football: 37% of every ball
+## long and forward at 47% completion, possessions of 1.4 passes. What should
+## have been paying for that is the cost of losing it stretched, and now
+## `turnover_stretch` is: the long ball is charged per candidate for landing
+## where no shirt can press.
 ##
-## So it was measured for character rather than fitted to anything. On seed 7 at
-## ten minutes, against the same engine with this at zero: passes backwards 42% ->
-## 33%, forward 39% -> 56%, ground gained per possession 5.2 m -> 8.7 m, touches
-## in the final third 9% -> 16%, shots 14 -> 15, and a possession still 2.4 passes
-## long against 3.2. At 0.75 the ball goes further forward again and the engine
-## stops being a passing side: 37% of every ball long and forward at 47%
-## completion, possessions of 1.4 passes, 34 shots. One seed, ten minutes.
-const TERRITORY := 0.4
+## Re-measured with that in, seeds 7 and 3 at ten minutes, 0.4 against 0.75: long
+## forward balls 12% -> 16% of passes at 69% completion *both times*, backward
+## flat at 33%, touches in the final third 9% -> 12% and 13%, shots 5 -> 14 and
+## 9, possessions still three to eight passes long. The hoofball failure did not
+## come back because its cause is priced now -- the counterweight is what
+## changed, not the coefficient's defensibility.
+##
+## At 0.75 this equals `TERRITORY_URGENT` and the urgency lerp rests. A fact
+## about the compressed fit having guessed the same number, not a reason to fold
+## the two constants together.
+const TERRITORY := 0.75
 
 ## The same term for a match compressed to three minutes. See `SimMatchConfig`,
 ## "the compressed match's scoring fit" — this is a fourth knob in that fit and
@@ -2341,6 +2599,78 @@ const EXPOSURE_MAX := 2.5
 ## in `diagnose` beside the table it feeds.
 const EXPOSURE_FROM := 0.22
 const EXPOSURE_TO := 0.42
+
+## What losing the ball *there* costs beyond the ball, as a multiplier on that
+## candidate's `loss`. The per-candidate half of the turnover price, beside
+## `turnover_exposure`, which is per tick and therefore the same for every option
+## on the list.
+##
+## The football is the counterpress. A ball lost among your own shirts is
+## challenged within a second and often won straight back; a ball lost where you
+## have nobody hands the opponent a settled possession against a side that has to
+## reorganise before it can press. The engine charged both the same: `loss` reads
+## what the ball is worth to them at the point, `exposure` reads how high the
+## line is, and neither can tell a square ball lost in a crowd of teammates from
+## a forty-metre ball lost where no shirt can reach. What held the long ball back
+## was `success` alone — the burst's own note calls this "a cost to the shape
+## rather than to the ball's position", and declined to paper it over.
+##
+## So the question asked is the plain one: how long until somebody on the losing
+## side can put a challenge back on the ball? `time_to_arrive` for the nearest
+## outfielder, from position and velocity, the same model every race in the
+## engine runs. Inside `RECOVER_FREE` the loss is the loss already priced;
+## by `RECOVER_GONE` nobody can press and the turnover costs `STRETCH_MAX`
+## times the ball.
+##
+## This is the counterweight `TERRITORY`'s note says it is missing, and the
+## reason that constant had to stay small: territory is credited in metres, the
+## ball that gains most of them is the long one, and until this existed nothing
+## per candidate said what losing it stretched costs.
+const STRETCH_MAX := 2.0
+## Seconds to a challenge at the loss point. Below the first there is no extra
+## charge; the second is a press that cannot happen. Both are checked against the
+## engine rather than trusted: the mean and range are printed in `diagnose`
+## beside the exposure line, because `EXPOSURE_FROM`'s own note records what a
+## constant chosen from a mental picture does — it sits outside the range the
+## engine reaches and never varies.
+const RECOVER_FREE := 1.0
+const RECOVER_GONE := 3.0
+
+## What the stretch multiplier actually came out at over the match, like
+## `exposure_sum` above and for the same reason.
+static var stretch_sum := 0.0
+static var stretch_n := 0.0
+static var stretch_hi := 0.0
+
+
+static func turnover_stretch(ctx: SimContext, team: int, point: Vector3) -> float:
+	var best := INF
+	for pid in ctx.team_players[team]:
+		var p := ctx.players[pid]
+		if not p.on_pitch or p.is_keeper:
+			continue
+		var t := SimValueField.time_to_arrive(p, point, SimValueField.reaction_of(p))
+		if t < best:
+			best = t
+	if is_inf(best):
+		return 1.0
+	var t: float = clampf((best - RECOVER_FREE) / maxf(RECOVER_GONE - RECOVER_FREE, 0.01), 0.0, 1.0)
+	return lerpf(1.0, STRETCH_MAX, t)
+
+
+## The applied value goes through here so the instrument counts the football and
+## not the ablation pass's re-scores.
+static func _stretch_applied(ctx: SimContext, team: int, point: Vector3, ablate: int) -> float:
+	if ablate == SimAblation.T_STRETCH:
+		return 1.0
+	var out := turnover_stretch(ctx, team, point)
+	if ablate < 0:
+		stretch_sum += out
+		stretch_n += 1.0
+		if out > stretch_hi:
+			stretch_hi = out
+	return out
+
 
 static var _exposure := PackedFloat32Array()
 static var _exposure_tick := -1
@@ -2691,7 +3021,9 @@ static func score_of(ctx: SimContext, player: SimPlayer, c: Dictionary, delay: f
 	else:
 		gain *= bias
 	loss += possession_value(ctx, SimConsts.other_team(player.team), settles, ablate)
-	loss *= exposure
+	# Per candidate, where exposure is per tick: what losing it *there* costs,
+	# given who could put a challenge back on it.
+	loss *= exposure * _stretch_applied(ctx, player.team, settles, ablate)
 	return success * gain - (1.0 - success) * risk * loss
 
 
@@ -2777,7 +3109,8 @@ static func _hold_score(ctx: SimContext, player: SimPlayer, c: Dictionary, best_
 					SimAblation.T_RISK: risk = 1.0
 					SimAblation.T_RISK_HALF: risk = 0.0
 	var loss: float = (float(c["loss"]) + possession_value(
-		ctx, SimConsts.other_team(player.team), c["end"], ablate)) * exposure
+		ctx, SimConsts.other_team(player.team), c["end"], ablate)) * exposure \
+		* _stretch_applied(ctx, player.team, c["end"], ablate)
 	var continuation := 0.0
 	if best_index >= 0:
 		continuation = score_of(ctx, player, _candidates[best_index],
@@ -2837,7 +3170,7 @@ static func _softmax_pick(ctx: SimContext, player: SimPlayer) -> Dictionary:
 	var idx: int = ctx.rng.weighted_index(_weights)
 	if idx < 0:
 		idx = 0
-	_note_rejections(idx)
+	_note_rejections(player.id, idx)
 	if SimChoices.enabled:
 		_note_choice(ctx, player, idx)
 	_last_pick = idx
@@ -3060,7 +3393,10 @@ static func _note_term_values(ctx: SimContext, player: SimPlayer, term: int) -> 
 				SimAblation.note_value(term, (1.0 - success) * tactics.risk_weight()
 					* (float(c["loss"]) + possession_value(
 						ctx, SimConsts.other_team(player.team), c["end"]))
-					* turnover_exposure(ctx, player.team))
+					* turnover_exposure(ctx, player.team)
+					* turnover_stretch(ctx, player.team, c["end"]))
+			SimAblation.T_STRETCH:
+				SimAblation.note_value(term, turnover_stretch(ctx, player.team, c["end"]))
 			_:
 				var slot: int = SimAblation.TERM_SLOT[term]
 				if slot < 0:

@@ -23,6 +23,7 @@ When one is built, move the row and put the account in `docs/STATUS.md`.
 | Behaviour | | Where |
 |---|---|---|
 | Pass to feet | built | `SimDecision._add_passes` |
+| Firm pass driven low, not rolled — skims, spins, sits down | partial — the ball does it and the model prices it as a roller; a driven ball the score treats differently is `docs/BACKLOG.md` 26 | `SimBallistics.ground_launch`, `SimTouch.ground_pass` |
 | Through ball in behind | built | `_add_passes` |
 | Lofted pass, cross | partial — aimed where he is going, still weighted to land on him rather than short and roll on (`docs/BACKLOG.md` 23) | `_add_passes` |
 | Shot, with a chosen placement | built | `_add_shot`, `_pick_shot_aim` |

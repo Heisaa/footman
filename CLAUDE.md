@@ -72,6 +72,7 @@ unwritable here.
 ./run.sh view                    # 2D debug view (display) | demo is the 6-a-side one
 ./run.sh view3d --debug          # the match with the decision overlay on (display)
 ./run.sh view3d --from-bookmark seed7-t34210   # watch a marked moment again, slowly
+./run.sh strike                  # where a struck ball lands vs where the model said
 ./run.sh shot | poses            # one frame to a PNG via xvfb | the labelled pose sheet
 ./run.sh record-golden           # re-baseline the golden replay hashes
 ```
@@ -104,7 +105,8 @@ quantity ("it cuts too often") — then once, and stop.
 **Which runs are mine, which are yours.** Three tiers, and
 `.claude/hooks/guard-slow-runs.sh` enforces them.
 
-- **Mine, no asking.** `check`; `diagnose --seed N --minutes 10` or shorter;
+- **Mine, no asking.** `check`; `strike` and `behind`, which run no match at all;
+  `diagnose --seed N --minutes 10` or shorter;
   `test --only rng|ball|locomotion|value_field`; and `record-golden`, which is
   required after a mechanic change rather than optional.
 - **Yours to approve, mine to offer.** Everything measured in minutes: the slow

@@ -24,6 +24,85 @@ const _ROLL_FRACTION := _SLIP * _SLIP
 const CORRECTION_DAMPING := 0.55
 
 
+# --- The driven pass --------------------------------------------------------
+
+## A firm pass is driven, not rolled. Nobody plays a twenty-metre ball in
+## constant contact with the grass — it leaves the boot a few degrees up, skims
+## in low hops, and sits down into a roll. The skim starts where the strike gets
+## firm and grows with it, in metres per second of climb per metre per second of
+## launch above `DRIVE_FROM`; the cap keeps the apex under a shin.
+const DRIVE_FROM := 11.0
+const DRIVE_LOFT_PER := 0.45
+const DRIVE_LOFT_MAX := 2.0
+## Backspin as a fraction of the rolling rate, at the two ends of the strike. A
+## rolled pass is clipped under, and its backspin is the slide the two-phase law
+## already describes. A driven ball is hit through the middle and skids on —
+## given the roller's backspin it checked at every bounce like a wedge shot,
+## measured on the bench at 4 m short over 22 m.
+const ROLL_BACKSPIN := 0.55
+const DRIVE_BACKSPIN := 0.2
+
+## How steep the skim is for a ball leaving the boot at `h_speed` along the
+## grass. Zero is a roller. One rule, read by the solver below and by
+## `SimTouch.ground_pass`, so the ball that is solved is the ball that is struck.
+static func drive_loft(h_speed: float) -> float:
+	return clampf((h_speed - DRIVE_FROM) * DRIVE_LOFT_PER, 0.0, DRIVE_LOFT_MAX)
+
+
+## And how flat it is hit, blending from the roller's backspin to the driven
+## ball's as the skim grows.
+static func drive_backspin(loft: float) -> float:
+	return lerpf(ROLL_BACKSPIN, DRIVE_BACKSPIN, loft / DRIVE_LOFT_MAX)
+
+
+## The complete prescription for a ground pass: launch speed, skim, and the
+## backspin that matches, as `{"speed", "loft", "backspin"}`.
+##
+## A roller comes straight off the closed form. A driven ball cannot — the hops
+## replace grass friction with drag and bounce losses in a mix no closed form
+## sees, and fitting a scale factor instead would break the invariant the solve
+## exists for: arrival pace is solved *against* the surface, so a wet or long
+## pitch strikes the ball differently and it still arrives at the pace asked
+## for. So the driven launch iterates the real integrator, like the lofted
+## solver above it and for the same reason.
+func ground_launch(distance: float, arrive_pace: float, env: SimEnv) -> Dictionary:
+	var speed := ground_pass_speed(distance, arrive_pace, env)
+	var loft := drive_loft(speed)
+	if loft <= 0.0:
+		return {"speed": speed, "loft": 0.0, "backspin": ROLL_BACKSPIN}
+	var slide_decel: float = maxf(env.slide_friction * SimConsts.GRAVITY, 0.5)
+	var roll_decel: float = maxf(env.roll_decel, 0.1)
+	var k := _SLIDE_FRACTION / (2.0 * slide_decel) + _ROLL_FRACTION / (2.0 * roll_decel)
+	for i in 6:
+		var reached := _driven_range(speed, arrive_pace, env)
+		var short := distance - reached
+		if absf(short) < 0.15:
+			break
+		# Newton step on the law's own slope, range = k v^2, which is close
+		# enough to steer by even though the hops are what it cannot see.
+		speed = clampf(speed + short / maxf(2.0 * k * speed, 0.5), DRIVE_FROM, 34.0)
+	return {"speed": speed, "loft": drive_loft(speed), "backspin": drive_backspin(drive_loft(speed))}
+
+
+## Where a driven ball launched at `h_speed` has decayed to `arrive_pace` —
+## the point the pass model aims at and the point a receiver meets it. The same
+## criterion the strike bench lands on, deliberately.
+func _driven_range(h_speed: float, arrive_pace: float, env: SimEnv) -> float:
+	_scratch.reset(Vector3(0.0, SimConsts.BALL_RADIUS, 0.0))
+	var loft := drive_loft(h_speed)
+	# Backspin for travel along +X. `SimBall`'s own convention: rolling without
+	# slipping along +X is (0, 0, -v/r), so backspin is the positive z.
+	var spin := Vector3(0.0, 0.0, h_speed / SimConsts.BALL_RADIUS * drive_backspin(loft))
+	_scratch.launch(Vector3(h_speed, loft, 0.0), spin)
+	var t := 0.0
+	while t < 6.0:
+		_scratch.integrate(SimConsts.FORECAST_DT, env)
+		t += SimConsts.FORECAST_DT
+		if _scratch.vel.length() <= arrive_pace:
+			break
+	return _scratch.pos.x
+
+
 ## Launch speed for a ground pass that travels `distance` and arrives at
 ## `arrive_pace` metres per second.
 func ground_pass_speed(distance: float, arrive_pace: float, env: SimEnv) -> float:

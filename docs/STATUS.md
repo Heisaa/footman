@@ -2050,3 +2050,345 @@ the through ball's arrival pace was, in the air instead of on the grass.
 `docs/BACKLOG.md` (23).
 
 **Goldens re-recorded after each of the three that changed behaviour.**
+
+## The pass model was underconfident, and two of its five terms were constants
+
+`_pass_success` said 0.56 on the balls it played while 82% of them arrived. That was
+pre-existing and the travel-time fix made it worse: correcting the input the model
+sits on exposed how the model itself is calibrated. It is not one number out of
+place — a probability that is out by half is what multiplies `loss` in
+`success * gain - (1 - success) * risk * loss`, so every ball in the match was priced
+as a giveaway it was not, and the engine recycled instead of playing.
+
+### A mean against a mean could not say which term was wrong
+
+`said` against `completed` is the calibration and it names nothing. A product of five
+factors 1.46x light is either one term charging for something the match never
+resolves or five terms each slightly strict, and those are different repairs in
+different files.
+
+So the same balls are now resolved one at a time. `SimDecision.note_pass_outcome`
+files each played ball's claim against what became of *that ball* — the pairing is
+exact rather than a join by order, because a man has one ball in flight at a time —
+and two tables come out of it:
+
+**`is it ordered?`**, the claim bucketed against the outcome. Seed 7 before any
+repair:
+
+| said | balls | said | arrived |
+|---|---|---|---|
+| under 0.25 | 36 | 0.18 | 44% |
+| 0.25 - 0.40 | 68 | 0.34 | 66% |
+| 0.40 - 0.55 | 67 | 0.47 | 81% |
+| 0.55 - 0.70 | 116 | 0.61 | 90% |
+| 0.70 - 0.85 | 70 | 0.76 | 87% |
+
+**The model was never wrong about which ball was better.** It rises the whole way.
+That is a level problem, not a structural one, and it is worth knowing before
+touching a factor.
+
+**`which factor knew`**, each factor's mean on the balls that arrived beside its mean
+on the ones that did not:
+
+| factor | arrived | given away | spread |
+|---|---|---|---|
+| space | 0.77 | 0.62 | **0.15** |
+| in time | 0.96 | 0.99 | **-0.03** |
+| lane | 0.94 | 0.86 | 0.08 |
+| control | 0.86 | 0.85 | **0.01** |
+| struck | 0.93 | 0.91 | 0.02 |
+
+**A factor with no spread decided nothing, and the model is out by the whole of it.**
+`control` and `in time` are constants wearing a probability's clothes: between them a
+flat 18% off every pass in the match, from two terms that could not explain a single
+one of them.
+
+### `control` was charging for an event the engine never produces
+
+`lerpf(0.72, 0.99, first_touch)`, the receiver's ability to take it down. A pass in
+this engine completes when a teammate *reaches* the ball, whatever he then does with
+it — `SimDuel._resolve_pass_outcome` is the whole rule — so a first touch cannot
+decide whether the pass arrives. Fourteen per cent charged against nothing.
+
+The football in it is real and stays, one model along. A man who cannot take it
+cleanly is worth less to give it to, because less of the position survives his first
+touch, and *that* the engine does simulate. So it is `receiver_touch`, a bias on the
+value of the ball, where it still picks the man without claiming the pass will not
+get there. The aerial branch keeps its own version and should: losing a header is
+the other side heading it, which is exactly the ball failing to arrive.
+
+### `in time` was a flat width on a race nobody was running
+
+`1/(1 + exp(-(travel + 0.3 - receiver_time)/0.45))`. A man standing on the spot the
+ball is rolled to has a margin of a second and a half, and **a logistic never reaches
+one**, so he was charged four per cent for a race he is not in — on every pass, in a
+term that therefore leaned very slightly the wrong way.
+
+The width is the running now: `0.12 + 0.05` per metre he has to cover. A race over no
+ground has no uncertainty in it, and the slip, the marker, the misread stride that
+the width is *for* all live in the running. The term is 0.99 with no spread
+afterwards, which is the right answer — it is a gate that bites when a man cannot get
+there, not a tax on every ball.
+
+### And the double count `LANE_TAIL` had already named once
+
+`LANE_TAIL`'s own note says that dividing the two halves of the pass model exactly at
+the target charges the last defender twice: he stands by it, so `space` counts him,
+and the last stride of the lane runs past him, so `_lane_survival` counts him again.
+That was found and fixed for the ball into space and left at zero for the ball to
+feet, on the reasoning that nothing else had priced the man marking him. `control_at`
+prices him, and always did. `FEET_TAIL` is 2.0 m, shorter than `LANE_TAIL` because it
+is the range over which `control_at` actually has an opinion — six metres off a
+target the receiver is standing on is `exp(-1.5/0.42)`, two per cent.
+
+### What it did
+
+Seed 7 and seed 3, ten minutes each:
+
+| | seed 7 before | seed 7 after | seed 3 after |
+|---|---|---|---|
+| ground pass `said` | 0.56 | **0.69** | **0.72** |
+| ground pass completed | 82% | 84% | 85% |
+| out by | 1.46x | **1.22x** | **1.18x** |
+
+**The engine got braver, which is the whole point.** Seed 7: shots 12 to 20, touches
+in the final third 14% to 20%, touches in the box 18 to 21, crosses 2 to 9, ground
+passes 348 to 293. A pass model that halves its own success rate spends the match
+buying insurance against a giveaway that was not coming; priced honestly, the ball
+goes forward. **Do not read that as tuning** — no constant was chosen to move it, and
+the shot count off two ten-minute seeds is not a measurement anyway.
+
+### What is left, and it is `space`
+
+The residual is 1.2x and it is one term. `space` is `control_at`, a *share* of the
+grass weighted by arrival time, and it is being read as the probability we end up
+with the ball. On a ball rolled to a man's feet those are not the same question: the
+share prices a neutral race for loose grass, and the receiver is standing on it,
+facing it, with the ball weighted to him. The reliability table says where it bites —
+the model is close at the top (0.89 said, 92% arrived) and light in the middle
+(0.46 said, 72% arrived), which is exactly the contested ball.
+
+Two further things are in that residual and neither is a constant:
+
+1. **The arrival contest does not know the ball was aimed at somebody.** A defender
+   who gets there level with the receiver reads 0.5 and should not.
+2. **The terms fail together and are multiplied as if they did not.** The defender
+   who lowers `space` is the same defender who lowers `lane`, and a ball struck under
+   pressure is struck worse. A product of three correlated failures over-counts the
+   failure. That is a joint model and a real piece of work.
+
+`docs/BACKLOG.md` (24). **Do not close this with a scale factor on `space`** — the
+instrument that found the two constants would read a third one exactly the same way.
+
+**Goldens re-recorded.**
+
+## The model of the strike had never been set beside the strike
+
+`execution_accuracy` exists so a value function cannot pick a forty-metre ball on
+the strength of the grass at the far end, having no idea the player cannot hit it.
+Its own note says the point of it is that **the model and the strike share one
+error model**. Nothing had ever checked that they did, and they did not.
+
+### `./run.sh strike` — the check that was missing
+
+Strike the real ball, with the real `_perturb`, and integrate it to where it
+lands. No match, no ticks, 300 strikes a row. What came back:
+
+| | sideways said | sideways rolled | long said | long rolled | in tolerance said | rolled |
+|---|---|---|---|---|---|---|
+| ground 22 m | 1.83 m | 1.69 m | 2.33 m | **6.79 m** | 76% | **31%** |
+| lofted 20 m | 2.52 m | 2.70 m | 2.12 m | **10.22 m** | 94% | **48%** |
+| lofted 30 m | 4.19 m | 4.52 m | 3.18 m | **14.12 m** | 84% | **33%** |
+| lofted 40 m | 6.14 m | 6.62 m | 4.24 m | **17.28 m** | 74% | **28%** |
+
+**The sideways axis was right the whole time and the long axis was out by four.**
+That is why no aggregate ever showed it: the two errors run in different
+directions and `struck` is their product, so a single number could not separate a
+model that is fine on one axis from one that is hopeless on the other.
+
+The engine believed it could drop a thirty-metre ball inside seven metres of a spot
+84% of the time. It does it a third of the time.
+
+### Range is not linear in the strike, and it never was
+
+`longitudinal = weight_sigma * distance` maps a weight error onto a range error in
+a straight line. A ball in the air carries `v^2 sin(2t)/g` and a ball on the grass
+decays as `v^2/2a`, so a weight factor `w` moves the finishing point by `w^2`. It
+is the same square the `arrival_pace` note already recorded for the pace at the far
+end — **found once, in one axis, and left standing in the other**.
+
+**And the closed form that replaced it did not survive its own bench.** The first
+version was the square law plus the launch angle, `dR/R = 2 dt / tan(2t)`, and it
+reproduced the total at thirty and forty metres. It was still wrong: cutting the
+elevation error to a third moved the real ball by 7% where the formula said 60%,
+so the split was wrong even though the sum was right. Drag, the solver and the
+`vel.y` floor all live in that number. `AIR_RANGE_SPREAD` is measured off the bench
+instead, and says so.
+
+### Only a ball aimed at grass can be the wrong length
+
+The old term charged every kind alike. A ball rolled at a man's feet and overhit by
+five metres has not missed him — it runs through him on the same line and he takes
+it moving, and what that costs is the pace it arrives at, which is priced in
+`arrival_pace`. A ball aimed at *space* is the opposite: nobody is standing on the
+spot, so five metres past is five metres the runner has to make up. `LONG_NONE`,
+`LONG_GROUND` and `LONG_AIR` are that, and it is the difference between a pass and
+a ball in behind failing for the same reason.
+
+### The cross was priced with an attribute it is not struck with
+
+`SimTouch.lofted_pass` hits a cross with `crossing`. `_lofted_success` priced every
+one of them with `passing`. So a winger who can cross and cannot pass was talked
+out of the ball he is in the side for, and a passer who cannot cross was talked
+into it. **Link 1 of the chain: an attribute that never reaches the ball it belongs
+to**, and `--ablate` cannot see it because the term is present, varies and moves
+the score — it is simply about the wrong player.
+
+### A ball in the air that misses its spot is a loose ball, not a turnover
+
+With the accuracy honest, the aerial model went *further* out of calibration, not
+less: `said` 0.11 against 40% completed. `struck` was multiplying straight through,
+which prices every ball that lands off the mark as the other side's. It is not. It
+drops twelve metres further on and somebody wins it there, and often enough that is
+us.
+
+So the miss is priced where it lands — `control_at_time` at the aim point displaced
+by one `long_sigma`, both ways, because a ball hit short drops among the bodies it
+was aimed at and a ball hit long clears all of them. That took the lofted ball to
+`said` 0.32 against 55%. **It is answerable only because the scatter is now known
+honestly**: before the bench the model thought the ball missed by a quarter of what
+it does, so there was nowhere to scatter *to*.
+
+### What it did, and the finding underneath it
+
+Four ten-minute seeds, 7, 3, 11 and 5:
+
+| | before | after |
+|---|---|---|
+| lofted `said` v completed | 0.31 v 61% | **0.32 v 55%** |
+| ground pass `said` v completed | 0.69 v 84% | **0.72 v 83%** |
+| touches in the final third | 16% | **10%** |
+| shots | 20, 17 | 17, 9, 14, 4 |
+
+**The over-priced long ball was the engine's entire route into the final third.**
+Priced honestly it plays fewer of them, and nothing replaces them: possessions
+reach midfield and stop, 71% of touches live there, and the ball goes sideways
+because sideways is what an expected-value maximiser does when nothing in the score
+pays for ground.
+
+That is `docs/BACKLOG.md` (13) arriving, and its own entry called it: *"the only
+thing holding the engine back from hitting the long one is `success`"*. Success was
+wrong, in the direction that let it hit the long one anyway, and correcting it has
+left the hole with nothing over it. **Do not read the territory drop as this change
+being wrong** — read it as the counterweight now being the next thing that has to
+exist.
+
+**Do not read the shot counts at all.** 17, 9, 14 and 4 across four seeds of one
+setting is the same warning the through-ball thread recorded: a ten-minute seed
+does not resolve a match-level count, and an earlier revision of this work read 5
+shots on one seed as breakage when it was noise plus a worse formula.
+
+**Goldens re-recorded.**
+
+## A turnover is priced by who can press it, and territory is paid in full
+
+`docs/BACKLOG.md` (25), and (13) with it, because they were one piece of work:
+the honest strike model had left the engine keeping the ball beautifully and
+never going anywhere — 71% of touches in the middle third — and the reason it
+could not be paid to go forward was that nothing per candidate said what losing
+it stretched costs.
+
+`SimDecision.turnover_stretch` is that term. The question it asks is the
+counterpress: how long until somebody on the losing side can put a challenge
+back on the ball where this candidate would lose it? `time_to_arrive` for the
+nearest outfielder, the same race model as everything else. Inside
+`RECOVER_FREE` the loss is what was already priced; by `RECOVER_GONE` nobody can
+press and the turnover costs `STRETCH_MAX` times the ball. It multiplies `loss`
+in `score_of` beside `turnover_exposure`, which is per tick and the same for
+every option — the two are the same fact at two grains, the line's height and
+this ball's landing.
+
+Checked the way `EXPOSURE_FROM`'s note demands, because its first version was a
+guessed constant that never varied. `diagnose` prints the mean and worst beside
+the exposure line: 1.16-1.18x mean, reaching 2.00. `--ablate` gained the term:
+applies to 99% of candidates, `on score` 0.0089, flips 8.7% of the decisions it
+touches, commonest flip pass to pass. All three links live.
+
+With the counterweight in, `TERRITORY` went 0.4 to 0.75 — the size that was
+measured to stop the engine being a passing side when nothing paid for the
+stretch: 37% of every ball long and forward at 47% completion, possessions of
+1.4 passes. Seeds 7 and 3 at ten minutes, 0.4 against 0.75, with the stretch in
+both:
+
+| | 0.4 | 0.75 seed 7 | 0.75 seed 3 |
+|---|---|---|---|
+| long forward, of passes | 12% | 16% | 16% |
+| long forward completion | 69% | 69% | 60% |
+| passes backward | 34% | 33% | 33% |
+| touches in the final third | 9% | 12% | 13% |
+| shots | 5 | 14 | 9 |
+
+The hoofball failure did not come back, because its cause is priced rather than
+its symptom capped. The ball goes forward more and the possessions still run
+three to eight passes. Shot counts off ten-minute seeds are direction only, as
+ever.
+
+**Goldens re-recorded.**
+
+## The net stops the ball on every panel, not just the back one
+
+From the owner watching: a scored ball sometimes ran out through the net.
+`SimMatch._catch_in_net` modelled the back netting alone, so during the
+dead-ball linger a shot angled across the goal left through the side panel and
+one still rising at the line went up through the sloping roof — on the one ball
+everyone is watching. It now catches on all four panels `_build_net` draws:
+back, both sides, and the roof sloping from the crossbar to the top of the back
+netting, each killing the pace into it and leaving gravity the rest.
+
+## A firm pass is driven, not rolled
+
+From the owner watching: every pass that is not lofted rolls in constant contact
+with the grass, which at twenty metres is nearly a trick shot, and nobody puts
+sidespin on anything. Both true, and the physics underneath was already able —
+`SimBall` flies, bounces, slides and rolls, and the view rolls the panelled ball
+straight off sim spin. Only the strike was missing.
+
+`SimBallistics.ground_launch` is the strike's shape in one place: launch speed,
+skim and backspin together, so the ball that is solved is the ball that is
+struck. Above `DRIVE_FROM` the pass leaves the boot a few degrees up and skims
+in low hops, apex under a shin; the backspin blends down from the roller's 0.55
+of rolling rate to 0.2, because a driven ball is hit through the middle — given
+the roller's backspin it checked at every bounce like a wedge shot, 4 m short
+over 22 m. A driven ball also carries zero-mean sidespin scaled by technique,
+one man wrapping it with the inside, the next steering it with the outside; the
+bend over hops this low is centimetres, so what it buys today is the ball
+visibly spinning differently per strike. The bend on the grass is physics the
+ground model does not have, and both halves of the deliberate version are
+`docs/BACKLOG.md` (26).
+
+**The launch is solved against the real integrator**, like the lofted ball and
+for the same reason: the hops replace grass friction with drag and bounce
+losses in a mix no closed form sees, and a fitted scale would break the
+invariant the solve exists for — arrival pace is solved against the surface, so
+a wet pitch strikes the ball differently and it still arrives at the pace asked
+for. Two blind fits were tried first and both missed by metres in opposite
+directions.
+
+**The bench gained a signed bias column to fit it**, because an RMS cannot tell
+a scatter from a systematic short — and it immediately said something nobody
+had asked: the pure roller lands 0.8 to 2.2 m short of the two-phase law at
+every distance, because the law assumes a no-spin slide and the executed ball
+is launched with backspin. Pre-existing, unmeasured until now.
+
+`./run.sh strike`, before and after, long axis at 22 m: rolled sigma 6.79 m
+bias −2.19 m as a roller, 5.82 m and −0.75 m driven — the driven ball fits the
+model's claims better than the roller did. A 30 m ground row was added to guard
+the solver's long end: −1.9 m bias there, inside the slack the roller already
+had. Sideways stays inside `said` with the curl on.
+
+The model still prices every ground ball as a roller, and the bench is the
+statement that this is honest to within a couple of metres. What a driven ball
+should be *worth* — hops the lane cannot cut, a harder first touch — is the
+full version, `docs/BACKLOG.md` (26).
+
+**Goldens re-recorded.**

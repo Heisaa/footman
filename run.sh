@@ -45,6 +45,9 @@ usage: ./run.sh <command> [args]
                             set rather than sampled: a passer, a runner, a flat
                             back four. Prints the ball and whether the man it is
                             for can reach it. No match runs; it is instant
+  strike [--seed N]         where a struck ball actually lands, against where
+                            execution_accuracy told the decision layer it would.
+                            The two share one error model or they do not. Instant
   replay --tick T           every decision around one tick of one seed, in
       [--seed N] [--around S]
                             words. The other half of the overlay's bookmark:
@@ -368,7 +371,7 @@ case "$cmd" in
 		done
 		parallel_tactics "$per_arm" "$workers" ${rest+"${rest[@]}"}
 		;;
-	match|diagnose|chains|batch|perf|determinism|aggregate|compare|replay|behind)
+	match|diagnose|chains|batch|perf|determinism|aggregate|compare|replay|behind|strike)
 	               exec "$GODOT" --headless --script res://tools/headless_main.gd -- "$cmd" "$@" ;;
 	""|-h|--help)  usage ;;
 	*)             echo "unknown command: $cmd" >&2; usage; exit 2 ;;

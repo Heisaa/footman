@@ -79,20 +79,25 @@ const T_SECURE := 15
 const T_GIVE_GO := 16
 const T_PATTERN := 17
 const T_LOFTED := 18
-const TERMS := 19
+const T_TOUCH := 19
+const T_STRETCH := 20
+const TERMS := 21
 
 const TERM_NAMES := [
 	"bias (every prior)", "possession_value", "territory", "turnover_exposure",
 	"risk_weight", "future_discount", "the whole risk half", "focus_at",
 	"arrival_gain", "off_balance", "retention_bias", "direct_bias",
 	"length bias", "call_bias", "break_bias", "secure (regain)",
-	"give_and_go", "pattern bias", "LOFTED_BIAS",
+	"give_and_go", "pattern bias", "LOFTED_BIAS", "receiver_touch",
+	"turnover_stretch",
 ]
 
 const TERM_COMPONENT := [
 	C_SELF, C_SELF, C_SELF, C_SELF, C_SELF, C_SELF, C_SELF,
 	C_GAIN_ADD, C_GAIN_ADD, C_SUCCESS,
 	C_BIAS, C_BIAS, C_BIAS, C_BIAS, C_BIAS, C_BIAS, C_BIAS, C_BIAS, C_BIAS,
+	C_BIAS,
+	C_SELF,
 ]
 
 ## The slot each recorded factor is filed in, named for the call sites in
@@ -109,14 +114,16 @@ const F_SECURE := 8
 const F_GIVE_GO := 9
 const F_PATTERN := 10
 const F_LOFTED := 11
-const FACTORS := 12
+const F_TOUCH := 12
+const FACTORS := 13
 
 ## Recorded-factor slot per term, or -1 for the ones `score_of` applies itself.
 const TERM_SLOT := [
 	-1, -1, -1, -1, -1, -1, -1,
 	F_FOCUS, F_ARRIVAL, F_OFF_BALANCE,
 	F_RETENTION, F_DIRECT, F_LENGTH, F_CALL, F_BREAK, F_SECURE, F_GIVE_GO,
-	F_PATTERN, F_LOFTED,
+	F_PATTERN, F_LOFTED, F_TOUCH,
+	-1,
 ]
 
 ## Mirrors `SimDecision.Action`, deliberately rather than importing it: this file

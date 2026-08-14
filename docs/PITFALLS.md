@@ -299,3 +299,80 @@ the ball and his goal.
 The tell was in the accounting, not in the code: seed 7 at `--urgency 1`
 reported **fifteen of twenty-seven shots ending at the keeper and `saves 0`**.
 Zero logged saves in a match the keeper dominated.
+
+## A factor with no spread is a constant, whatever it is named
+
+`_pass_success` returned a product of five factors, one of which was
+`lerpf(0.72, 0.99, receiver.attrs.first_touch)` — the receiver's first touch, a
+14% discount on every pass in the match. It reads like a probability. It is
+attribute-driven, it varies by receiver, it has a football meaning, and the note
+above it was correct about the football.
+
+**It could not decide a single ball.** A pass in this engine completes when a
+teammate *reaches* it, whatever he then does with it, so the event the factor
+priced is one `SimDuel._resolve_pass_outcome` never produces. `in time` was the
+same thing built differently: a logistic never reaches one, so a man standing on
+the spot the ball is rolled to was charged four per cent for a race he was not in.
+
+Neither is visible in the code, in the mean, or in the calibration. `said` 0.56
+against 82% completed says the product is 1.46x light and cannot say which of five
+terms did it. What says it is the same balls resolved one at a time, with each
+factor's mean on the ones that arrived beside its mean on the ones that did not:
+
+| factor | arrived | given away | spread |
+|---|---|---|---|
+| space | 0.77 | 0.62 | 0.15 |
+| in time | 0.96 | 0.99 | **-0.03** |
+| lane | 0.94 | 0.86 | 0.08 |
+| control | 0.86 | 0.85 | **0.01** |
+| struck | 0.93 | 0.91 | 0.02 |
+
+**A factor that reads the same on both outcomes is a constant, and the model is out
+by the whole of it.** These two were 18% between them. The same shape as the
+`turnover_exposure` line in the diagnostics — a constant whose input range nobody
+measured — except that this one had an input range and still never varied against
+what happened.
+
+The general form: **a term is a model only if the balls it liked did better.** If
+it did not separate them, its value is a coefficient, and it belongs either in a
+different model or in no model at all.
+
+## A model of the engine is not checked by anything the engine prints
+
+`SimTouch.execution_accuracy` is the decision layer's estimate of `SimTouch`'s own
+strike. Its note says the point of it is that the two share one error model, so
+tuning the error automatically retunes what the engine is willing to attempt.
+
+They had drifted apart in three separate ways at once and every instrument in the
+project was blind to all three.
+
+- The lofted model used a base aim sigma of 0.085 and the lofted strike 0.07.
+- The lofted strike used `weight_sigma * 1.15` and the model used `weight_sigma`.
+- The model mapped a weight error onto a range error *linearly*, and range goes as
+  the square of the strike, in the air and on the grass alike.
+
+Together: the engine believed it could drop a thirty-metre ball inside seven metres
+of a spot **84%** of the time. It does it **33%** of the time.
+
+**Nothing a match prints could have found this.** A diagnose measures what the ball
+did; a calibration table measures a model against an outcome. Neither measures a
+model against *the thing it is a model of*, because the match never puts them side
+by side — the strike happens in one file and the estimate of it in another, and the
+only place they meet is a comment claiming they agree.
+
+What finds it is a bench: run the real code, integrate the real ball, print the two
+numbers next to each other. `./run.sh strike`. It took an afternoon and the fault
+had been there since the model was written.
+
+**The general form: any function whose name is a claim about another function is
+unchecked until something runs both.** `execution_accuracy` is one.
+`SimBallistics.ground_travel_time` was another and was out by 9% for the same
+reason. `SimDecision._pass_success` is a third, against `_resolve_pass_outcome`.
+Look for the pattern in the *name*.
+
+And when the check exists, believe it over the derivation. The first replacement
+here was a closed form — the square law plus the launch angle's lever on range —
+and it reproduced the measured total at two of three distances. It was still wrong:
+cutting the elevation error to a third moved the real ball by 7% where the formula
+said 60%. **A sum that matches is not a split that matches**, and the constant that
+shipped is the bench's number with a note saying so.
