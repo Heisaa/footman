@@ -1298,7 +1298,11 @@ static func _shortlist(ctx: SimContext, player: SimPlayer, from: Vector3) -> Pac
 ## will stop choosing the long ground passes that can now be cut out. A slow pass
 ## being easier both to control and to intercept is the trade football makes.
 static func arrival_pace(distance: float, tactics: SimTactics) -> float:
-	return clampf(2.2 + distance * 0.21, 2.5, 12.0) * lerpf(0.9, 1.2, tactics.tempo)
+	# The curve came down a tenth (2.2 + d*0.21 capped at 12) with the player
+	# speeds going up, one feel change in two halves: the owner watched the
+	# ball outrunning the men. The interception trade is priced as the comment
+	# above says, and the launch solver keeps arrival exact against any pitch.
+	return clampf(2.0 + distance * 0.19, 2.5, 10.8) * lerpf(0.9, 1.2, tactics.tempo)
 
 
 ## What share of the receiver's top speed a ball in behind should still be doing
@@ -1727,7 +1731,8 @@ static func _lofted_success(ctx: SimContext, player: SimPlayer, to: Vector3, fli
 	var skill: float = player.attrs.crossing if kind == Action.CROSS else player.attrs.passing
 	var struck := SimTouch.execution_accuracy(ctx, player, skill, distance,
 		SimTouch.AIR_MODEL_AIM_BASE, pass_tolerance(distance) * AERIAL_TOLERANCE,
-		to - ctx.ball.pos, SimTouch.LONG_AIR)
+		to - ctx.ball.pos,
+		SimTouch.LONG_AIR_CROSS if kind == Action.CROSS else SimTouch.LONG_AIR)
 	# And where it goes when it does not go there, because a ball in the air that
 	# misses its spot is a loose ball and not a turnover.
 	#
@@ -1770,7 +1775,7 @@ static func _scattered(ctx: SimContext, player: SimPlayer, to: Vector3, flight: 
 	var line := SimConsts.horizontal(to - ctx.ball.pos)
 	if line.length_squared() < 1e-6:
 		return 0.0
-	var off := line.normalized() * SimTouch.long_sigma(player, skill, distance, true)
+	var off := line.normalized() * SimTouch.long_sigma(player, skill, distance, SimTouch.LONG_AIR)
 	var long_ball := _keep_in_play(ctx, to + off)
 	var short_ball := _keep_in_play(ctx, to - off)
 	return 0.5 * (ctx.value.control_at_time(ctx, long_ball, player.team, flight, player.id)

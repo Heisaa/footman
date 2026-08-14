@@ -413,7 +413,24 @@ const ELEVATION_SHARE := 0.75
 ## a person can, and the solver will do it. Measured against the integrator, the
 ## knee where launch speed runs away sits at about 0.2 + 0.045 d.
 static func lofted_flight(distance: float) -> float:
-	return clampf(0.2 + distance * 0.045, 0.7, 2.25)
+	return clampf(0.35 + distance * 0.055, 0.8, 2.4)
+
+
+## What share of a lofted pass's distance the ball covers *after* touchdown.
+##
+## The flight the solver lands wherever it is asked — verified to inside 2% —
+## but it arrives with twelve to fifteen metres a second of horizontal pace and
+## no backspin (backspin floats; see `LOFT_BACKSPIN`), so it skips on in hops
+## for about two-fifths of the distance it flew. Measured on the bench with the
+## noise off: +8.3, +12.3 and +16.2 m of deterministic run-on at 20, 30 and
+## 40 m, a constant share. The owner watched it: "lofted balls go way too far."
+##
+## So the lofted pass is aimed to *finish* at the target rather than to land on
+## it: touchdown is pulled short by this share, the hops carry the rest, and
+## the man it was played to meets a ball that has sat down — which is also what
+## `docs/BACKLOG.md` 23 asks of the ball over the top. A cross is exempt: it is
+## attacked in the air at the point it drops, so it keeps landing on its aim.
+const LOFT_RUNON_SHARE := 0.28
 
 
 ## The spread of where a struck ball finishes, along its own line.
@@ -445,18 +462,31 @@ static func lofted_flight(distance: float) -> float:
 ## live in that number and no closed form survived its own check. The bench is the
 ## authority, and re-running it is what says whether this is still true after
 ## anything in `_perturb` moves.
-static func long_sigma(player: SimPlayer, skill: float, distance: float, in_air: bool) -> float:
+static func long_sigma(player: SimPlayer, skill: float, distance: float, axis: int) -> float:
 	# Twice the weight error on the floor, because the ball stops where its speed
 	# runs out and that goes as the square of the strike.
-	var scale := AIR_RANGE_SPREAD if in_air else 2.0
+	var scale := 2.0
+	match axis:
+		LONG_AIR:
+			scale = AIR_RANGE_SPREAD
+		LONG_AIR_CROSS:
+			scale = CROSS_RANGE_SPREAD
 	return scale * weight_sigma(player, skill) * distance
 
 
 ## How many times his weight error a ball in the air finishes off its mark by.
-## Off `./run.sh strike`: 4.8, 4.4 and 4.1 at twenty, thirty and forty metres, and
-## a flat number in the middle of that is closer to the ball than the shape the
-## closed form gave, which ran the wrong way across the range.
-const AIR_RANGE_SPREAD := 4.4
+##
+## Two numbers since `LOFT_RUNON_SHARE`, because the two balls finish
+## differently. The lofted pass is aimed to sit down at its man, so the hops
+## that used to amplify a weight error into rest-position scatter are spent
+## short of him: re-rolled on the bench after the change, 2.6, 2.9 and 1.9
+## times the weight error at twenty, thirty and forty metres, and a flat
+## number in the middle is again closer than any shape. The cross keeps its
+## hot landing — it is attacked in the air where it drops — and the old 4.4,
+## which the bench still confirms against its rows (rolled 10.4/13.0/16.0 m
+## against said 9.1/13.7/18.3), stays its number.
+const AIR_RANGE_SPREAD := 2.5
+const CROSS_RANGE_SPREAD := 4.4
 
 
 
@@ -473,7 +503,7 @@ static func execution_accuracy(ctx: SimContext, player: SimPlayer, skill: float,
 	if long_axis == LONG_NONE:
 		return lateral
 	return lateral * _within(tolerance,
-		long_sigma(player, skill, distance, long_axis == LONG_AIR))
+		long_sigma(player, skill, distance, long_axis))
 
 
 ## Whether a ball misses by being the wrong length, and by which law.
@@ -489,11 +519,13 @@ static func execution_accuracy(ctx: SimContext, player: SimPlayer, skill: float,
 ## and the ball in behind fails exactly this way. Same for anything in the air,
 ## which stops where it lands.
 ##
-## `LONG_GROUND` is the rolling law and `LONG_AIR` the flying one; `long_sigma`
-## has both and the difference between them is a factor of three.
+## `LONG_GROUND` is the rolling law, `LONG_AIR` the flying ball that finishes
+## at its man, and `LONG_AIR_CROSS` the cross, which lands hot on its spot and
+## scatters accordingly; `long_sigma` has all three.
 const LONG_NONE := 0
 const LONG_GROUND := 1
 const LONG_AIR := 2
+const LONG_AIR_CROSS := 3
 
 
 ## P(|X| < r) for a zero-mean normal, via the usual logistic approximation to
@@ -702,6 +734,13 @@ static func lofted_pass(ctx: SimContext, player: SimPlayer, target: Vector3, fli
 	if not is_thrown(kind):
 		aim = clamp_to_reach(player, ctx.ball.pos, aim, AIR_RANGE)
 	aim.y = maxf(aim.y, SimConsts.BALL_RADIUS)
+	# The touchdown is short of the aim and the run-on covers the rest; see
+	# `LOFT_RUNON_SHARE`. The flight time shortens with the flight.
+	if kind == SimTelemetry.Touch.LOFTED_PASS:
+		var whole := SimConsts.horizontal(aim - ctx.ball.pos)
+		aim = ctx.ball.pos + whole * (1.0 - LOFT_RUNON_SHARE)
+		aim.y = maxf(target.y, SimConsts.BALL_RADIUS)
+		flight_time = lofted_flight(SimConsts.horizontal_length(whole) * (1.0 - LOFT_RUNON_SHARE))
 	var skill: float = player.attrs.crossing if kind == SimTelemetry.Touch.CROSS else player.attrs.passing
 	var spin := Vector3.UP * curl
 	var vel := ctx.ballistics.solve_lofted(ctx.ball.pos, aim, flight_time, ctx.env, spin)
@@ -1100,13 +1139,22 @@ static func clearance(ctx: SimContext, player: SimPlayer) -> void:
 ## `goal_aim` marks it as an attempt on goal, which is a bookkeeping matter and
 ## not a physical one: the strike is the same, and `_log_shot` puts it on the
 ## books so a headed goal is a shot like any other.
+## Most extra launch speed the incoming ball's pace can add to a header, m/s.
+const HEADER_PACE_BONUS_MAX := 4.5
+
+
 static func header(ctx: SimContext, player: SimPlayer, dir: Vector3, aim_up: float, intent: int = -1, goal_aim: Vector3 = Vector3.INF, chance_quality: float = 0.0) -> void:
 	var d := SimConsts.horizontal(dir)
 	if d.length_squared() < 1e-6:
 		d = player.heading_dir()
 	d = d.normalized()
 	var incoming := ctx.ball.vel.length()
-	var power: float = lerpf(5.0, 13.0, player.attrs.heading) + incoming * 0.32
+	# The incoming pace helps, and only up to a point: a neck redirects a
+	# dropping cross, it does not return a driven goal kick with interest.
+	# Uncapped, a 25 m/s ball came off the forehead at 21 and carried forty
+	# metres -- the owner watched it, and `test_distances` now has the band.
+	var power: float = lerpf(5.0, 13.0, player.attrs.heading) \
+		+ minf(incoming * 0.32, HEADER_PACE_BONUS_MAX)
 	power *= lerpf(0.8, 1.1, player.attrs.jumping) * player.fatigue_factor()
 	var vel := d * (power * cos(aim_up)) + Vector3(0.0, power * sin(aim_up), 0.0)
 	var sigma := aim_sigma(ctx, player, player.attrs.heading, 10.0, 0.13)

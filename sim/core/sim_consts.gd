@@ -190,10 +190,16 @@ const FORECAST_STEPS := 75
 
 # --- Player locomotion ------------------------------------------------------
 
-const SPEED_MIN := 6.9
-const SPEED_MAX := 9.7
-const ACCEL_MIN := 3.4
-const ACCEL_MAX := 7.6
+## Raised from 6.9-9.7 and 3.4-7.6 at the owner's direction, watching: the
+## ball read too fast and the players too slow, both off the mark and flat
+## out. Real sprint data sits around 8-10.5 m/s for professionals, so the
+## ceiling at 10.4 is an elite sprinter and the floor a heavy centre-half.
+## The other half of the same feel change is `SimDecision.arrival_pace`,
+## which came down a tenth.
+const SPEED_MIN := 7.4
+const SPEED_MAX := 10.4
+const ACCEL_MIN := 4.0
+const ACCEL_MAX := 8.4
 const DECEL_FACTOR := 1.8
 ## Turn rate at a standstill, in rad/s. Falls off as `TURN_BASE / (1 + v * TURN_SPEED_FALLOFF)`.
 const TURN_BASE := 9.0
@@ -240,9 +246,13 @@ const FOOT_REACH_HEIGHT := 0.75
 const HEAD_REACH_HEIGHT := 2.0
 const TOUCH_COOLDOWN_BASE := 0.27
 const TOUCH_COOLDOWN_MIN := 0.17
-## Shot speed range, scaled by the power attribute.
-const SHOT_SPEED_MIN := 18.0
-const SHOT_SPEED_MAX := 32.0
+## Shot speed range, scaled by the power attribute. Came down from 18-32 with
+## the rest of the ball (owner's direction, same session as the player speeds
+## going up): 27 m/s is still a 97 km/h drive, and against the faster players
+## the old 32 read like a tracer. The keeper's chances rise with the slower
+## ball, which is the fit's business, not this constant's.
+const SHOT_SPEED_MIN := 16.0
+const SHOT_SPEED_MAX := 27.0
 
 # --- Teams ------------------------------------------------------------------
 

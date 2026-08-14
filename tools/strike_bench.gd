@@ -110,10 +110,17 @@ static func _row(ctx: SimContext, kind: int, distance: float) -> void:
 	var base: float = SimTouch.AIR_MODEL_AIM_BASE if in_air else SimTouch.GROUND_AIM_BASE
 	var sigma := SimTouch.aim_sigma(ctx, player, skill, distance, base, aim - from)
 	var said_lat := sigma * distance
-	var said_long := SimTouch.long_sigma(player, skill, distance, in_air)
+	# The cross has its own long law since `LOFT_RUNON_SHARE`: the lofted pass
+	# finishes at its man while the cross lands hot on its spot, and the bench
+	# has to quote the claim the decision layer actually hears for each.
+	var axis := SimTouch.LONG_NONE
+	if kind == SimTelemetry.Touch.CROSS:
+		axis = SimTouch.LONG_AIR_CROSS
+	elif in_air:
+		axis = SimTouch.LONG_AIR
+	var said_long := SimTouch.long_sigma(player, skill, distance, axis)
 	var said_in := SimTouch.execution_accuracy(
-		ctx, player, skill, distance, base, tolerance, aim - from,
-		SimTouch.LONG_AIR if in_air else SimTouch.LONG_NONE)
+		ctx, player, skill, distance, base, tolerance, aim - from, axis)
 	print("  %-8s %5.0f m %8.2f   %6.2fm %6.2fm   %6.2fm %6.2fm %+6.2fm   %5.0f%% %5.0f%%" % [
 		SimTelemetry.touch_name(kind), distance, skill,
 		said_lat, lateral, said_long, longitudinal, bias,

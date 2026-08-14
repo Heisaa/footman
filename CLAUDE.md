@@ -107,7 +107,7 @@ quantity ("it cuts too often") — then once, and stop.
 
 - **Mine, no asking.** `check`; `strike` and `behind`, which run no match at all;
   `diagnose --seed N --minutes 10` or shorter;
-  `test --only rng|clock|ball|locomotion|value_field`; and `record-golden`, which is
+  `test --only rng|clock|ball|locomotion|value_field|distances`; and `record-golden`, which is
   required after a mechanic change rather than optional.
 - **Yours to approve, mine to offer.** Everything measured in minutes: the slow
   single test cases (`--only touch|match|golden|determinism|patterns`), `test` in
