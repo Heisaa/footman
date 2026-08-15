@@ -478,14 +478,19 @@ static func _shot_response(ctx: SimContext, k: SimPlayer) -> void:
 
 	# Saved. Parry versus catch is decided by margin and ball speed.
 	var can_catch := closeness > 0.55 and ball_speed < 24.0 and ctx.rng.chance(lerpf(0.2, 0.9, k.attrs.handling))
-	ctx.log_event(SimTelemetry.Ev.SAVE, {
-		"p": k.id,
-		"team": k.team,
-		"caught": can_catch,
-		"margin": margin,
-		"speed": ball_speed,
-		"minute": ctx.minute(),
-	})
+	# Only a shot goes in the book as a save. This response fires for any ball
+	# the forecast has going in -- a cross, a sliced clearance, a pass drifting
+	# for the corner of the goal -- and a keeper claiming those has made a
+	# claim, not a save. The dive is real either way; the ledger entry is not.
+	if _shot_in_flight(ctx, k):
+		ctx.log_event(SimTelemetry.Ev.SAVE, {
+			"p": k.id,
+			"team": k.team,
+			"caught": can_catch,
+			"margin": margin,
+			"speed": ball_speed,
+			"minute": ctx.minute(),
+		})
 	_resolve_pass_of_shot(ctx, k)
 	# Decided, not yet done. The keeper commits before he can know — that is what
 	# a dive is — but the ball keeps flying, and is taken when it arrives.

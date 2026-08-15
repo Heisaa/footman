@@ -55,6 +55,12 @@ func _whole_match_invariants() -> void:
 	var worst_near := 0
 	var spread_samples := 0
 	var spread_total := 0.0
+	var build_samples := 0
+	var build_width_total := 0.0
+	var build_crowd_total := 0.0
+	var third_samples := 0
+	var third_final := 0
+	var box_ticks := 0
 
 	while not m.finished:
 		m.tick()
@@ -81,6 +87,40 @@ func _whole_match_invariants() -> void:
 			near_total += near
 			worst_near = maxi(worst_near, near)
 			near_samples += 1
+
+		# The shape of the side in possession, and whether its attacks go
+		# anywhere. The spread checks below cannot see either failure: a team
+		# can hold a healthy spread while the men around its own ball clump
+		# into the central channel (the collapse the owner watched,
+		# DECISIONS.md "Width in build-up"), and it can hold every shape
+		# number while the ball circulates in the middle third all match and
+		# never reaches the box (the midfield stall).
+		if ctx.tick_index % 30 == 0 and ctx.possession_team >= 0:
+			var team := ctx.possession_team
+			var dir := ctx.pitch.attack_dir(team)
+			var ball_cx := b.pos.x * dir
+			var third := ctx.pitch.half_length / 3.0
+			third_samples += 1
+			if ball_cx > third:
+				third_final += 1
+			if ctx.pitch.in_opponent_penalty_area(team, b.ground_pos()):
+				box_ticks += 1
+			if ball_cx < 0.0:
+				var lo := INF
+				var hi := -INF
+				var crowd := 0
+				for pid in ctx.team_players[team]:
+					var p := ctx.players[pid]
+					if p.is_keeper or not p.on_pitch:
+						continue
+					lo = minf(lo, p.pos.z)
+					hi = maxf(hi, p.pos.z)
+					if p.dist_to(b.ground_pos()) < 12.0:
+						crowd += 1
+				if not is_inf(lo):
+					build_samples += 1
+					build_width_total += hi - lo
+					build_crowd_total += crowd
 
 		# Standard deviation of team positions: a team holding shape is spread
 		# out, a swarming team is not.
@@ -120,6 +160,24 @@ func _whole_match_invariants() -> void:
 	var mean_spread := spread_total / maxf(float(spread_samples), 1.0)
 	check_greater(mean_spread, 14.0, "a team must stay spread across the pitch")
 	check_less(mean_spread, 40.0, "but not be strung out end to end")
+
+	# Width and structure in possession, and the stall. The bounds are sanity
+	# ranges, not bands (CLAUDE.md): each catches a failure the owner has
+	# watched and named, at a threshold far enough from the measured engine
+	# that only the failure itself crosses it.
+	# Measured on this seed when the bounds were set: width 43.5 m, crowd 3.9,
+	# final third 11.5% of possession samples, 23 box samples. The stalled
+	# engine this guards against (docs/STATUS.md, "The midfield stall") read
+	# ~4% final third and 0 in the box, with the width still healthy — which
+	# is why the final-third floor is the one carrying most of the weight.
+	var mean_width := build_width_total / maxf(float(build_samples), 1.0)
+	var mean_crowd := build_crowd_total / maxf(float(build_samples), 1.0)
+	check_greater(float(build_samples), 50.0, "a match must contain own-half possession to measure")
+	check_greater(mean_width, 30.0, "a side building in its own half must keep its width")
+	check_less(mean_crowd, 6.0, "and must not clump around its own carrier")
+	check_greater(float(third_final) / maxf(float(third_samples), 1.0), 0.05,
+		"possession must reach the final third, not circulate in midfield all match")
+	check_greater(float(box_ticks), 0.0, "and at least once in a match the ball must be worked into the box")
 
 	var total: float = float(m.ctx.possession_count[0] + m.ctx.possession_count[1])
 	check_greater(total, 1000.0, "possession must be tracked")

@@ -139,6 +139,47 @@ const FACING_COST := 3.6
 ## of the second he does not spend.
 const FACING_STATIC_SHARE := 0.5
 
+## What striking a moving ball first-time costs in aim error, from the easiest
+## first-time ball there is to the hardest.
+##
+## The two ends are different acts. A ball helped back the way it came -- the
+## layoff -- is played with the ball's own pace: the foot is a wall angled at the
+## man it returns to, and there is almost nothing to get wrong. A ball forced
+## square or on, off a ball still moving across the body, is the hardest strike
+## in the game. `redirect_share` says where between those a given line sits, and
+## the decision layer reads the same function so the ball it prices is the ball
+## that gets hit.
+const FIRST_TIME_EASY := 1.08
+const FIRST_TIME_HARD := 1.65
+## The redirect angle past which a first-time ball keeps the whole penalty, in
+## radians off straight-back-where-it-came-from. About a hundred degrees: within
+## the cone the incoming pace is doing the work, beyond it the foot is.
+const REDIRECT_ARC := 1.75
+
+## First-time balls actually struck, and how many of them were layoffs -- helped
+## back inside the easy half of the cone. Counted rather than logged per the
+## usual contract; `reset_tallies` is called from `SimMatch.setup`.
+static var ft_played := 0
+static var ft_layoff := 0
+
+
+static func reset_tallies() -> void:
+	ft_played = 0
+	ft_layoff = 0
+	chips_played = 0
+
+
+## How much of the first-time penalty a ball played along `dir` keeps, given the
+## ball arriving with `ball_vel`: 0 for one eased straight back up its own line,
+## 1 for one forced square or beyond.
+static func redirect_share(ball_vel: Vector3, dir: Vector3) -> float:
+	var line := SimConsts.horizontal(ball_vel)
+	var d := SimConsts.horizontal(dir)
+	if line.length() < 1.0 or d.length() < 1e-4:
+		return 1.0
+	var back: float = clampf((-line.normalized()).dot(d.normalized()), -1.0, 1.0)
+	return clampf(acos(back) / REDIRECT_ARC, 0.0, 1.0)
+
 
 ## True if `player` can physically contact the ball this tick with `kind`.
 ## Height band a player can play the ball at without jumping.
@@ -174,6 +215,7 @@ static func apply(ctx: SimContext, player: SimPlayer, kind: int, vel: Vector3, s
 	ctx.ball.last_touch_team = player.team
 	ctx.ball.last_touch_tick = ctx.tick_index
 	ctx.ball.last_touch_kind = kind
+	ctx.ball.last_touch_pos = before
 	ctx.ball.intended_target = target_id
 	player.touch_cooldown = player.touch_cooldown_length()
 	player.touches += 1
@@ -689,7 +731,9 @@ static func is_thrown(kind: int) -> bool:
 
 
 ## Ground pass toward a point, arriving at roughly `arrive_pace` m/s.
-static func ground_pass(ctx: SimContext, player: SimPlayer, target: Vector3, arrive_pace: float, target_id: int, kind: int = SimTelemetry.Touch.GROUND_PASS, expected_value: float = 0.0) -> void:
+## `first_time` is a ball struck while it is still moving, priced by how far it
+## has to be redirected -- see `FIRST_TIME_EASY`.
+static func ground_pass(ctx: SimContext, player: SimPlayer, target: Vector3, arrive_pace: float, target_id: int, kind: int = SimTelemetry.Touch.GROUND_PASS, expected_value: float = 0.0, first_time: bool = false) -> void:
 	if not is_thrown(kind):
 		target = clamp_to_reach(player, ctx.ball.pos, target, GROUND_RANGE)
 	var delta := SimConsts.horizontal(target - ctx.ball.pos)
@@ -707,6 +751,13 @@ static func ground_pass(ctx: SimContext, player: SimPlayer, target: Vector3, arr
 		speed = launch["speed"]
 
 	var sigma := aim_sigma(ctx, player, player.attrs.passing, distance, GROUND_AIM_BASE, dir)
+	# Struck first-time, the error grows with how far the moving ball has to be
+	# redirected. Read off the ball as it arrives, before `apply` replaces it.
+	if first_time:
+		sigma *= lerpf(FIRST_TIME_EASY, FIRST_TIME_HARD, redirect_share(ctx.ball.vel, dir))
+		ft_played += 1
+		if redirect_share(ctx.ball.vel, dir) < 0.45:
+			ft_layoff += 1
 	var vel := _perturb(ctx, dir * speed, sigma, weight_sigma(player, player.attrs.passing), 0.0)
 	vel.y = 0.0
 	# The skim and the backspin are re-read off the *perturbed* speed, so an
@@ -724,12 +775,12 @@ static func ground_pass(ctx: SimContext, player: SimPlayer, target: Vector3, arr
 		spin += Vector3.UP * (ctx.rng.gauss_clamped(0.0, PASS_CURL_SIGMA, PASS_CURL_CLAMP)
 			* player.attrs.technique)
 
-	apply(ctx, player, kind, vel, spin, target_id, {"dist": distance})
+	apply(ctx, player, kind, vel, spin, target_id, {"dist": distance, "ft": first_time})
 	_log_pass_attempt(ctx, player, kind, target, target_id, expected_value, distance, vel.length())
 
 
 ## Lofted pass or cross. `curl` is sidespin in rad/s, signed.
-static func lofted_pass(ctx: SimContext, player: SimPlayer, target: Vector3, flight_time: float, target_id: int, kind: int = SimTelemetry.Touch.LOFTED_PASS, curl: float = 0.0, expected_value: float = 0.0) -> void:
+static func lofted_pass(ctx: SimContext, player: SimPlayer, target: Vector3, flight_time: float, target_id: int, kind: int = SimTelemetry.Touch.LOFTED_PASS, curl: float = 0.0, expected_value: float = 0.0, first_time: bool = false) -> void:
 	var aim := target
 	if not is_thrown(kind):
 		aim = clamp_to_reach(player, ctx.ball.pos, aim, AIR_RANGE)
@@ -748,15 +799,31 @@ static func lofted_pass(ctx: SimContext, player: SimPlayer, target: Vector3, fli
 	var distance := line.length()
 
 	var sigma := aim_sigma(ctx, player, skill, distance, AIR_AIM_BASE, line)
+	if first_time:
+		sigma *= lerpf(FIRST_TIME_EASY, FIRST_TIME_HARD, redirect_share(ctx.ball.vel, line))
+		ft_played += 1
 	vel = _perturb(ctx, vel, sigma, weight_sigma(player, skill) * LOFT_WEIGHT_SCALE, 1.0)
 	vel.y = maxf(vel.y, 1.0)
 
-	apply(ctx, player, kind, vel, spin, target_id, {"dist": distance})
+	apply(ctx, player, kind, vel, spin, target_id, {"dist": distance, "ft": first_time})
 	_log_pass_attempt(ctx, player, kind, aim, target_id, expected_value, distance, vel.length())
 
 
+## How long a chip hangs, by distance. Long enough to get over a keeper off his
+## line, short enough that it is a finish rather than a cross to nobody.
+static func chip_flight(distance: float) -> float:
+	return clampf(0.55 + distance * 0.05, 0.9, 1.6)
+
+
+## Chips actually struck. Counted, not logged; reset with the other tallies.
+static var chips_played := 0
+
+
 ## Shot at a point in the goal mouth. `power` is 0..1 over the shot speed range.
-static func shot(ctx: SimContext, player: SimPlayer, aim_point: Vector3, power: float, first_time: bool, chance_quality: float) -> void:
+## `chip` lifts the ball over an advanced keeper instead of driving it: the
+## strike is solved as a dropping arc onto the aim point, and everything else --
+## the error model, the log, the referee -- treats it as the shot it is.
+static func shot(ctx: SimContext, player: SimPlayer, aim_point: Vector3, power: float, first_time: bool, chance_quality: float, chip: bool = false) -> void:
 	var line := aim_point - ctx.ball.pos
 	var speed: float = lerpf(SimConsts.SHOT_SPEED_MIN, SimConsts.SHOT_SPEED_MAX, clampf(power * lerpf(0.65, 1.0, player.attrs.power), 0.0, 1.0))
 	# Nobody strikes one hard off his back foot. The same reach the passes are
@@ -768,7 +835,12 @@ static func shot(ctx: SimContext, player: SimPlayer, aim_point: Vector3, power: 
 	var distance := SimConsts.horizontal_length(line)
 	var curl: float = ctx.rng.gauss_clamped(0.0, 2.2, 2.0) * player.attrs.technique
 	var spin := Vector3.UP * curl
-	var vel := ctx.ballistics.solve_direct(ctx.ball.pos, aim_point, speed, ctx.env, spin)
+	var vel: Vector3
+	if chip:
+		chips_played += 1
+		vel = ctx.ballistics.solve_lofted(ctx.ball.pos, aim_point, chip_flight(distance), ctx.env, spin)
+	else:
+		vel = ctx.ballistics.solve_direct(ctx.ball.pos, aim_point, speed, ctx.env, spin)
 
 	# The scale is 1.0 at real time: `SimMatchConfig`, "the compressed match's
 	# scoring fit".
@@ -807,6 +879,7 @@ static func _log_shot(ctx: SimContext, player: SimPlayer, from: Vector3, aim_poi
 		"on_target": false,
 		"goal": false,
 		"blocked": false,
+		"minute": ctx.minute(),
 	}
 	ctx.log_event(SimTelemetry.Ev.SHOT, record)
 	ctx.active_shot = record

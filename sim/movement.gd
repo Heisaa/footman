@@ -198,6 +198,39 @@ static func update(ctx: SimContext) -> void:
 			p.next_decision_tick = ctx.tick_index + SimConsts.OFF_BALL_DECISION_TICKS * stride
 			_recompute_target(ctx, p)
 		p.steer_to(p.move_target, p.move_speed_cap, p.move_deadband)
+		_orient_receiver(ctx, p)
+
+
+## Receive on the half-turn (docs/BACKLOG.md 30): the hips are chosen before
+## the ball arrives, not discovered when it does.
+##
+## `SimPlayer.facing` is written from velocity, so a man standing still waiting
+## for a pass keeps whatever facing his last run left him -- which is usually
+## square to the ball he came to meet, and every act after his first touch then
+## pays `facing_penalty` and `strike_scale` for it. A footballer opens his body
+## while the ball travels: half-way between the line it is coming on and the
+## way he wants to play, which is what lets the first touch go forward and the
+## next ball be on. Only for the man the pass is for, only while he is not
+## running (a run writes its own facing), and not with a man tight on him --
+## opening up with a challenger on your back is how the ball is nicked off it,
+## so the tight receiver keeps his body closed and shields instead.
+static func _orient_receiver(ctx: SimContext, p: SimPlayer) -> void:
+	if ctx.ball.intended_target != p.id or ctx.ball.last_touch_team != p.team:
+		return
+	if p.speed() > 1.6:
+		return
+	if ctx.challenge_on(p) > 0.5:
+		return
+	var to_ball := SimConsts.horizontal(ctx.ball.pos - p.pos)
+	var to_goal := SimConsts.horizontal(ctx.pitch.target_goal(p.team) - p.pos)
+	if to_ball.length() < 0.5 or to_goal.length() < 0.5:
+		return
+	var open := to_ball.normalized() + to_goal.normalized()
+	if open.length() < 0.2:
+		return
+	var want := atan2(open.z, open.x)
+	var most: float = p.turn_rate(p.speed()) * SimConsts.DT
+	p.facing += clampf(angle_difference(p.facing, want), -most, most)
 
 
 # --- Chase assignment -------------------------------------------------------
@@ -337,8 +370,11 @@ const NEARBY_RANGE := 9.0
 ## wins it — he is the man who gets pulled out of shape by every driven pass in
 ## the match.
 const NEARBY_SPEED := 8.0
-## How many men it may add per side. One. Two players going for the same loose
-## ball is football; three is the swarm the guard exists to prevent.
+## How many men it may add per side. One. And he takes the chase over rather
+## than joining it: two teammates converging on the same loose ball run into
+## each other, and the collision is how it gets lost. Opponents settle a close
+## race by running (`_contest_pace`); teammates settle it by the call, and the
+## call goes to the man already going unless the other is clearly quicker.
 const NEARBY_EXTRA := 1
 
 
@@ -358,11 +394,26 @@ const NEARBY_EXTRA := 1
 ## cap by another name. And not for the side a pass is already travelling to,
 ## whose man is on his way to meet it -- a second body converging on the same
 ## ball is the swarm, not an interception.
+##
+## The same reasoning applies inside the team, and that is the call. A teammate
+## is only added over the head of the primary already going if he is clearly
+## quicker -- quicker by more than the dead-heat window -- and then the primary
+## stands down to support instead of arriving second into the back of him. Two
+## teammates never race each other to a ball: one of them owns it the moment
+## the assignment is made, which is what the shout does on a real pitch.
 static func _add_nearby_chaser(ctx: SimContext, team: int, receiver: int, ball_ground: Vector3) -> void:
 	if ctx.ball.ground_speed() > NEARBY_SPEED:
 		return
 	if receiver >= 0 and receiver < ctx.players.size() and ctx.players[receiver].team == team:
 		return
+	# The man already called for it, and how quick he is. Raw time: the call is
+	# about who gets there, not who ought to.
+	var going := -1
+	var going_t := INF
+	for pid in _rank_ids:
+		if _chase_role[pid] == CHASE_PRIMARY and _chase_time[pid] < going_t:
+			going = pid
+			going_t = _chase_time[pid]
 	var added := 0
 	for pid in _rank_ids:
 		if added >= NEARBY_EXTRA:
@@ -373,6 +424,10 @@ static func _add_nearby_chaser(ctx: SimContext, team: int, receiver: int, ball_g
 			continue
 		if ctx.players[pid].dist_to(ball_ground) > NEARBY_RANGE:
 			continue
+		if _chase_time[pid] + CONTEST_DEAD_HEAT >= going_t:
+			continue
+		if going >= 0:
+			_chase_role[going] = CHASE_SUPPORT
 		_chase_role[pid] = CHASE_PRIMARY
 		added += 1
 

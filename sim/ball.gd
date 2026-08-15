@@ -24,6 +24,9 @@ var last_touch_player := -1
 var last_touch_team := -1
 var last_touch_tick := -1
 var last_touch_kind := -1
+## Where the ball was when it was last touched. For the books: a goal scored by
+## a touch that was never an attempt is written up as a shot from here.
+var last_touch_pos := Vector3.ZERO
 ## The player a pass was aimed at, if the last touch was a pass. -1 otherwise.
 var intended_target := -1
 
@@ -43,6 +46,7 @@ func reset(at: Vector3 = Vector3(0.0, SimConsts.BALL_RADIUS, 0.0)) -> void:
 	last_touch_team = -1
 	last_touch_tick = -1
 	last_touch_kind = -1
+	last_touch_pos = Vector3.ZERO
 	intended_target = -1
 
 

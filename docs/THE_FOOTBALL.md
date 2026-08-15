@@ -34,17 +34,17 @@ When one is built, move the row and put the account in `docs/STATUS.md`.
 | The dwell — a free man keeps it a beat while he takes another look, then plays | built | `SimDecision.scan_gain`, priced into `_hold_score`; the look is `SimPerception`'s staleness |
 | Orient before the act — a beat between coming by the ball and striking it, pre-paid by the flight he watched | built | `SimDecision.readiness`, `_apply_set_damp`; a long ball can still be played first-time |
 | First touch, and the turn | built | `SimTouch.first_touch` |
-| The layoff — first-time ball back to the man facing play | absent | first-time is modelled for shots alone; `docs/BACKLOG.md` 28 |
-| A setting touch out of the feet before the long ball or the shot | absent | every strike is taken from whatever the ball is doing; `docs/BACKLOG.md` 29 |
-| Receive on the half-turn — the touch chosen before the ball arrives | absent | `first_touch` reacts to the ball; nothing orients him for the next act in advance; `docs/BACKLOG.md` 30 |
+| The layoff — first-time ball back to the man facing play | built | `SimTouch.redirect_share` prices the redirect, `SimDecision._add_passes` eases `off_balance` for the helped-back ball |
+| A setting touch out of the feet before the long ball or the shot | built | `SimDecision._add_set_touch`, a candidate that buys the deferred strike |
+| Receive on the half-turn — the touch chosen before the ball arrives | built | `SimMovement._orient_receiver` opens the hips while the ball travels; `first_touch` already limits the turn |
 | Body facing priced into the strike | built | `SimTouch.facing_penalty` for the aim, `strike_scale` for the range |
 | Turn before you can hit it | built | a ball played behind the body has a fraction of the range, so the long one has to be turned onto |
 | Give-and-go | partial | the passer is nudged to run and the receiver prices the return ball; there is no executed one-two |
-| Beating a man | partial | the knock past a man is the whole of it — no feint, no change of pace that leaves a defender |
-| Shielding the ball | absent | `SimPlayer` mentions it in a comment; nothing does it, and a carry under pressure has no answer but to knock it |
-| Drawing a foul | absent | fouls happen to a player, never for him |
-| Backheel, dummy, first-time pass | absent | first-time is modelled for shots alone |
-| Chip the keeper, round him, square it across the face | absent | `docs/BACKLOG.md`, "Answers to the keeper's one-on-one" |
+| Beating a man | partial | the knock, and the cut that wrong-foots a committed challenger (`SimDecision._try_beat`) — still no feint at a standstill, no change of pace |
+| Shielding the ball | built | `SimDecision._play_hold` sets it, the hold prices it, `SimDuel` weighs it |
+| Drawing a foul | partial | the duel now fouls the skilful or shielding carrier more (`SimDuel`), and a beaten man sometimes chops (`_try_beat`); nobody invites contact on purpose |
+| Backheel, dummy, first-time pass | built | first-time exists for every pass kind (`SimTouch.FIRST_TIME_EASY`); the dummy is `SimDecision._add_dummy`; the backheel is the first-time ball behind, priced by the same facing model |
+| Chip the keeper, round him, square it across the face | built | `SimDecision._add_chip`, `_round_the_keeper`, and the square ball's `SQUARE_CONVERT` gain |
 
 ## Without it, attacking
 
@@ -59,11 +59,11 @@ When one is built, move the row and put the account in `docs/STATUS.md`.
 | Overlap, underlap, third man, switch of play | built | `SimPatterns`, as named patterns |
 | Break on the counter | built | `SimDecision.break_on` prices the ball forward, `SimOffBall` sends the runners, both off the same measurement |
 | Attack a cross — near post, far post, the pull-back | partial | `SimMovement` sends `AERIAL_CHASERS` men at a ball in the air instead of the one the possession cap allows, and they go at the ball; the near post and the far post are not authored positions |
-| Check away and come back | absent | |
-| Arrive as the ball does — easing the last metres, not standing at the spot | absent | a runner reaches his target and stands; timing the arrival is nobody's job |
-| Drop into the pocket between the lines | absent | |
-| Decoy run — going where the ball will not | absent | every run is made to receive |
-| Anticipate the second ball | absent | |
+| Check away and come back | built | `SimOffBall._commit`: a marked show runs its first beat the wrong way |
+| Arrive as the ball does — easing the last metres, not standing at the spot | partial | a box runner holds short until the cross is up, a runner in behind checks back onside instead of standing beyond the line (`SimOffBall.point_for`); shows and drifts still stop on their spot |
+| Drop into the pocket between the lines | built | `SimOffBall._pocket_point`, a probe aimed at the opponents' shape |
+| Decoy run — going where the ball will not | built | `SimOffBall._decoy_point`; not offered to the passer, worth the marker it drags |
+| Anticipate the second ball | built | `SimOffBall._second_ball_point`, under the drop of a contested high ball |
 
 ## Defending
 
@@ -173,15 +173,18 @@ is not a finding; it is the list working.
 - **A cross arrives and nobody makes the run to the near or far post.** The runs
   themselves. Two men now go at a ball in the air and head it; where they go from
   is still the shape they were standing in.
-- **A carrier runs into a defender and loses it** rather than holding him off or
-  going past him. Shielding and beating a man.
+- **A carrier who holds a man off or cuts past him is new** — shielding and the
+  cut went in together. A carrier who still runs straight into a defender and
+  loses it is now the softmax declining both, which is a tuning fact, not an
+  absence.
 - **A shot from twelve yards with a defender beside it goes in cleanly.** Nobody
   blocks.
 - **Attacks walk into the six-yard box.** Defending the penalty area.
 - **A keeper parries straight back out and it happens again immediately.** Where
   the parry goes.
-- **A goal-scoring chance is never a free kick on the edge of the box.** Nobody
-  draws a foul and nobody stops an attack cynically.
+- **A free kick on the edge of the box is now possible but rare.** The duel
+  fouls the skilful or shielded carrier more and a beaten man sometimes chops;
+  the deliberate cynical foul is still absent.
 
 **Something wrong that is not on this list is the valuable kind.** Mark it with
 `M`, because it means the engine has a behaviour and is doing it badly, which is

@@ -125,6 +125,17 @@ Read it top to bottom and stop at the first row that is wrong.
 `Did he have a safe pass?` carries the same window on its last line, off the trace and
 the recovery events rather than off the sim.
 
+**`The width`** — the other axis of `The lines`, off the trace the same way, and the
+one the owner watches collapse: the z-extent of the side in possession and how many of
+its own men stand within twelve metres of its ball, bucketed by which third the ball is
+in for that side. The lines cannot see this failure — a team holds forty metres of
+length with all ten men in the central channel — and no event log can either, because
+a clump retains the ball fine; what it cannot do is pass out of itself. Possession is
+inferred as `Giving up ground` infers it, the man within 2.5 m of the ball, so dead
+balls and long flights drop out. For the eye: a real side building out occupies 40 to
+55 of the 68 metres, and two or three shirts near the ball is support while five is
+the collapse. `tests/test_match.gd` holds a floor under the same two quantities.
+
 **`Why an option lost`** — the other half of the same question, one layer down. For
 every decision, the best-scoring candidate of each kind is set against the option that
 was actually played, and the terms are averaged over the decisions where that kind
@@ -347,6 +358,14 @@ A pathology here does not have to be in the scoring. Three quarters of the carri
 match used to be settling touches aimed by `SimDecision._safe_direction`, which no
 candidate is ever scored for; see `docs/STATUS.md`.
 
+**`The small acts`** — tallies for the individual mechanics that leave no event of
+their own: first-time balls and the layoffs among them, setting touches, dummies,
+shielded holds, cuts tried and won and the fouls they drew, and chips. Counted at
+the point each is played, one-way, reset from `SimMatch.setup`. A row at zero for
+a whole match is the mechanic not firing, and whether that is a broken gate or a
+missing situation is the chain's question — the cut and the chip sit at zero on
+most seeds because their situations are rare, which was checked, not assumed.
+
 **`Did he have a safe pass?`** — the block to reach for before anything that moves bodies.
 Counting teammates near the ball says nothing, because a body is not an option: a man with
 a defender in the lane is a pass that gets cut out. See `docs/STATUS.md` for what it found.
@@ -399,6 +418,26 @@ Expect a residual on `arriving faster than the man can run` even when the aim is
 correct, and read it as execution rather than as intent. Arrival pace goes as the
 *square* of the strike, so at 25 m a ball overhit by 10% arrives at 9.4 m/s instead of
 7.3, and `_perturb` overhits some of them by design. It runs 5% to 23% by squad.
+
+### `./run.sh box` — the one-on-one in a geometry nobody had to reach
+
+The same idea as `behind`, pointed at the box. At current squad quality a match
+produces zero to three box touches an hour, so "what does the striker do in a
+one-on-one" cannot be measured from matches at all — every sample is noise about
+a situation that barely occurs. The bench sets it: a striker at pace with the
+ball, a keeper somewhere off his line, a defender recovering behind, a teammate
+square, over a grid of distances. Each row prints the full score of the drive,
+the chip, the best goal-ward carry, the square ball and the hold, and names the
+best. It runs at the standard compressed clock deliberately, because
+`shot_appetite` is part of what decides this and a bench with it off would
+describe a match nobody watches.
+
+What it established when it was written: at sixteen metres with nobody on him
+the carry now beats the drive (0.45-0.56 against 0.42), with a man on his
+shoulder the drive wins, at eleven metres and closer he strikes it, and a chip
+over a keeper nine metres out scores within a tenth of the drive. Before
+`_carry_shot_gain` carried the appetite, the drive beat the carry six to one in
+every row, which was the early shot the owner watched.
 
 ### `./run.sh behind` — the same ball in a geometry nobody had to reach
 

@@ -166,6 +166,14 @@ static func _resolve_contest(ctx: SimContext) -> void:
 		var skill: float = SimAerial.duel_skill(p) if aerial else (p.attrs.dribbling if holder else p.attrs.tackling)
 		var w: float = 0.35 + skill * 1.1 + p.attrs.strength * 0.45
 		w *= lerpf(0.7, 1.15, p.attrs.aggression) if not holder else 1.0
+		# A shielded ball is the shielder's to lose. His body is between the man
+		# and the ball -- `SimDecision._play_hold` set the flag and priced the
+		# same fact into the option -- so the contest is not two men over a loose
+		# ball, it is one man holding another off, and strength is what decides
+		# how well. See `docs/BACKLOG.md`, "Keeping the ball without spending a
+		# body".
+		if holder and p.shielding and not aerial:
+			w *= lerpf(1.05, 1.5, p.attrs.strength)
 		w *= p.fatigue_factor()
 		# Arriving at pace helps you win the ball and helps you foul.
 		var closing := _closing_speed(p, ball)
@@ -226,6 +234,14 @@ static func _resolve_contest(ctx: SimContext) -> void:
 		# behind him, is far likelier to be a foul. This is where the cynical
 		# foul that stops a break comes from — nobody authored it.
 		p_foul *= _challenge_foul[loser_index]
+		# Drawing the foul is the carrier's half of the same roll. A nimble man
+		# who keeps the ball rides the contact and makes the challenge late; a
+		# shielded ball makes it come through his body. Fouls happen *for* a
+		# player now, not only to him -- docs/THE_FOOTBALL.md, "Drawing a foul".
+		if winner.id == ball.last_touch_player:
+			p_foul *= lerpf(0.9, 1.3, winner.attrs.dribbling * 0.5 + winner.attrs.agility * 0.5)
+			if winner.shielding:
+				p_foul *= 1.35
 		if ctx.rng.chance(clampf(p_foul, 0.0, 0.6)):
 			SimReferee.award_foul(ctx, loser, winner, closing)
 			return

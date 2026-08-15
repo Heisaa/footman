@@ -42,6 +42,8 @@ usage: ./run.sh <command> [args]
       [--against FILE]      set them against a run saved before a change. Read
       [--matches N]         the conversion columns: more possessions moves every
                             count and says nothing about where a change landed
+  box [--seed N]            the one-on-one: what a striker in the box is offered,
+                            in set geometries (no match)
   behind [--seed N]         the ball in behind, struck in geometries that are
                             set rather than sampled: a passer, a runner, a flat
                             back four. Prints the ball and whether the man it is
@@ -374,7 +376,7 @@ case "$cmd" in
 		done
 		parallel_tactics "$per_arm" "$workers" ${rest+"${rest[@]}"}
 		;;
-	match|diagnose|chains|batch|perf|determinism|aggregate|compare|replay|behind|strike)
+	match|diagnose|chains|batch|perf|determinism|aggregate|compare|replay|behind|box|strike)
 	               exec "$GODOT" --headless --script res://tools/headless_main.gd -- "$cmd" "$@" ;;
 	""|-h|--help)  usage ;;
 	*)             echo "unknown command: $cmd" >&2; usage; exit 2 ;;

@@ -114,13 +114,13 @@ omission in a table rather than a design choice.
 | 21 | ~~A ball in behind has no length term~~ built — `SimDecision.behind_length_bias` | `SimDecision._add_passes` | ? |
 | 22 | ~~The ball in behind is a seventh of every pass~~ answered — `SimDecision.BEHIND_BREAK` | `SimDecision._add_passes` | ? |
 | 23 | A ball over the top should land short of the runner, not on him | `SimDecision._add_passes` | + |
-| 24 | The arrival contest is a neutral race, and the terms fail together | `SimDecision._pass_success` | ? |
+| 24 | ~~The arrival contest is a neutral race~~ half built — `SimValueField.control_at_pass`; the terms still fail together | `SimDecision._pass_success` | ? |
 | 25 | ~~Nothing in the score pays for ground~~ built — `TERRITORY` 0.75, counterweighted by 13 | `SimDecision.score_of` | + |
 | 26 | The driven ball as its own candidate, not just its own strike | `SimDecision._add_passes`, `_pass_success` | ? |
 | 27 | The direct plan does not play the longer pass | `SimTactics.direct_bias`, `SimDecision._add_passes` | ? |
-| 28 | The layoff — first-time ball back to the man facing play | `SimDecision._add_passes`, `SimTouch` | + |
-| 29 | A setting touch before the long ball or the shot | `SimDecision`, `SimTouch.facing_penalty` | ? |
-| 30 | Receive on the half-turn — orient before the ball arrives | `SimTouch.first_touch`, `SimOffBall` | + |
+| 28 | ~~The layoff — first-time ball back to the man facing play~~ built — `SimTouch.redirect_share`, `LAYOFF_BIAS` | `SimDecision._add_passes`, `SimTouch` | + |
+| 29 | ~~A setting touch before the long ball or the shot~~ built — `SimDecision._add_set_touch` | `SimDecision`, `SimTouch.facing_penalty` | ? |
+| 30 | ~~Receive on the half-turn — orient before the ball arrives~~ built — `SimMovement._orient_receiver` | `SimTouch.first_touch`, `SimOffBall` | + |
 
 **(22) was neither the length nor the level, and both were tried.** The length term
 reshaped the pass and left the count alone, 207 against 211 over three seeds.
@@ -193,10 +193,13 @@ ordered?` says where it bites -- close at the top (0.89 said, 92% arrived), ligh
 the middle (0.46 said, 72%), which is the contested ball.
 
 Two things in it, and neither is a constant. **The arrival contest does not know the
-ball was aimed at somebody**: a defender arriving level with the receiver reads 0.5.
-And **the terms fail together and are multiplied as if they did not** -- the defender
-who lowers `space` lowers `lane`, and a ball struck under pressure is struck worse,
-so a product of three correlated failures over-counts the failure.
+ball was aimed at somebody** -- built: `SimValueField.control_at_pass`, the receiver
+pays no reaction and a defender pays his own again as he arrives late on the flight,
+with no new constant in it. `docs/STATUS.md`, "The midfield stall was the pass model
+refereeing a race nobody was running", has the measurement. What remains: **the terms
+fail together and are multiplied as if they did not** -- the defender who lowers
+`space` lowers `lane`, and a ball struck under pressure is struck worse, so a product
+of three correlated failures over-counts the failure.
 
 **Do not close it with a scale factor on `space`.** `which factor knew` found the two
 constants by their zero spread and would read a third one exactly the same way.
@@ -216,19 +219,11 @@ the ground-curl the physics lacks (a rolling ball with sidespin runs straight
 here). Until then the driven ball is priced as a roller, which the bench says is
 honest to within a couple of metres on the long axis.
 
-**(28), (29) and (30) are the owner's watching list** — small tells from real
-football, named alongside the dwell (built; `docs/STATUS.md`). The layoff is
-the highest-visibility one: a man receiving back to goal bounces it first-time
-to the man facing play, and this engine models first-time contact for shots
-alone, so every target man kills it and turns into his marker instead. The
-setting touch is its mirror on the striking side — before a long diagonal or a
-shot from range a footballer plays the ball a metre out of his feet, where the
-engine strikes from whatever the ball is doing and pays `facing_penalty` for
-it; the touch *is* the answer to that penalty, made an act. The half-turn is
-the receiving side: the first touch is currently a reaction to the arriving
-ball, and a real receiver has chosen his touch — and his hips — before it
-gets there, off the same believed picture the dwell reads. All three are
-already-priced situations missing only the act; none needs a new value model.
+**(28), (29) and (30) are built**, in one pass with the rest of the owner's
+watching list — the account is `docs/STATUS.md`, "The small acts". Each was an
+already-priced situation missing only the act, and each got the act and nothing
+else: no new value model, and every one counted in `diagnose` under
+`The small acts`.
 
 **(27) is a measured surprise, not a bug report.** A manager expects the direct
 plan to play the longer ball, and it does not: over the fitted sample at real
@@ -248,23 +243,29 @@ at improving retention. All five traded chance creation away at one for one or
 worse, because the sum of where the players are is conserved: a man made available
 to receive is a man not stretching the defence.
 
-The mechanics that create retention without spending a body are individual, are
-listed in `PLAN.md`, and do not exist yet:
+The mechanics that create retention without spending a body are individual, and
+the first cut of all three is in (`docs/STATUS.md`, "The small acts"):
 
-- **Shielding** — holding a defender off, so a carry under pressure is a real
-  option. The engine also cannot currently tell a man shielding the ball from a man
-  running with it, and their touch frequencies are very different.
-- **Drawing a foul.**
-- **Beating a man.**
+- **Shielding** — a hold under challenge is played as a shield
+  (`SimDecision._play_hold`, `SimPlayer.shielding`), the challenge tax on it
+  falls with strength, and `SimDuel` weighs the shielded holder up.
+- **Drawing a foul** — the duel's foul roll now reads the carrier: a nimble man
+  rides the contact, a shielded ball makes the challenge come through the body,
+  and a man beaten by the cut sometimes chops.
+- **Beating a man** — the cut across a committed challenger
+  (`SimDecision._try_beat`), resolved at the touch; the loser is left standing.
 
-This is where the retention work should go next.
+What remains is the deliberate versions: inviting the contact, the feint at a
+standstill, the change of pace.
 
 ## Answers to the keeper's one-on-one
 
-`SimKeeper._one_on_one` is priced straight into `expected_goals`, which counts the
-keeper as a body in the shooting line, so the engine's answer when it fires is to
-not shoot. The attacking answers do not exist: the chip, the ball round him, the
-square pass across the face of an empty goal.
+Built, all three (`docs/STATUS.md`, "The small acts"): the chip is its own shot
+candidate over an advanced keeper (`SimDecision._add_chip`), the knock past him
+is the burst with the box gates opened when only the keeper covers
+(`_round_the_keeper`), and the square ball is priced at the receiver's own shot
+(`SQUARE_CONVERT`). All three are rare in matches because the engine rarely
+produces the one-on-one — that scarcity is backlog 5's subject, not theirs.
 
 ## Instruments that tie a decision to what came of it
 
@@ -359,10 +360,8 @@ is the old approach and put the most visible defects last.
 3. **3** — parry versus hold. About a third of shots are second attempts within
    four seconds of the last, so a scramble that football sees occasionally is the
    normal way this engine finishes an attack. Visible on screen every time.
-4. **Shielding, drawing the foul, beating a man** — the retention answer, and
-   three individual behaviours a viewer can see and name. `docs/STATUS.md`,
-   "Support is an angle problem", is the measurement that says positioning cannot
-   substitute for them.
+4. ~~**Shielding, drawing the foul, beating a man**~~ — first cut built, all
+   three; what remains is the deliberate versions (the section above).
 5. **8b** — half done: the receiver's carry is priced, the map is not. What is
    left of it is a multi-step expected threat, and the cheaper thing in front of
    it is the carrier turning to face a run he cannot currently reach.

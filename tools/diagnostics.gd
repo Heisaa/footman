@@ -2398,6 +2398,92 @@ static func _team_lines(ctx: SimContext) -> void:
 		])
 
 
+## How close counts as part of the clump around the ball.
+const WIDTH_NEAR := 12.0
+
+
+## The width of the side in possession, and the crowd around its own ball.
+##
+## The other axis of `_team_lines`, and the one the owner watches collapse: a
+## side building up that has lost its width reads as a clump of shirts around
+## the carrier in the middle of its own half, and every lane out of the clump
+## is a lane through it. The lines cannot see it — a team can hold 40 m of
+## length with all ten men in the central channel.
+##
+## Off the trace like the lines, so it owes the sim nothing. Possession is
+## inferred the way `_giving_up_ground` infers it — the man within `OWN_BALL`
+## of the ball — so dead-ball and in-flight samples drop out. `width` is the
+## z-extent of the possessing side's outfielders; `crowd` is how many of them
+## stand within `WIDTH_NEAR` of the ball, carrier included.
+##
+## For the eye without a metre stick: a real side building out occupies 40 to
+## 55 m of the 68, and two or three shirts near the ball is support while five
+## is the collapse.
+static func _team_width(ctx: SimContext) -> void:
+	var trace := ctx.telemetry.trace
+	if trace.size() < 2:
+		return
+	var swap := _trace_swap(ctx)
+	var full := ctx.pitch.half_length * 2.0
+	var n := PackedFloat32Array()
+	var width_sum := PackedFloat32Array()
+	var crowd_sum := PackedFloat32Array()
+	n.resize(3)
+	width_sum.resize(3)
+	crowd_sum.resize(3)
+	for i in trace.size():
+		var sample := trace[i]
+		if sample.size() != ctx.players.size() + 1:
+			continue
+		var ball := sample[0]
+		var carrier := -1
+		var best := OWN_BALL
+		for pid in ctx.players.size():
+			var p := ctx.players[pid]
+			if p.is_keeper or not p.on_pitch:
+				continue
+			var d := SimConsts.horizontal_length(sample[pid + 1] - ball)
+			if d < best:
+				best = d
+				carrier = pid
+		if carrier < 0:
+			continue
+		var team := ctx.players[carrier].team
+		var flip: float = 1.0 if i * SimConsts.TRACE_TICKS >= swap else -1.0
+		var dir := ctx.pitch.attack_dir(team) * flip
+		var lo := INF
+		var hi := -INF
+		var crowd := 0.0
+		for pid in ctx.team_players[team]:
+			var p := ctx.players[pid]
+			if p.is_keeper or not p.on_pitch:
+				continue
+			var z: float = sample[pid + 1].z
+			lo = minf(lo, z)
+			hi = maxf(hi, z)
+			if SimConsts.horizontal_length(sample[pid + 1] - ball) < WIDTH_NEAR:
+				crowd += 1.0
+		if is_inf(lo):
+			continue
+		var ball_up: float = ball.x * dir + ctx.pitch.half_length
+		var third: int = clampi(int(ball_up / full * 3.0), 0, 2)
+		n[third] += 1.0
+		width_sum[third] += hi - lo
+		crowd_sum[third] += crowd
+	var total := n[0] + n[1] + n[2]
+	if total <= 0.0:
+		return
+	print("\nThe width  (off the trace, the side in possession; crowd is its men within %.0f m of the ball)" % WIDTH_NEAR)
+	print("  %-14s %8s %8s %10s" % ["ball in", "width", "crowd", "of samples"])
+	var names := ["own third", "middle third", "their third"]
+	for t in 3:
+		if n[t] <= 0.0:
+			continue
+		print("  %-14s %7.0f m %8.1f %9.0f%%" % [
+			names[t], width_sum[t] / n[t], crowd_sum[t] / n[t], 100.0 * n[t] / total,
+		])
+
+
 static func _giving_up_ground(ctx: SimContext) -> void:
 	var trace := ctx.telemetry.trace
 	if trace.size() < 2:
@@ -3831,7 +3917,9 @@ static func report(m: SimMatch) -> void:
 	_what_a_term_is_worth()
 	_safe_options(ctx)
 	_team_lines(ctx)
+	_team_width(ctx)
 	_giving_up_ground(ctx)
+	_new_mechanics()
 
 	# --- Pass attempts by kind, with completion -----------------------------
 	var attempts := {}
@@ -4058,3 +4146,19 @@ static func report(m: SimMatch) -> void:
 			var p := ctx.players[pid]
 			line.append("%s %.1f" % [SimRole.name_of(p.role), p.distance_run / 1000.0])
 		print("  %s: %s" % [ctx.teams[team].short_name, " ".join(line)])
+
+
+## The individual acts that leave no event of their own, counted where they are
+## played. Each is a mechanic from the owner's watching list; a row at zero for
+## a whole match is the mechanic not firing, which is the first thing to know
+## about it.
+static func _new_mechanics() -> void:
+	print("\nThe small acts  (tallies, whole match)")
+	print("  first-time balls struck %4d   of them layoffs %4d" % [
+		SimTouch.ft_played, SimTouch.ft_layoff])
+	print("  setting touches         %4d" % SimDecision.tally_set)
+	print("  dummies                 %4d" % SimDecision.tally_dummy)
+	print("  shielded holds          %4d" % SimDecision.tally_shield)
+	print("  cuts tried %4d   beat his man %4d   and was fouled %4d" % [
+		SimDecision.tally_feint, SimDecision.tally_beat, SimDecision.tally_beat_foul])
+	print("  chips                   %4d" % SimTouch.chips_played)

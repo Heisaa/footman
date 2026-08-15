@@ -2491,3 +2491,117 @@ baseline), while safety in the two seconds after a regain went from 60%
 none-at-all to 12% — the men are no longer stacked in the band the
 instrument counts, and the options live wider than it can see. Goldens
 re-recorded again.
+
+## The small acts
+
+Thirteen mechanics from the owner's watching list, in one pass: on the ball the
+layoff (28), the setting touch (29), the half-turn (30), shielding, the cut past
+a committed man, drawing the foul, the dummy, first-time contact for every pass
+kind, and the three answers to the keeper's one-on-one; off it the check-away,
+the timed arrival, the pocket between the lines, the decoy and the second ball.
+Each was an already-priced situation missing only the act, and each got the act
+and nothing else. `diagnose` counts them under `The small acts`.
+
+Measured on seed 7 at thirty minutes: 38-62 first-time balls struck, 22-42 of
+them layoffs; 28 setting touches; 6-10 dummies; 4-8 shielded holds; box, decoy
+and second-ball runs appearing in the offering table. Passes played ahead of
+the body went from 31% of attempts to 45% on the ten-minute seed, which is the
+half-turn's signature. Chips and cuts are near zero because their situations
+are — the engine rarely produces a one-on-one (backlog 5) and carriers under
+real challenge pass out 100% of the time, so the cut's moment barely exists.
+
+Two things learned the hard way. First, the timed run in behind deadlocked on
+its first cut: holding the runner at the line until the ball was struck let the
+pass model price him as a standing starter, so through balls were offered in
+59% of runner decisions and played in none — the run must go at full depth and
+only *check back* once he is over the line without the ball. Second, the layoff
+is not a new candidate: it is `off_balance` corrected for redirect, one shared
+function (`SimTouch.redirect_share`) read by the price and paid by the strike.
+
+What is knowingly rough: the deferred strike behind a setting touch is an
+estimate (`SET_PASS_SUCCESS`, a flat 0.62) rather than the scored pass, because
+the real one is scored properly on the next decision; and a first-time lofted
+ball is charged twice, once in `off_balance` and once in strike sigma, since
+neither layer reads the other's price.
+
+## Waiting for the right moment in the box
+
+The owner watched strikers shoot early or turn the ball back in one-on-ones.
+Two causes, one of them the fit's own knob. `expected_goals` could not see the
+right moment at all — a keeper who has committed, or a defender the cut has
+just left, counted as a body in the line exactly like a set one, so the number
+never rose and there was never a reason to wait; blockers mid-recovery are now
+skipped. And the carry toward goal was priced as grass while the shot was
+multiplied by `shot_appetite`, which at the standard clock is nearly 6x — so
+"shoot now" beat "shoot in a second from six metres closer" six to one in
+every geometry. `_carry_shot_gain` now credits a carry inside 26 m with the
+shot it is carrying toward, appetite included, and the square ball into the
+box carries it too (`SQUARE_CONVERT`): the fit still decides what shots are
+worth, the football decides which shot gets taken.
+
+Measured on `./run.sh box` (new; `docs/DIAGNOSTICS.md`): at 16 m free the
+carry beats the drive 0.45-0.56 to 0.42, with a man on his shoulder the drive
+wins, at 11 m and in he strikes, and the chip over a keeper nine metres out
+scores 0.63 against the drive's 0.69. At match level the change is neutral on
+seed 7 at 45 minutes — same shots, same thirds, the losing carry's mean gain
+doubled without flipping a pick — because the engine currently produces
+almost no box entries at 0.6-quality squads; that scarcity is the midfield
+stall (`FUTURE_PROMPT_IDEA.md`) and backlog 5, not this mechanic.
+
+## The midfield stall was the pass model refereeing a race nobody was running
+
+The owner watched possession clump into central passing in a side's own half
+and attacks that never reached the box. Instrumented first: `diagnose` now
+prints `The width` (z-extent of the side in possession and its men within
+12 m of its ball, off the trace), and it acquitted the shape — 39-46 m wide,
+crowd 3.4-3.9. What convicted was progression: seed 7 at ten minutes had 91%
+of play in the middle third, 1% of touches in the final third, 52% of passes
+backward, sequences averaging −3.5 m up the pitch, no box touch and no shot.
+
+`--ablate` named the chain: `possession_value` flipped 75% of picks and the
+risk half 56%, while every forward-value term flipped nothing — and the
+engine's own tallies said the forward balls it did play were the best it hit
+(+0.0100 xT on balls to committed runs against −0.0006 ordinary; 64 moves
+into space taken, received 0%, best softmax share 6%). The runs existed. The
+pass model priced them as coin flips, so retention won every softmax.
+
+The mispricing is backlog 24's first half, verbatim: the arrival contest was
+a neutral race, and an aimed ball is not one. `SimDuel._act` gives the
+arriving ball to whoever touches it first, and the man it was aimed at is
+standing where it lands. `SimValueField.control_at_pass` now scores the pass
+contest with the receiver paying no reaction — the ball is not news to the
+man who asked for it — and every opponent paying his own reaction again as
+he arrives late on the flight, ramped in over the reaction before landing so
+a man who genuinely beats the ball still steps in clean. No new constant:
+the measured gap (`is it ordered?` said 0.46 on balls that arrived 72%) is
+one reaction time through `CONTROL_TAU`, which is what suggested the charge.
+
+Measured at ten minutes, seeds 7 / 3 / 12: backward passes 52% → 35-37%,
+sequences −3.5 m → +1.6 to +4.3 m up the pitch, moves into space received
+0% → 7%, final-third touches 1/7/15% → 5/10/19%, shots 0/1/2 → 0/4/2 with
+forward balls now the ones shots follow (seed 3: 18% of forward and 40% of
+long forward balls reached a shot inside 12 s). Forward completion fell to
+47-50% on two seeds — more ambitious balls attempted, which is the trade the
+change exists to make. The middle-third lock eased (91% → 73-88% of play)
+but did not lift; what remains is the flat map (backlog 8b) and the
+correlated-terms half of 24. Goldens re-recorded.
+
+`tests/test_match.gd` now guards the failure both ways inside its stepped
+match: a width floor and a crowd ceiling for own-half possession, a
+final-third floor (5% of possession samples; the stalled engine read ~4%,
+this one 11.5%), and the ball in the box at least once a match.
+
+**Corrected the same day — the owner watched it and saw passes hit straight
+to opponents.** The first cut floored *every* arrival at the ball's landing
+time, defenders included, which erased the earliness of a defender already
+camped on the landing spot — the clean interception, priced as a coin flip.
+`Where the pass was aimed` had it: balls aimed within 2 m of an opponent
+went from 4% to 10% of attempts, targets in opponent-owned grass 1.8% to
+6.8%. An opponent in the aimed contest now keeps his full earliness against
+the flight and pays the reaction ramp only from a reaction before it lands.
+Re-measured: seed 7 clean interceptions 13 to 7, forward completion back to
+47-100% by seed, and `is it ordered?` reads calibrated on all three seeds
+(seed 3: said 0.16/0.30/0.48/0.64/0.78/0.89 against arrived
+17/33/50/82/89/100%). Long forward balls sit at 20% completion on two seeds
+at n=5 — worth an eye at match length before anyone tunes at it. Goldens
+re-recorded twice.

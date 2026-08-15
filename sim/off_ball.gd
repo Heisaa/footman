@@ -51,9 +51,9 @@ extends RefCounted
 ## ball nobody could do anything with. Contributions, per PLAN.md §4.3, not
 ## replacements.
 
-enum { NONE, SHOW, SPACE, BEHIND, BOX }
+enum { NONE, SHOW, SPACE, BEHIND, BOX, DECOY, SECOND }
 
-const KIND_NAMES := ["none", "show", "space", "behind", "box"]
+const KIND_NAMES := ["none", "show", "space", "behind", "box", "decoy", "second"]
 
 ## Assignment cadence, in ticks. This is built out of the value field, which is
 ## a 5 Hz quantity (PLAN.md §2.5), so it is refreshed at the same rate.
@@ -71,7 +71,7 @@ const ASSIGN_TICKS := 12
 ## moving into space is the one kind that cannot swarm: no intent in this file
 ## ever targets the ball and the nearest of them stops ten metres off it, so the
 ## guard in `SimMovement._assign_chasers` has nothing to say about it.
-const QUOTA := [0, 1, 3, 2, 2]
+const QUOTA := [0, 1, 3, 2, 2, 1, 1]
 
 ## Nobody further than this from the ball is offering to receive it. He is
 ## holding shape, which at that distance is the right thing to be doing.
@@ -154,11 +154,11 @@ const BEHIND_MAX_RUN := 18.0
 ## and for a move into space that now means long enough to finish the far probe,
 ## which at the pace below is a little over three seconds. A window that expires
 ## as he arrives is a man who never arrives.
-const HOLD_SECONDS := [0.0, 3.0, 4.5, 4.0, 3.5]
+const HOLD_SECONDS := [0.0, 3.0, 4.5, 4.0, 3.5, 3.0, 2.5]
 ## And the rest afterwards, before the same player will do it again. The sprint
 ## in behind is the expensive one and carries much the longest cooldown; without
 ## it a front three covers eighteen kilometres between them.
-const REST_SECONDS := [0.0, 4.5, 4.0, 10.0, 7.0]
+const REST_SECONDS := [0.0, 4.5, 4.0, 10.0, 7.0, 6.0, 3.0]
 
 ## Pace of each kind as a fraction of the player's maximum, and how close counts
 ## as arrived. A run in behind has to be made to the metre; drifting into space
@@ -172,8 +172,8 @@ const REST_SECONDS := [0.0, 4.5, 4.0, 10.0, 7.0]
 ## per cent of moves into space ever had the ball played to them. He goes at the
 ## pace he was scored at, near enough, and what is left of the gap is the
 ## difference between a footballer's cruise and his sprint.
-const PACE := [0.0, 0.62, 0.75, 0.97, 0.95]
-const DEADBAND := [0.0, 1.5, 1.8, 1.0, 1.2]
+const PACE := [0.0, 0.62, 0.75, 0.97, 0.95, 0.9, 0.85]
+const DEADBAND := [0.0, 1.5, 1.8, 1.0, 1.2, 1.5, 1.6]
 
 ## How much better than standing still an idea has to look before it is worth
 ## the legs. The same hysteresis as SimMovement.PROBE_MARGIN and for the same
@@ -193,6 +193,19 @@ const LANE_WIDTH := 3.0
 ## coming to meet the ball. See `_value_of`.
 const SPACE_LANE_POWER := 0.5
 
+## Check away and come back: how close a marker has to be for the check to be
+## worth making, how far the wrong way it goes, how long it lasts, and the pace
+## it is made at -- a walk-and-a-half, so the burst back reads as one.
+const CHECK_MARKED := 4.5
+const CHECK_AWAY := 3.0
+const CHECK_SECONDS := 0.8
+const CHECK_PACE := 0.5
+
+## Timing the arrival at a cross: how far short of the spot a box runner holds
+## until the ball is up, and the pace he holds there at.
+const BOX_EASE := 6.0
+const BOX_EASE_PACE := 0.8
+
 ## Live intent per player id, and where it is going. Flat arrays rather than
 ## dictionaries because the movement layer reads them for every player, every
 ## tick.
@@ -201,6 +214,9 @@ static var _point := PackedVector3Array()
 static var _until := PackedInt32Array()
 static var _ready := PackedInt32Array()
 static var _since := PackedInt32Array()
+## The check phase of a show: the point it goes to, and the tick it runs until.
+static var _check_point := PackedVector3Array()
+static var _check_until := PackedInt32Array()
 
 ## Per-match tallies by kind: how many of each were made, how many ended with
 ## the ball at that player's feet, and how far he ran to offer.
@@ -376,6 +392,31 @@ static func point_for(ctx: SimContext, p: SimPlayer) -> Vector3:
 	var kind := intent_of(ctx, p)
 	if kind == NONE or kind == SPACE:
 		return Vector3.INF
+	# Check away and come back: for the first beat of a marked show, the point
+	# is the check -- a few metres the wrong way, taking the marker with it --
+	# and only then the ball. See `_commit`.
+	if kind == SHOW and ctx.tick_index < _check_until[p.id]:
+		return _check_point[p.id]
+	# Timing the run in behind: the run itself goes at full depth -- a pass is
+	# priced off a man already moving, and holding him at the line until the
+	# ball was struck deadlocked the pair completely (measured: through balls
+	# offered in 59% of runner decisions and played in none). What changes is
+	# what he does when the ball has *not* come by the time he is over the
+	# line: he checks back onside instead of standing beyond it waiting to be
+	# flagged, and the next query sends him again. That is the arrival timed,
+	# and it is also fewer offsides.
+	if kind == BEHIND and ctx.ball.intended_target != p.id:
+		var dir := ctx.pitch.attack_dir(p.team)
+		var line: float = SimReferee.believed_offside_line(ctx, p) * dir
+		if p.pos.x * dir > line - 0.4:
+			return Vector3((line - 0.4) * dir, 0.0, _point[p.id].z)
+		return _point[p.id]
+	# Timing the arrival at a cross: until the ball is up, he holds short of the
+	# spot -- arriving as the ball does, not standing on the six-yard line
+	# waiting for it.
+	if kind == BOX and ctx.ball.grounded:
+		var d2 := ctx.pitch.attack_dir(p.team)
+		return _point[p.id] - Vector3(d2 * BOX_EASE, 0.0, 0.0)
 	return _point[p.id]
 
 
@@ -404,16 +445,25 @@ static func drift_for(ctx: SimContext, p: SimPlayer) -> Vector3:
 ## yet begun -- and that run is exactly the one worth passing to.
 static func destination_for(ctx: SimContext, p: SimPlayer) -> Vector3:
 	match intent_of(ctx, p):
-		SHOW, BEHIND, BOX:
+		SHOW, BEHIND, BOX, SECOND:
 			return _point[p.id]
 		SPACE:
 			return SimMovement.shape_position(ctx, p) + _point[p.id]
 		_:
+			# A decoy is the one run not made to receive, so it is not a
+			# destination the passer is offered.
 			return Vector3.INF
 
 
 static func pace_for(ctx: SimContext, p: SimPlayer) -> float:
-	return PACE[intent_of(ctx, p)]
+	var kind := intent_of(ctx, p)
+	# The check is made at a walk-and-a-half; the come-back is the sprint. A
+	# box runner eases until the ball is up, then attacks it.
+	if kind == SHOW and ctx.tick_index < _check_until[p.id]:
+		return CHECK_PACE
+	if kind == BOX and ctx.ball.grounded:
+		return BOX_EASE_PACE
+	return PACE[kind]
 
 
 static func deadband_for(ctx: SimContext, p: SimPlayer) -> float:
@@ -646,6 +696,32 @@ static func _consider(ctx: SimContext, p: SimPlayer, team: int, carrier: int, ba
 			* ctx.tactics(team).direct_bias() * ctx.tactics(team).focus_at(box.z, ctx.pitch)
 		_points[BOX] = box
 
+	# The decoy: a run made where the ball will not go, worth exactly as much
+	# as the marker it takes with it. Scored on how tightly he is marked --
+	# an unmarked man dragging nobody is not a decoy, he is lost -- times the
+	# threat of the ground he darts across, which is what makes his marker
+	# follow. Not offered to the passer (`destination_for`), so it is the one
+	# run in the layer that cannot be judged by `received`; `made` is its row.
+	var decoy := _decoy_point(ctx, p, team, ball)
+	if decoy != Vector3.INF:
+		var marker := ctx.nearest_to(p.pos, SimConsts.other_team(team))
+		if marker != null and not marker.is_keeper:
+			var marked: float = clampf(1.0 - marker.dist_to(p.pos) / DECOY_MARKED, 0.0, 1.0)
+			if marked > 0.0:
+				_scores[DECOY] = ctx.value.xt_at(team, decoy, ctx.pitch) * marked * DECOY_WORTH \
+					* ctx.tactics(team).focus_at(decoy.z, ctx.pitch)
+				_points[DECOY] = decoy
+
+	# The second ball: with a long ball of ours in the air toward a contested
+	# drop, somebody stands underneath the duel. Worth the ball itself -- most
+	# knock-downs and half-clearances die a few metres short of the contest,
+	# and the man already standing there owns them.
+	var second := _second_ball_point(ctx, p, team)
+	if second != Vector3.INF:
+		_scores[SECOND] = (ctx.value.xt_at(team, second, ctx.pitch)
+			+ SimDecision.possession_value(ctx, team, second)) * SECOND_WORTH
+		_points[SECOND] = second
+
 	# The give-and-go, from the side that has to make the run. A man who has
 	# just laid the ball off is the one player on the pitch whose marker is
 	# watching something else, and nothing in a positional model knows that --
@@ -722,6 +798,19 @@ static func _commit(ctx: SimContext, pid: int, kind: int, point: Vector3, in_win
 	_point[pid] = point
 	_offered[pid] = 0
 	_best_weight[pid] = 0.0
+	# Check away and come back. Only a marked man has anybody to lose: the
+	# check drags the marker the wrong way for a beat, and the burst back to
+	# the show point is what arrives free. Unmarked, he just comes.
+	_check_until[pid] = 0
+	if kind == SHOW:
+		var mover := ctx.players[pid]
+		var marker := ctx.nearest_to(mover.pos, SimConsts.other_team(mover.team))
+		if marker != null and not marker.is_keeper and marker.dist_to(mover.pos) < CHECK_MARKED:
+			var away := SimConsts.horizontal(mover.pos - ctx.ball.ground_pos())
+			if away.length() > 0.5:
+				_check_point[pid] = ctx.pitch.clamp_to_pitch(
+					mover.pos + away.normalized() * CHECK_AWAY, 1.5)
+				_check_until[pid] = ctx.tick_index + int(CHECK_SECONDS * float(SimConsts.TICK_HZ))
 	_born[pid] = 1 if in_window else 0
 	if in_window:
 		born[kind] += 1
@@ -856,6 +945,14 @@ static func _space_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3
 		if v > best_value:
 			best_value = v
 			best = probe
+	# Drop into the pocket between the lines: the one probe that is aimed at
+	# the opponents' shape rather than at fixed offsets from his own.
+	var pocket := _pocket_point(ctx, p, team, base)
+	if pocket != Vector3.INF and SimConsts.horizontal_length(pocket - ball) <= RANGE:
+		var pv := _value_of(ctx, p, team, ball, pocket, 0.5, SPACE_LANE_POWER) * POCKET_LIFT
+		if pv > best_value:
+			best_value = pv
+			best = pocket
 	if best == Vector3.INF:
 		return best
 	# Handed back as a displacement from the station, not as a place to stand.
@@ -1001,6 +1098,101 @@ static func _box_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3) 
 	return ctx.pitch.clamp_to_pitch(best, 2.0)
 
 
+## The decoy run. How close the marker must be for there to be anybody to
+## drag, and what dragging him is worth against the runs made to receive.
+const DECOY_MARKED := 3.5
+const DECOY_WORTH := 0.6
+## The second ball: how far under the duel the man stands, how far away he can
+## be and still get there, and what winning the loose ball is worth.
+const SECOND_SHORT := 8.0
+const SECOND_RANGE := 28.0
+const SECOND_WORTH := 1.3
+## The pocket between the lines: the least gap between the opponents' back
+## line and their midfield line worth dropping into, and the lift the pocket
+## carries over an ordinary probe -- the map cannot see "between the lines",
+## and the lift is the football statement that a man there is playable and
+## facing their goal while nobody's job is to press him.
+const POCKET_GAP := 8.0
+const POCKET_LIFT := 1.15
+
+
+## Where a decoy goes: forward and across the front of the defence, up to the
+## line, away from the channel the ball is in -- the dart that drags a marker
+## out of the middle without asking for the ball.
+static func _decoy_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3) -> Vector3:
+	if not SimRole.is_attacking(p.role):
+		return Vector3.INF
+	var dir := ctx.pitch.attack_dir(team)
+	if ball.x * dir < ctx.pitch.half_length * 0.2:
+		return Vector3.INF
+	if p.dist_to(ball) > 30.0:
+		return Vector3.INF
+	var line: float = SimReferee.believed_offside_line(ctx, p) * dir
+	if p.pos.x * dir > line + BEHIND_ONSIDE_SLACK:
+		return Vector3.INF
+	var across: float = -signf(p.pos.z - ball.z)
+	if is_zero_approx(across):
+		across = 1.0
+	var pt := Vector3(minf(p.pos.x * dir + 7.0, line + 2.0) * dir, 0.0, p.pos.z + across * 6.0)
+	return ctx.pitch.clamp_to_pitch(pt, 2.0)
+
+
+## Where the second-ball man stands: under the drop of our own high ball,
+## goal-side of the contest, when the drop is actually contested. Nobody's
+## errand when the ball is on the grass, aimed at nobody's duel, or already
+## his own to meet.
+static func _second_ball_point(ctx: SimContext, p: SimPlayer, team: int) -> Vector3:
+	if ctx.ball.grounded or ctx.ball.last_touch_team != team:
+		return Vector3.INF
+	if ctx.ball.pos.y < 1.5:
+		return Vector3.INF
+	if ctx.ball.intended_target == p.id:
+		return Vector3.INF
+	var traj := ctx.trajectory_now()
+	if traj.count == 0:
+		return Vector3.INF
+	var land := traj.points[traj.count - 1]
+	if p.dist_to(land) > SECOND_RANGE:
+		return Vector3.INF
+	# Contested, or the man it is for simply takes it and this run is a body
+	# in his way.
+	var rival := ctx.nearest_to(land, SimConsts.other_team(team))
+	if rival == null or rival.dist_to(land) > 7.0:
+		return Vector3.INF
+	var dir := ctx.pitch.attack_dir(team)
+	var pt := Vector3(land.x - dir * SECOND_SHORT, 0.0, lerpf(p.pos.z, land.z, 0.7))
+	return ctx.pitch.clamp_to_pitch(pt, 1.5)
+
+
+## The pocket between the opponents' lines, as a point in this player's own
+## channel, or INF when the lines are too close to hold one.
+static func _pocket_point(ctx: SimContext, p: SimPlayer, team: int, base: Vector3) -> Vector3:
+	if not SimRole.is_attacking(p.role) and p.role != SimRole.CM:
+		return Vector3.INF
+	var dir := ctx.pitch.attack_dir(team)
+	var line: float = SimReferee.believed_offside_line(ctx, p) * dir
+	var mid_sum := 0.0
+	var n := 0
+	for oid in ctx.opponent_ids(team):
+		var o := ctx.players[oid]
+		if not o.on_pitch or o.is_keeper:
+			continue
+		if o.role == SimRole.DM or o.role == SimRole.CM or o.role == SimRole.AM:
+			mid_sum += o.pos.x * dir
+			n += 1
+	if n == 0:
+		return Vector3.INF
+	var mid_line := mid_sum / float(n)
+	if line - mid_line < POCKET_GAP:
+		return Vector3.INF
+	var pt := Vector3((line + mid_line) * 0.5 * dir, 0.0, base.z)
+	if (pt.x - base.x) * dir < 2.0:
+		return Vector3.INF
+	if SimConsts.horizontal_length(pt - base) > 16.0:
+		return Vector3.INF
+	return ctx.pitch.clamp_to_pitch(pt, 1.5)
+
+
 # --- Shared valuation -------------------------------------------------------
 
 
@@ -1114,6 +1306,8 @@ static func _resize(n: int) -> void:
 	_best_weight.resize(n)
 	_rest_kind.resize(n)
 	_born.resize(n)
+	_check_point.resize(n)
+	_check_until.resize(n)
 	_clear()
 
 
@@ -1128,6 +1322,8 @@ static func _clear() -> void:
 		_best_weight[i] = 0.0
 		_rest_kind[i] = NONE
 		_born[i] = 0
+		_check_point[i] = Vector3.ZERO
+		_check_until[i] = 0
 	regain_passes.resize(2)
 	regain_men.resize(2)
 	regain_rest_left.resize(2)

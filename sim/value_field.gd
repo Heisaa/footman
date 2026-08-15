@@ -229,6 +229,36 @@ func control_at_time(ctx: SimContext, point: Vector3, team: int, ball_time: floa
 	return _control(ctx, point, team, maxf(ball_time, 0.0), ignore_id)
 
 
+## Control of the point a pass is aimed at, for the side playing it.
+##
+## `_control` prices a neutral race for loose grass, and an aimed ball is not
+## one (docs/BACKLOG.md 24: "the arrival contest does not know the ball was
+## aimed at somebody"). Two facts break the symmetry, and both are already in
+## the engine's own resolution rule -- `SimDuel._act` gives the arriving ball
+## to whoever touches it first, and the man it was aimed at is standing where
+## it lands:
+##
+##  - The intended receiver pays no reaction. Reaction is the price of
+##    responding to news, and the ball is not news to the man who asked for it:
+##    he committed to the point when the pass was chosen.
+##  - An opponent can only win the ball *at the point* by beating it there and
+##    stepping in. Arriving level with the landing is arriving second -- the
+##    receiver touches it first, and what is left to the defender is the
+##    challenge after the touch, which the duel prices, not the pass. So an
+##    opponent is charged his own reaction again as he arrives late on the
+##    ball, ramping in over the reaction before it lands: it is news to him
+##    where the flight ends, and it is not news to the man it was played to.
+##
+## Measured before this existed (`is it ordered?`, seed 7): the model said
+## 0.46 on the contested middle band and 72% of those balls arrived -- and the
+## share the gap works out to is one reaction time through `CONTROL_TAU`,
+## which is why the charge is the defender's own reaction and not a new
+## constant.
+func control_at_pass(ctx: SimContext, point: Vector3, team: int, ball_time: float,
+		receiver_id: int, ignore_id: int = -1) -> float:
+	return _control(ctx, point, team, maxf(ball_time, 0.0), ignore_id, receiver_id)
+
+
 ## Scratch arrival times, parallel to `_dist`.
 var _time := PackedFloat32Array()
 
@@ -236,7 +266,12 @@ var _time := PackedFloat32Array()
 ## `ball_time` below zero means "as soon as anyone can get there"; at or above
 ## zero it is a floor on every arrival, because nobody wins a ball before it
 ## turns up.
-func _control(ctx: SimContext, point: Vector3, team: int, ball_time: float, ignore_id: int) -> float:
+##
+## `aimed_id` marks the man an aimed ball is for -- see `control_at_pass`. He
+## pays no reaction, and every opponent pays his own reaction again as he
+## arrives late on the ball. Negative for the neutral race, which is every
+## caller except the pass model.
+func _control(ctx: SimContext, point: Vector3, team: int, ball_time: float, ignore_id: int, aimed_id: int = -1) -> float:
 	var n := ctx.players.size()
 	if _dist.size() != n:
 		_dist.resize(n)
@@ -272,9 +307,23 @@ func _control(ctx: SimContext, point: Vector3, team: int, ball_time: float, igno
 		if d > (cut_own if p.team == team else cut_opp):
 			_dist[i] = INF
 			continue
-		var t := time_to_arrive(p, point, reaction_of(p))
+		var t := time_to_arrive(p, point, 0.0 if i == aimed_id else reaction_of(p))
 		if ball_time >= 0.0:
-			t = maxf(t, ball_time)
+			if aimed_id >= 0 and p.team != team:
+				# An opponent is not floored at the ball on an aimed contest: his
+				# earliness *is* his interception — a defender camped on the
+				# landing spot before the ball turns up steps in front and takes
+				# it, and flooring him level with the waiting receiver priced
+				# exactly that ball as a coin flip (measured: balls aimed within
+				# 2 m of an opponent went 4% to 10% of attempts while the floor
+				# was in). What he pays is the read: the charge ramps in
+				# over his reaction, so a man who beats the flight by a full
+				# reaction keeps all of his earliness and a man arriving level is
+				# a reaction behind the touch.
+				var r := reaction_of(p)
+				t += clampf(t - ball_time + r, 0.0, r)
+			else:
+				t = maxf(t, ball_time)
 		_time[i] = t
 		best = minf(best, t)
 		if p.team == team:

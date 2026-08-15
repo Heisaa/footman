@@ -60,6 +60,8 @@ func _initialize() -> void:
 			_cmd_replay(flags)
 		"behind":
 			BehindBench.run(flags)
+		"box":
+			BoxBench.run(flags)
 		"strike":
 			StrikeBench.run(flags)
 		_:

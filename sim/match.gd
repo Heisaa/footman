@@ -59,6 +59,7 @@ func setup(config: SimMatchConfig) -> void:
 	SimOffBall.reset()
 	SimMovement.reset()
 	SimDecision.reset()
+	SimTouch.reset_tallies()
 	SimAblation.reset()
 	SimChoices.reset()
 	ctx.config = config
@@ -501,14 +502,35 @@ func _catch_in_net() -> void:
 
 func _score_goal(team: int) -> void:
 	ctx.score[team] += 1
+	var scorer := ctx.ball.last_touch_player
+	var scorer_team := ctx.ball.last_touch_team
 	if not ctx.active_shot.is_empty() and int(ctx.active_shot["team"]) == team:
 		ctx.active_shot["on_target"] = true
 		ctx.active_shot["goal"] = true
 		ctx.active_shot["fate"] = "goal"
+	elif scorer_team == team and scorer >= 0:
+		# A cross that sails in, a pass that runs in off nobody: the touch was
+		# never an attempt, but it scored, and a goal the shot count cannot see
+		# leaves the books reading four goals off three on target. Written up
+		# the way the real ledgers do it -- if it went in, it was a shot.
+		var p := ctx.players[scorer]
+		p.shots += 1
+		ctx.log_event(SimTelemetry.Ev.SHOT, {
+			"p": scorer,
+			"team": team,
+			"from": ctx.ball.last_touch_pos,
+			"aim": ctx.ball.pos,
+			"quality": 0.0,
+			"first_time": false,
+			"dist": SimConsts.horizontal_length(ctx.ball.pos - ctx.ball.last_touch_pos),
+			"on_target": true,
+			"goal": true,
+			"blocked": false,
+			"fate": "goal",
+			"minute": ctx.minute(),
+		})
 	ctx.active_shot = {}
 	SimReferee.add_stoppage(ctx, SimReferee.STOPPAGE_GOAL)
-	var scorer := ctx.ball.last_touch_player
-	var scorer_team := ctx.ball.last_touch_team
 	ctx.log_event(SimTelemetry.Ev.GOAL, {
 		"team": team,
 		"p": scorer,

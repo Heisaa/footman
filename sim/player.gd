@@ -140,6 +140,12 @@ var dispossessed_tick := -100000
 ## going somewhere, and a man who has just settled it is not. Without this he
 ## sprints straight past a ball he has just stopped.
 var settling := false
+## Whether this player's last touch was a shielded hold -- body between the
+## challenger and the ball. Written by `SimDecision`, read by `SimDuel`: the
+## contest for a shielded ball is the shielder's to lose, in proportion to his
+## strength, and a challenge that has to come through the body is likelier to
+## be a foul.
+var shielding := false
 ## Ticks until this player next re-evaluates off-ball movement. Staggered at
 ## kickoff so no single tick evaluates every player.
 var next_decision_tick := 0

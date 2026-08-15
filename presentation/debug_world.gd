@@ -215,7 +215,7 @@ func _draw_intents(frame: MatchDebugFrame) -> void:
 		var to := frame.intent_point[i]
 		if is_inf(to.x):
 			continue
-		var colour: Color = [SimPalette.SLATE, SimPalette.AMBER, SimPalette.TEAL, SimPalette.LIME][kind]
+		var colour: Color = [SimPalette.SLATE, SimPalette.AMBER, SimPalette.TEAL, SimPalette.LIME, SimPalette.PLUM, SimPalette.PINK, SimPalette.BROWN][kind]
 		_arrow(frame.pos[i], to, Color(colour, 0.9))
 
 
