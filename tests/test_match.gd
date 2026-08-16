@@ -167,7 +167,7 @@ func _whole_match_invariants() -> void:
 	# that only the failure itself crosses it.
 	# Measured on this seed when the bounds were set: width 43.5 m, crowd 3.9,
 	# final third 11.5% of possession samples, 23 box samples. The stalled
-	# engine this guards against (docs/STATUS.md, "The midfield stall") read
+	# engine this guards against -- the midfield stall -- read
 	# ~4% final third and 0 in the box, with the width still healthy — which
 	# is why the final-third floor is the one carrying most of the weight.
 	var mean_width := build_width_total / maxf(float(build_samples), 1.0)

@@ -37,7 +37,7 @@ const BALL_PULL_Z := 0.30
 const BALL_PULL_X_HOLD := 0.25
 
 ## The lateral pull, eased while this side builds in its own half. The failed
-## experiments in `docs/STATUS.md` ("Support is an angle problem") pulled the
+## experiments -- support as an angle problem -- pulled the
 ## shape *toward* the ball and halved the attack; the owner's direction is the
 ## reverse — in build-up the far side holds its width, so the switch of play
 ## has somewhere to go and the middle does not collapse onto the carrier.
@@ -201,7 +201,7 @@ static func update(ctx: SimContext) -> void:
 		_orient_receiver(ctx, p)
 
 
-## Receive on the half-turn (docs/BACKLOG.md 30): the hips are chosen before
+## Receive on the half-turn: the hips are chosen before
 ## the ball arrives, not discovered when it does.
 ##
 ## `SimPlayer.facing` is written from velocity, so a man standing still waiting

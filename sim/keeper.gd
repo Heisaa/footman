@@ -627,7 +627,7 @@ static func _goal_line_crossing(ctx: SimContext, k: SimPlayer) -> Dictionary:
 			# record called wide. Two implementations of "is this going in", and
 			# the disagreement was worth half of every shot in a match:
 			# `keeper saved, wide` ran at 23% and 52% on two seeds before these
-			# two lines agreed. `docs/PITFALLS.md`, two models of the same event.
+			# two lines agreed. `docs/INVARIANTS.md`, two models of the same event.
 			if not SimReferee.crosses_goal(ctx, SimConsts.other_team(k.team)):
 				return {}
 			return {"point": point, "index": i, "time": traj.time_of_index(i) - SimConsts.FORECAST_DT * (1.0 - f)}
@@ -719,7 +719,19 @@ static func _try_gather(ctx: SimContext, k: SimPlayer) -> void:
 static func decide_with_ball(ctx: SimContext, k: SimPlayer) -> void:
 	var tactics := ctx.tactics(k.team)
 	var short_option := _short_option(ctx, k)
-	var go_short := short_option != null and ctx.rng.unit_float() > clampf(0.2 + tactics.directness * 0.65, 0.0, 0.95)
+	# `distribution` is what the attribute is for, and until now nothing on the
+	# pitch read it: it sat in `SimRole.attribute_weights`, so it was priced into
+	# `role_rating`, squad quality and every scout report, and changed nothing
+	# (`docs/THE_FOOTBALL.md` 14). A keeper who can pass keeps it; one who cannot
+	# hits it long, which is the one decision the attribute names.
+	#
+	# It shifts the plan's own threshold rather than replacing it — the plan still
+	# decides whether this side plays out at all, and the keeper decides whether he
+	# is the man to do it. A 0.2 distribution gives up about a fifth of the short
+	# balls the plan asks for, a 0.9 takes a fifth more.
+	var can_play: float = lerpf(-0.12, 0.12, k.attrs.distribution)
+	var go_short := short_option != null \
+		and ctx.rng.unit_float() > clampf(0.2 + tactics.directness * 0.65 - can_play, 0.0, 0.95)
 	if go_short:
 		if SimDebug.enabled:
 			SimDebug.capture_choice(ctx, k, "throw short -> #%d" % short_option.shirt,

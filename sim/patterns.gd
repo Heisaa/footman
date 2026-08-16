@@ -15,6 +15,11 @@ extends RefCounted
 ## How long a firing stays live before it is judged, in seconds.
 const WINDOW := 4.0
 const PRESS_WINDOW := 8.0
+## The one-two: the longest lay-off it can start from, how close the marker has to
+## be for there to be anybody to go past, and how far past him the runner goes.
+const ONE_TWO_MAX := 22.0
+const ONE_TWO_MARKED := 6.0
+const ONE_TWO_AHEAD := 12.0
 ## How far up the pitch an overlap runs past the player it is overlapping.
 const OVERLAP_AHEAD := 9.0
 
@@ -55,6 +60,10 @@ static func _try_trigger(ctx: SimContext, team: int, pattern: SimPattern) -> voi
 			_try_switch(ctx, team, pattern)
 		SimPattern.Kind.THIRD_MAN_RUN:
 			_try_third_man(ctx, team, pattern)
+		SimPattern.Kind.RUN_IN_BEHIND:
+			_try_run_in_behind(ctx, team, pattern)
+		SimPattern.Kind.ONE_TWO:
+			_try_one_two(ctx, team, pattern)
 		SimPattern.Kind.PRESS_THE_GOAL_KICK:
 			_try_press_goal_kick(ctx, team, pattern)
 		_:
@@ -194,6 +203,133 @@ static func _try_third_man(ctx: SimContext, team: int, pattern: SimPattern) -> v
 	_fire(ctx, team, pattern, runner.id, receiver_id, ctx.pitch.clamp_to_pitch(target, 1.5), WINDOW)
 
 
+## A forward sets off past the last defender, and the man on the ball is asked
+## for the pass.
+##
+## **It was installed in a plan and had no trigger.** `high_press_direct` calls
+## `install(Kind.RUN_IN_BEHIND, 0.8)`, the kind has a name and a cooldown, and
+## `_try_trigger`'s match had no case for it — so it fell through `_: pass` and
+## could never fire. A player choosing the direct plan was paying for a named
+## pattern that did nothing, and the post-match screen reported it as zero fires
+## rather than as missing, which is the one reading that looks like a tactical
+## choice not coming off.
+##
+## The trigger is the football statement the off-ball layer cannot make on its
+## own: `SimOffBall` scores a run in behind against a move into space every time,
+## and a plan that says *go* wants the run made because the plan said so. So the
+## conditions are the plan's, not the value function's — the carrier has a moment,
+## the ball is far enough up that the pass exists, and there is a forward onside
+## with grass to run into. Everything after that is the pattern layer's ordinary
+## machinery: `movement_override` sends him, `pass_bias` lifts the ball to him,
+## and `_succeeded` asks whether he got it.
+static func _try_run_in_behind(ctx: SimContext, team: int, pattern: SimPattern) -> void:
+	var carrier_id := ctx.possession_player
+	if carrier_id < 0:
+		return
+	var carrier := ctx.players[carrier_id]
+	if carrier.team != team or carrier.is_keeper:
+		return
+	# He has to be able to look up and hit it. The same test the switch makes,
+	# for the same reason: a man under pressure plays what is nearest.
+	if ctx.pressure_on(carrier) > 0.7:
+		return
+	var dir := ctx.pitch.attack_dir(team)
+	# Not from deep inside our own half — the ball cannot be played that far, and
+	# `SimOffBall._behind_point` refuses the run there on the same ground.
+	if carrier.pos.x * dir < -ctx.pitch.half_length * 0.25:
+		return
+	var line := SimReferee.believed_offside_line(ctx, carrier) * dir
+	var runner: SimPlayer = null
+	var best := -INF
+	for pid in ctx.team_players[team]:
+		var p := ctx.players[pid]
+		if p.id == carrier_id or p.is_keeper or not p.on_pitch:
+			continue
+		if not SimRole.is_attacking(p.role):
+			continue
+		# Onside now, so the run starts legal and the timing of the release is
+		# what decides it — the same contract `SimOffBall` BEHIND is written to.
+		if p.pos.x * dir > line:
+			continue
+		# Ahead of the ball, or level with it.
+		if (p.pos.x - carrier.pos.x) * dir < -6.0:
+			continue
+		if p.dist_to(carrier.pos) > 40.0:
+			continue
+		# The one nearest to going, so the pattern picks the man already on the
+		# shoulder rather than the deepest forward on the pitch.
+		var shoulder: float = p.pos.x * dir
+		if shoulder > best:
+			best = shoulder
+			runner = p
+	if runner == null:
+		return
+	var depth: float = minf(line + SimOffBall.BEHIND_DEPTH, ctx.pitch.half_length - 3.0)
+	if depth - best < 4.0:
+		return
+	var target := Vector3(depth * dir, 0.0, runner.pos.z * 0.85)
+	_fire(ctx, team, pattern, runner.id, carrier_id, ctx.pitch.clamp_to_pitch(target, 2.0), WINDOW)
+
+
+## The one-two: the man who has just laid it off goes past his marker, and the
+## ball is asked for back.
+##
+## `docs/THE_FOOTBALL.md` 31. Half of it was already here and the half that was
+## missing is the half that makes it a move rather than a prior:
+## `SimDecision.give_and_go` prices the return ball and `SimOffBall._just_passed`
+## lifts the passer's own run score, so the engine *valued* a one-two and never
+## *made* one. Nothing committed the passer to going, nothing named the move, and
+## §5.3 wants a small number of recognisable things a player can count.
+##
+## As a pattern all of that comes for free and from one place: `movement_override`
+## sends him past his man, `pass_bias` lifts the ball back to him, `_succeeded`
+## asks whether he got it, and it appears on the post-match screen with a rate.
+## `destination_for` reads the override, so the return ball is aimed where he is
+## going rather than at the yard he laid it off from -- which is the defect that
+## made the third man fire seventy-one times and succeed none, and this move has
+## exactly the same shape.
+##
+## The runner is the passer, which is what separates it from the third man: there
+## the ball goes past the receiver to a man beyond him, here it comes straight
+## back to the man who gave it.
+static func _try_one_two(ctx: SimContext, team: int, pattern: SimPattern) -> void:
+	var ball := ctx.ball
+	if ball.last_touch_team != team or not SimTelemetry.is_pass_kind(ball.last_touch_kind):
+		return
+	if ctx.tick_index - ball.last_touch_tick > 8:
+		return
+	var passer_id := ball.last_touch_player
+	if passer_id < 0:
+		return
+	var passer := ctx.players[passer_id]
+	if passer.is_keeper or not passer.on_pitch:
+		return
+	# A short ball, played forward. A forty-metre diagonal is not a one-two, and
+	# neither is a square ball across the back four.
+	var receiver_id := ball.intended_target
+	if receiver_id < 0 or receiver_id == passer_id:
+		return
+	var receiver := ctx.players[receiver_id]
+	var dir := ctx.pitch.attack_dir(team)
+	var gap := passer.dist_to(receiver.pos)
+	if gap < 5.0 or gap > ONE_TWO_MAX:
+		return
+	if (receiver.pos.x - passer.pos.x) * dir < 2.0:
+		return
+	# There has to be a man to go past. An unmarked player who plays it and runs
+	# has made a give-and-go, which the prior already handles; the pattern is the
+	# one where a marker gets left behind.
+	var marker := ctx.nearest_opponent(passer)
+	if marker == null or marker.is_keeper or marker.dist_to(passer.pos) > ONE_TWO_MARKED:
+		return
+	# Past him on the goal side, and past the man he gave it to, which is what
+	# makes the return ball worth anything.
+	var target := Vector3(
+		passer.pos.x + dir * ONE_TWO_AHEAD, 0.0,
+		passer.pos.z + signf(passer.pos.z - marker.pos.z) * 3.0)
+	_fire(ctx, team, pattern, passer_id, receiver_id, ctx.pitch.clamp_to_pitch(target, 1.5), WINDOW)
+
+
 ## The opponent has a goal kick: go and press it.
 static func _try_press_goal_kick(ctx: SimContext, team: int, pattern: SimPattern) -> void:
 	if ctx.in_play:
@@ -312,9 +448,60 @@ static func _already_running(ctx: SimContext, team: int, kind: int) -> bool:
 ## behaviour switch.
 static func movement_override(ctx: SimContext, p: SimPlayer) -> Vector3:
 	for run in ctx.pattern_runs:
-		if int(run["runner"]) == p.id:
-			return run["target"]
+		if int(run["runner"]) != p.id:
+			continue
+		var target: Vector3 = run["target"]
+		# A pattern's runner is skipped by `SimOffBall._assign`, so he has no
+		# intent -- and `point_for` therefore never applies the check-back that
+		# keeps a BEHIND runner onside. He ran to `line + BEHIND_DEPTH` and stood
+		# there waiting to be flagged.
+		#
+		# Measured the day `RUN_IN_BEHIND` was given a trigger: offsides went from
+		# 5.7 to 13.3 a team per football-90 and broke the §11 sanity ceiling of
+		# 12. Two layers each had half of one rule, which is how the third man came
+		# to be aimed at by dead reckoning as well.
+		#
+		# So the same rule, in the one place the pattern layer owns: until the ball
+		# is actually coming to him, he holds a stride short of the line, and the
+		# next tick sends him again. That is the arrival timed rather than the run
+		# cancelled, and it is what `SimOffBall.point_for` already says in words.
+		if int(run["kind"]) == SimPattern.Kind.RUN_IN_BEHIND \
+				and ctx.ball.intended_target != p.id:
+			var dir := ctx.pitch.attack_dir(p.team)
+			var line: float = SimReferee.believed_offside_line(ctx, p) * dir
+			if p.pos.x * dir > line - 0.4:
+				return Vector3((line - 0.4) * dir, 0.0, target.z)
+		return target
 	return Vector3.INF
+
+
+## Whether a live pattern ever has a ball to bias.
+##
+## A success rate of zero has two causes that look identical from outside: the
+## ball the pattern asks for was played and did not come off, or **no such ball
+## was ever on the man's list**, in which case the pattern is decoration and no
+## amount of `strength` reaches it. The second is a gate upstream of every value
+## knob, which is what this project keeps being caught by, so it is counted
+## rather than argued about.
+##
+## Per kind: `weighed` is pass candidates scored anywhere on the pitch while a
+## firing of that kind was live for the passer's side, and `offered` is the ones
+## that actually met the bias condition and were lifted. `weighed` is deliberately
+## the wider population — a pattern whose ball is 1 in 200 of everything the side
+## considers is a pattern the softmax will not find.
+##
+## One-way, like every tally in `sim/`: never read back, and it never touches
+## `ctx.rng`.
+static var asked_weighed := PackedInt32Array()
+static var asked_offered := PackedInt32Array()
+
+
+static func reset_tallies() -> void:
+	asked_weighed.resize(SimPattern.KIND_NAMES.size())
+	asked_offered.resize(SimPattern.KIND_NAMES.size())
+	for i in asked_weighed.size():
+		asked_weighed[i] = 0
+		asked_offered[i] = 0
 
 
 ## Multiplier applied to a pass candidate that a live pattern is asking for.
@@ -325,14 +512,21 @@ static func pass_bias(ctx: SimContext, player: SimPlayer, target_id: int, point:
 			continue
 		var pattern: SimPattern = run["pattern"]
 		var strength: float = 1.0 + pattern.strength
-		match int(run["kind"]):
+		var kind := int(run["kind"])
+		if kind < asked_weighed.size():
+			asked_weighed[kind] += 1
+		var wanted := false
+		match kind:
 			SimPattern.Kind.SWITCH_FAR_SIDE:
 				var target: Vector3 = run["target"]
-				if signf(point.z) == signf(target.z) and absf(point.z) > ctx.pitch.half_width * 0.3:
-					bias *= strength
+				wanted = signf(point.z) == signf(target.z) \
+					and absf(point.z) > ctx.pitch.half_width * 0.3
 			_:
-				if target_id >= 0 and target_id == int(run["runner"]):
-					bias *= strength
+				wanted = target_id >= 0 and target_id == int(run["runner"])
+		if wanted:
+			if kind < asked_offered.size():
+				asked_offered[kind] += 1
+			bias *= strength
 	return bias
 
 

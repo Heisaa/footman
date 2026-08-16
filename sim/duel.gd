@@ -10,6 +10,21 @@ extends RefCounted
 
 ## Contest weights.
 const CLOSING_SPEED_WEIGHT := 0.09
+## What a carrier who invites the contact multiplies the foul roll by, at full
+## composure. See where it is applied.
+const INVITE_CONTACT := 1.6
+## How far from their goal it is worth doing: a free kick out here is worth less
+## than the ball, and a footballer who goes down on halfway has given it away.
+const INVITE_RANGE := 30.0
+
+
+## Is this a moment worth inviting contact in? Their half, inside range of goal,
+## and with the ball actually at his feet.
+static func _invites_contact(ctx: SimContext, carrier: SimPlayer) -> bool:
+	var goal := ctx.pitch.target_goal(carrier.team)
+	return SimConsts.horizontal_length(goal - carrier.pos) <= INVITE_RANGE
+
+
 ## Base foul probability for a lost tackle, before closing speed.
 const FOUL_BASE := 0.022
 const FOUL_PER_CLOSING_SPEED := 0.010
@@ -170,8 +185,7 @@ static func _resolve_contest(ctx: SimContext) -> void:
 		# and the ball -- `SimDecision._play_hold` set the flag and priced the
 		# same fact into the option -- so the contest is not two men over a loose
 		# ball, it is one man holding another off, and strength is what decides
-		# how well. See `docs/BACKLOG.md`, "Keeping the ball without spending a
-		# body".
+		# how well.
 		if holder and p.shielding and not aerial:
 			w *= lerpf(1.05, 1.5, p.attrs.strength)
 		w *= p.fatigue_factor()
@@ -242,6 +256,20 @@ static func _resolve_contest(ctx: SimContext) -> void:
 			p_foul *= lerpf(0.9, 1.3, winner.attrs.dribbling * 0.5 + winner.attrs.agility * 0.5)
 			if winner.shielding:
 				p_foul *= 1.35
+			# Inviting it, which is the deliberate half of the same act
+			# (`docs/THE_FOOTBALL.md` 32). Everything above is contact that
+			# *happens* to a carrier; a footballer also puts his body across a
+			# committed challenger on purpose, and in the one place where winning
+			# a free kick is worth more than keeping the ball.
+			#
+			# So it is not a general eagerness knob: it fires where the reward is
+			# real -- inside shooting range of their goal, with a man already
+			# committed -- and it is scaled by `composure`, because taking the
+			# contact and staying up is what the attribute names. It is also the
+			# only lever the engine has on a foul count running at 1.5 a team a
+			# match against a target of 8-16.
+			if winner.shielding and _invites_contact(ctx, winner):
+				p_foul *= lerpf(1.0, INVITE_CONTACT, winner.attrs.composure)
 		if ctx.rng.chance(clampf(p_foul, 0.0, 0.6)):
 			SimReferee.award_foul(ctx, loser, winner, closing)
 			return

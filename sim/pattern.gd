@@ -16,11 +16,13 @@ enum Kind {
 	PRESS_THE_GOAL_KICK,
 	RUN_IN_BEHIND,
 	UNDERLAP,
+	ONE_TWO,
 }
 
 const KIND_NAMES := [
 	"Overlap left", "Overlap right", "Third-man run", "Keeper plays short",
 	"Switch to the far side", "Press the goal kick", "Run in behind", "Underlap",
+	"One-two",
 ]
 
 var kind := Kind.OVERLAP_LEFT
@@ -49,6 +51,7 @@ const COOLDOWNS := {
 	Kind.RUN_IN_BEHIND: 600,
 	Kind.KEEPER_PLAYS_SHORT: 300,
 	Kind.PRESS_THE_GOAL_KICK: 300,
+	Kind.ONE_TWO: 600,
 }
 
 

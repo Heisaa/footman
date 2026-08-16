@@ -234,6 +234,9 @@ static var _flight_action := PackedInt32Array()
 ## Clears the rejection tally. Called from `SimMatch.setup` with the rest of the
 ## static state, because a static outlives the match that filled it.
 static func reset() -> void:
+	reset_rare()
+	unseen = 0
+	shortlisted = 0
 	lost.resize(Action.size() * LOST_STRIDE)
 	for i in lost.size():
 		lost[i] = 0.0
@@ -492,6 +495,132 @@ const REGAIN_WINDOW := 2.0
 ## limit sat at thirty-eight, which is a ball nobody hits along the floor. Past
 ## the lofted limit it is not a pass at all, it is a clearance, and `_add_clear`
 ## is where those live.
+## The driven ball: how much of the lane it buys back by being in the air over the
+## middle of its journey, how much firmer it is struck than the roller beside it,
+## and what the receiver pays for taking a ball that arrives at that pace.
+##
+## `docs/THE_FOOTBALL.md` 26. The strike was already built -- `ground_launch` lofts
+## anything above `SimBallistics.DRIVE_FROM` and solves the hops -- and what was
+## missing was the reason to choose one: the score priced it as a roller, so the
+## engine drove balls without ever deciding to. It is a second candidate beside the
+## rolled one rather than a replacement for it, because the choice between them is
+## the football, and the softmax is what makes it.
+## What a shot struck at a flat-out run is worth against the same shot standing
+## still, and what is left of a man's finish when his legs have gone. The two
+## things `expected_goals` could not see; see the note where they are applied.
+## Generated against chosen, for the acts that exist and almost never happen.
+##
+## `The small acts` counts what got played: `chips 0`, `cuts tried 5, beat his man
+## 0`. A zero there has two causes that want opposite fixes -- the act was never a
+## candidate, or it was a candidate every time and lost the softmax -- and this
+## project has been caught by the first four times. One tally, so the next zero is
+## answered by reading a line rather than by adding an instrument.
+##
+## Indexed by `RARE_ACTS`. One-way, like every tally here.
+const RARE_ACTS := ["chip", "round him", "dummy"]
+static var rare_offered := PackedInt32Array()
+static var rare_played := PackedInt32Array()
+
+
+static func reset_rare() -> void:
+	rare_offered.resize(RARE_ACTS.size())
+	rare_played.resize(RARE_ACTS.size())
+	for i in RARE_ACTS.size():
+		rare_offered[i] = 0
+		rare_played[i] = 0
+
+
+## Teammates refused a place on the list because the passer could not see them.
+static var unseen := 0
+static var shortlisted := 0
+
+
+static func _note_shortlist_unseen() -> void:
+	unseen += 1
+
+
+static func _note_rare(which: int, played: bool) -> void:
+	if rare_offered.size() != RARE_ACTS.size():
+		rare_offered.resize(RARE_ACTS.size())
+		rare_played.resize(RARE_ACTS.size())
+	rare_offered[which] += 1
+	if played:
+		rare_played[which] += 1
+
+
+const RARE_CHIP := 0
+const RARE_ROUND := 1
+const RARE_DUMMY := 2
+
+## Measured on the day it landed, twenty seeds: **it costs 1.58 goals a match**
+## (4.04 to 2.46) and 0.07 of the conversion rate. That is the largest single
+## scoring move in the engine's history and it is a *correction*, not a tuning
+## choice -- the model was pricing a shot struck at a flat-out sprint by a spent
+## man as if he were set and fresh. `PLAN.md` §11.1.1 and `CLAUDE.md` both say a
+## mechanic is not softened to protect a statistic, so it stays and the number is
+## recorded here rather than absorbed. One line each to lift if the owner wants
+## the goal count back before the tuning freeze.
+const SHOT_AT_PACE := 0.72
+const SHOT_SPENT := 0.80
+## How much of the pass model's failure is one cause wearing three hats.
+##
+## `docs/THE_FOOTBALL.md` 24, and the entry is explicit that a scale factor is the
+## wrong answer -- `which factor knew` would read a third constant exactly the same
+## way. The defect is the *shape*: `space`, `lane` and `struck` are multiplied as
+## though they were independent, and they are not. One defender standing in the
+## line lowers `lane` and lowers `space`, because he is also the man who gets
+## there; a passer under pressure strikes it worse, and pressure is what put the
+## defender there in the first place. Multiplying three views of one cause charges
+## for it three times, which is why the model is under-confident on exactly the
+## balls that have a defender near them and calibrated on the ones that do not.
+##
+## The rule: combine them along the line from their product to their minimum. At
+## `CORRELATED` 0 this is the plain product and nothing changes; at 1 it is the
+## worst factor alone, which is what perfectly-shared failure means -- one cause,
+## priced once. In between it is the geometric interpolation, which keeps it a
+## probability, keeps it monotone in each term, and cannot be mimicked by any
+## constant because how far the product sits below the minimum depends on how many
+## of the three are biting at once. Three balls with the same product and different
+## spreads now come out differently, which is the whole claim.
+##
+## `in_time` stays outside it: it is a fact about the receiver's legs, not about
+## the defender, and it is the one term here with a different cause.
+## **Measured, and it is not the answer.** Built and run over twenty seeds at
+## `CORRELATED` 0.45: goals fell 4.08 to 3.24 and shots 5.61 to 4.87, and the
+## calibration it exists to fix **did not move** — the bottom bucket still said
+## 0.12 for balls that arrived 52% of the time, against 0.11 and 52% before. So
+## the residual under-confidence is not the three terms sharing a cause, or not
+## mostly; whatever it is survives pricing that cause once. Left here, wired to
+## nothing, because the next person to read 24 will reach for exactly this and the
+## fact that it has been tried is the useful part.
+const CORRELATED := 0.45
+
+
+static func _joint(a: float, b: float, c: float) -> float:
+	var product := a * b * c
+	var worst: float = minf(a, minf(b, c))
+	if product <= 0.0 or worst <= 0.0:
+		return product
+	# product^(1-k) * worst^k, written as a log-lerp so the exponent is explicit.
+	return exp(lerpf(log(product), log(worst), CORRELATED))
+
+
+## **27, tried and not the answer.** Making a direct plan charge less per metre of
+## pass length -- 0.165 against a patient plan's 0.255, either side of the single
+## 0.21 that is still used -- was the mechanic the proposal named for "the direct
+## plan does not play the longer pass". Measured, it did not separate the two
+## plans on length either: `pass_length` t=1.32, and `test_tactics` went red
+## because it took the second separating measure with it. So directness is not
+## expressed through length, and the open football question in 27 is still open --
+## with one candidate answer now struck off it.
+## The feint from a standstill: how close the man has to be for there to be
+## anything to feint at, and what starting from nothing costs against cutting at
+## pace. See `_try_beat`.
+const FEINT_RANGE := 3.2
+const FEINT_COST := 0.55
+const DRIVEN_LANE := 0.55
+const DRIVEN_PACE := 1.9
+const DRIVEN_TOUCH := 0.82
 const LOFTED_FROM := 24.0
 const MAX_GROUND_PASS := 32.0
 const MAX_LOFTED_PASS := 45.0
@@ -605,6 +734,7 @@ static func _generate(ctx: SimContext, player: SimPlayer) -> float:
 	_add_shot(ctx, player, _uncontrolled)
 	_add_passes(ctx, player, _uncontrolled, regain)
 	_add_crosses(ctx, player, _uncontrolled)
+	_add_pullback(ctx, player, _uncontrolled)
 	_add_dribbles(ctx, player, _uncontrolled, challenger, regain)
 	_add_hold(ctx, player, _uncontrolled, regain)
 	_add_set_touch(ctx, player, _uncontrolled)
@@ -762,6 +892,19 @@ static func expected_goals(ctx: SimContext, player: SimPlayer, from: Vector3, ai
 	# goal over his shoulder gets a scuffed poke, and the way to a real shot is to
 	# turn first.
 	base *= SimTouch.strike_scale(player, aim - from)
+	# The two things the model was blind to, and only those two
+	# (`docs/THE_FOOTBALL.md` 2). The trap this proposal names is double-counting:
+	# `aim_sigma` prices skill, pressure, speed, distance, composure, facing and
+	# fatigue, and four of those are already above -- so multiplying by execution
+	# accuracy, which was the obvious fix, counts them twice. Body facing is done,
+	# by the other route, through `strike_scale` a line up.
+	#
+	# What is left is a man shooting while running flat out, who cannot get his
+	# body over it, and a man at the end of ninety minutes, whose strike has gone.
+	# Neither appears anywhere else in this function.
+	var running: float = SimConsts.horizontal_length(player.vel) / maxf(player.max_speed(), 0.1)
+	base *= lerpf(1.0, SHOT_AT_PACE, clampf(running, 0.0, 1.0))
+	base *= lerpf(SHOT_SPENT, 1.0, clampf(player.stamina, 0.0, 1.0))
 	# Bodies in the way. A man mid-recovery is not one of them: a keeper who
 	# has committed and a defender the cut has just left are on the ground or
 	# facing the wrong way, and the moment they are is *the* moment to strike
@@ -789,7 +932,7 @@ const SQUARE_CONVERT := 0.6
 const CHIP_CEILING := 0.6
 
 
-## The chip (docs/BACKLOG.md, "Answers to the keeper's one-on-one"): a keeper
+## The chip, one of the three answers to the keeper's one-on-one: a keeper
 ## off his line is a goal with a man standing in front of it, and the answer is
 ## over him. Generated beside the driven shot, never instead of it; the softmax
 ## takes whichever the situation pays.
@@ -806,6 +949,7 @@ static func _add_chip(ctx: SimContext, player: SimPlayer, from: Vector3, goal: V
 	var quality := _chip_quality(ctx, player, from, goal, off_line)
 	if quality < 0.02:
 		return
+	_note_rare(RARE_CHIP, false)
 	_candidates.append({
 		"action": Action.SHOOT,
 		# Solved as a dropping arc: the aim is the grass just over the line, and
@@ -931,7 +1075,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 			# and it is the right price for a ball that has to be forced somewhere
 			# new -- but a ball helped back the way it came is played with its own
 			# pace, and charging it the full rate is why every target man killed
-			# the ball and turned into his marker (docs/BACKLOG.md 28). The share
+			# the ball and turned into his marker. The share
 			# is read off the same function the strike pays its error through, so
 			# the ball priced here is the ball that gets hit. The bounce is only
 			# worth preferring when the man it goes to is facing play; to a man
@@ -999,6 +1143,53 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 			_keep_parts()
 			_keep_factors()
 
+			# --- The same ball, driven -------------------------------------
+			#
+			# Offered beside the roller, never instead of it: a footballer chooses
+			# between the two and the softmax is where that choice belongs. Only
+			# once the ball is long enough to leave the floor at all
+			# (`SimBallistics.DRIVE_FROM`), because below that they are the same
+			# strike and the engine would be offering one act twice.
+			if raw_distance >= SimBallistics.DRIVE_FROM:
+				var d_pace: float = minf(pace * DRIVEN_PACE, 1.0)
+				var d_speed := ctx.ballistics.ground_pass_speed(lead_distance, d_pace, ctx.env)
+				var d_travel := ctx.ballistics.ground_travel_time(lead_distance, d_speed, ctx.env)
+				var d_success := _pass_success(ctx, player, from, lead, d_travel, mate, into_space, true)
+				if flagged:
+					d_success *= OFFSIDE_DISCOUNT
+				var d_arrival := _arrival_gain(ctx, player.team, lead, believed, mate, d_travel)
+				var d_gain: float = xt * focus + d_arrival
+				if ctx.pitch.in_opponent_penalty_area(player.team, lead):
+					d_gain = maxf(d_gain, expected_goals(ctx, mate, lead,
+						ctx.pitch.target_goal(player.team)) * SQUARE_CONVERT
+						* ctx.config.shot_appetite())
+				_note_factor(SimAblation.F_FOCUS, d_gain - d_arrival - xt)
+				_note_factor(SimAblation.F_ARRIVAL, d_arrival)
+				_note_factor(SimAblation.F_OFF_BALANCE, ob)
+				_note_factor(SimAblation.F_RETENTION, tactics.retention_bias())
+				_note_factor(SimAblation.F_LENGTH, length_bias)
+				_note_factor(SimAblation.F_SECURE, secure)
+				_note_factor(SimAblation.F_CALL, call)
+				_note_factor(SimAblation.F_TOUCH, touch * DRIVEN_TOUCH)
+				_candidates.append({
+					"action": Action.GROUND_PASS,
+					"target": mate_id,
+					"point": lead,
+					"end": lead,
+					"first_time": uncontrolled,
+					"success": d_success * ob,
+					"gain": d_gain,
+					"loss": ctx.value.xt_at(SimConsts.other_team(player.team), lead, ctx.pitch),
+					"pace": d_pace,
+					# The receiver pays for it: a ball arriving at that pace is a
+					# harder first touch, and `receiver_touch` is where the engine
+					# already prices exactly that about a man.
+					"bias": tactics.retention_bias() * length_bias * secure * call
+						* give_go * touch * DRIVEN_TOUCH * layoff,
+				})
+				_keep_parts()
+				_keep_factors()
+
 		# --- Through ball in behind ----------------------------------------
 		# Only worth considering for someone actually running in behind. A
 		# through ball to a stationary midfielder is just a bad pass.
@@ -1024,7 +1215,24 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 		# So the committed run answers for itself and the velocity stays as the
 		# test for everybody else: a striker drifting onto the shoulder without an
 		# intent is still a man worth playing in behind.
-		var moving_on := running_on > 1.2 or SimOffBall.is_running_in_behind(ctx, mate)
+		# And the same argument once more, for every other committed run.
+		#
+		# `is_running_in_behind` answers for one intent. A man committed to a run
+		# into the box, or a man a pattern has sent, is equally a man who is going
+		# somewhere forward — and equally likely to be a stride into it with a
+		# velocity that has not caught up. `moving_on` refused 45% of every man
+		# ahead of the ball, the largest single gate in front of the ball in
+		# behind, and it was reading the one thing that lags what he has decided.
+		#
+		# `destination_for` is the layer saying where he is going, and since it
+		# reads `movement_override` it answers for the pattern runner too. Forward
+		# of him by three metres is the test, so a man drifting square or checking
+		# back is still refused, which is what the gate is for.
+		var going_to := SimOffBall.destination_for(ctx, mate)
+		var committed_on := not is_inf(going_to.x) \
+			and (going_to.x - mate.pos.x) * attack_dir > 3.0
+		var moving_on := running_on > 1.2 or committed_on \
+			or SimOffBall.is_running_in_behind(ctx, mate)
 		_note_behind_gate(mate_id, BEHIND_FAR if not near_enough
 			else BEHIND_STILL if not moving_on
 			else BEHIND_ROLE if not runner
@@ -1076,7 +1284,10 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				# a man who has already gone is a mistake he can make.
 				if flagged:
 					t_success *= OFFSIDE_DISCOUNT
-				var t_xt := ctx.value.xt_at(player.team, target, ctx.pitch)
+				# The one act whose whole point is the line, so the one place the
+				# single-step map is corrected. `docs/THE_FOOTBALL.md` 8b.
+				var t_xt := ctx.value.xt_at(player.team, target, ctx.pitch) \
+					* SimValueField.line_broken(ctx, player.team, target, ctx.pitch)
 				var t_focus := tactics.focus_at(target.z, ctx.pitch)
 				var t_arrival := _arrival_gain(ctx, player.team, target, believed, mate, t_travel)
 				var t_call := _call_bias(ctx, mate)
@@ -1142,6 +1353,9 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 			var lofted_success := _lofted_success(ctx, player, lofted_target, flight, mate)
 			if flagged:
 				lofted_success *= OFFSIDE_DISCOUNT
+			# The lofted ball over the top is the other act whose value is the line
+			# it clears, so it gets the same correction as the through ball.
+			# `docs/THE_FOOTBALL.md` 8b.
 			var l_xt := ctx.value.xt_at(player.team, lofted_target, ctx.pitch)
 			var l_focus := tactics.focus_at(lofted_target.z, ctx.pitch)
 			var l_length := 1.0 / (1.0 + raw_distance * 0.055)
@@ -1188,6 +1402,22 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 ## population and the candidate are drawn on one line.
 const CROSS_WIDE := 0.45
 ## And how far the ball has to travel to be a cross rather than a pass.
+##
+## **Where the cross now stands, measured at n=20 twice in one day.** Of 1791
+## wide-in-their-half situations a cross was offered in 211 (11.8%), scored best in
+## 85, was played 83 times, and **19 of those reached the penalty area (22.9%)**,
+## from which 17 shots and 6 goals. Against the morning's figures the played count
+## went 46 to 83 and the goals 2 to 6, so the chain works and carries the box work.
+##
+## Two links are still thin and they are different problems. The offer rate has not
+## moved at all (11.7% to 11.8%) and is a generation question. The last one is
+## **delivery**: a cross reaches the area under a quarter of the time, and the
+## reason is `SimTouch.long_sigma`, whose range error at 20-40 m was *measured
+## against the integrator* by `./run.sh strike` and is the authority. So it is not
+## a bug to be fixed here -- it is either a physical statement the engine should
+## keep and the aim points should respect, or a tuning-freeze decision
+## (`PLAN.md` §11.1.1). It is not `crossing`: that attribute is read, in
+## `SimTouch` and in `aim_sigma` both.
 const CROSS_FROM := 12.0
 ## How late a man can be for the ball and still be attacking it. He does not have
 ## to be standing there when it is struck -- that was the whole defect -- but a
@@ -1227,6 +1457,133 @@ const CROSS_BIAS := 1.15
 ## is whoever can be there when it lands, and `_lofted_success` prices the
 ## arrival exactly as it does for any other ball in the air -- which is what says
 ## whether crossing into three defenders is worth anything.
+## How deep the carrier has to be for the ball into the box to be a pull-back
+## rather than a cross: inside the last `PULLBACK_DEEP` metres, which is the byline
+## end of the penalty area and beyond.
+const PULLBACK_DEEP := 12.0
+## And where it is cut back to, measured out from the goal line. The penalty spot
+## is 11 m; a pull-back is played behind the defence's eyeline, which is further
+## out than that and is the whole point of the act.
+const PULLBACK_BACK := 13.5
+## How late a man can arrive and still be the target. Longer than `CROSS_LATE`,
+## because a ball rolling across the face is available for longer than one
+## dropping out of the air, which is the other half of why the act exists.
+const PULLBACK_LATE := 1.1
+
+
+## The pull-back: the ball cut back along the floor from the byline.
+##
+## `docs/THE_FOOTBALL.md` 29, and it is a different act from the three balls
+## `_add_crosses` offers rather than a fourth target for them. Those are lofted
+## into the six-yard area and contested in the air, and the whole reason a
+## footballer goes to the byline instead is to take the keeper and the back line
+## out of the picture entirely: the ball goes *backwards* to a man arriving at the
+## edge of the area, facing goal, with every defender turned the wrong way and
+## nobody able to attack the ball because it is rolling away from them.
+##
+## Three things follow from that and none of them is true of a cross. It is struck
+## along the ground, so `_lofted_success` is the wrong model and the ordinary pass
+## one is right. Its target is behind the ball, so the `xt` of the point
+## understates it badly — the same blindness the square ball in `_add_passes`
+## already corrects with `SQUARE_CONVERT`, and it is corrected the same way here.
+## And the man it is for has longer to arrive, because a ball on the grass waits.
+static func _add_pullback(ctx: SimContext, player: SimPlayer, uncontrolled: bool) -> void:
+	var from := ctx.ball.pos
+	var attack_dir := ctx.pitch.attack_dir(player.team)
+	var goal := ctx.pitch.target_goal(player.team)
+	# Deep, and wide. Deeper than a cross by construction: level with the six-yard
+	# box or beyond it, which is where the angle for a shot has gone and the angle
+	# for this one has arrived.
+	if absf(goal.x - from.x) > PULLBACK_DEEP:
+		return
+	if absf(from.z) <= ctx.pitch.half_width * CROSS_WIDE:
+		return
+	var tactics := ctx.tactics(player.team)
+	# Cut back to the edge of the area, on the ball's own side and through the
+	# middle. Two points rather than three: the far corner of the area is a
+	# different pass and `_add_passes` already offers it.
+	var side: float = signf(from.z)
+	if side == 0.0:
+		side = 1.0
+	var targets := [
+		Vector3(goal.x - attack_dir * PULLBACK_BACK, 0.0, 0.0),
+		Vector3(goal.x - attack_dir * PULLBACK_BACK, 0.0, side * ctx.pitch.penalty_half_width * 0.45),
+	]
+	var best_point := Vector3.ZERO
+	var best_mate := -1
+	var best_worth := 0.0
+	var best_travel := 0.0
+	for point in targets:
+		var distance := SimConsts.horizontal_length(point - from)
+		if distance < 6.0 or distance > SimTouch.strike_range(player, point - from, MAX_GROUND_PASS):
+			continue
+		var pace := arrival_pace(distance, tactics)
+		var travel := ctx.ballistics.ground_travel_time(
+			distance, ctx.ballistics.ground_pass_speed(distance, pace, ctx.env), ctx.env)
+		# Who is arriving, not who is standing there — the same question the cross
+		# asks, with a longer window because the ball keeps rolling.
+		var mate := -1
+		var soonest := INF
+		for mid in ctx.teammate_ids(player.team):
+			if mid == player.id:
+				continue
+			var m := ctx.players[mid]
+			if not m.on_pitch or m.is_keeper:
+				continue
+			if SimValueField.time_to_arrive(m, point, SimValueField.reaction_of(m)) \
+					> travel + PULLBACK_LATE:
+				continue
+			var t_arrive := SimValueField.time_to_arrive(m, point, SimValueField.reaction_of(m))
+			if t_arrive < soonest:
+				soonest = t_arrive
+				mate = mid
+		if mate < 0:
+			continue
+		var worth := expected_goals(ctx, ctx.players[mate], point, goal)
+		if worth > best_worth:
+			best_worth = worth
+			best_point = point
+			best_mate = mate
+			best_travel = travel
+	if best_mate < 0:
+		return
+
+	var mate: SimPlayer = ctx.players[best_mate]
+	# Offside is judged where the receiver stands, like every other ball, and a
+	# man cut back to is behind the ball and so onside by construction — but he is
+	# judged rather than assumed, because the passer's belief can be wrong.
+	var flagged := SimReferee.would_be_offside(ctx, player.team, mate.pos)
+	var off_balance: float = 1.0
+	if uncontrolled:
+		off_balance = lerpf(0.3, 0.7, player.attrs.first_touch * player.attrs.technique)
+	var success := _pass_success(ctx, player, from, best_point, best_travel, mate, true)
+	if flagged:
+		success *= OFFSIDE_DISCOUNT
+	# What it is worth is what *his* shot is worth, not what the grass is. A point
+	# thirteen metres out reads much like any other patch of the D on the map, and
+	# the difference — that he is facing goal and nobody is — is the whole act.
+	var gain: float = best_worth * SQUARE_CONVERT * ctx.config.shot_appetite()
+	var call := _call_bias(ctx, mate)
+	var pattern := SimPatterns.pass_bias(ctx, player, best_mate, best_point)
+	_note_factor(SimAblation.F_OFF_BALANCE, off_balance)
+	_note_factor(SimAblation.F_CALL, call)
+	_note_factor(SimAblation.F_PATTERN, pattern)
+	_candidates.append({
+		"action": Action.GROUND_PASS,
+		"target": best_mate,
+		"point": best_point,
+		"end": best_point,
+		"first_time": uncontrolled,
+		"success": success * off_balance,
+		"gain": gain,
+		"loss": ctx.value.xt_at(SimConsts.other_team(player.team), best_point, ctx.pitch),
+		"pace": arrival_pace(SimConsts.horizontal_length(best_point - from), tactics),
+		"bias": call * pattern,
+	})
+	_keep_parts()
+	_keep_factors()
+
+
 static func _add_crosses(ctx: SimContext, player: SimPlayer, uncontrolled: bool) -> void:
 	var from := ctx.ball.pos
 	var attack_dir := ctx.pitch.attack_dir(player.team)
@@ -1346,6 +1703,13 @@ static func _shortlist(ctx: SimContext, player: SimPlayer, from: Vector3) -> Pac
 		var mate := ctx.players[mate_id]
 		if not mate.on_pitch:
 			continue
+		# He cannot pass to a man he cannot see (`docs/THE_FOOTBALL.md` 12). The
+		# gate is here rather than on the candidate because an option outside
+		# perception should never be generated at all -- scoring it and then
+		# discarding it would leave it in every tally as a ball he turned down.
+		if not SimPerception.can_see(player, mate, 1.0 - ctx.tactics(player.team).tempo):
+			_note_shortlist_unseen()
+			continue
 		var dx := mate.pos.x - from.x
 		var dz := mate.pos.z - from.z
 		var d2 := dx * dx + dz * dz
@@ -1368,6 +1732,7 @@ static func _shortlist(ctx: SimContext, player: SimPlayer, from: Vector3) -> Pac
 		var i := 0
 		while i < _short_scores.size() and _short_scores[i] >= score:
 			i += 1
+		shortlisted += 1
 		_short_ids.insert(i, mate_id)
 		_short_scores.insert(i, score)
 
@@ -1498,7 +1863,7 @@ const BEHIND_ARRIVE := 0.8
 ## share of all passes went from 14.3% to 14.1% -- because the whole passing game
 ## shrank with it, from 479 passes a match to 383. It cost a fifth of the football
 ## to buy two tenths of a percentage point. So the level stays at 1.0 and the
-## frequency, which is still high, is not a length problem: `docs/BACKLOG.md` (21).
+## frequency, which is still high, is not a length problem.
 ##
 ## All three are tuning constants -- `PLAN.md` §11.1.1.
 const BEHIND_FREE := 24.0
@@ -1516,7 +1881,7 @@ const BEHIND_BREAK := 1.0
 ## a passer under pressure will still chance it.
 const OFFSIDE_DISCOUNT := 0.12
 
-## The layoff (docs/BACKLOG.md 28). What the *easiest* first-time ball keeps of
+## The layoff. What the *easiest* first-time ball keeps of
 ## its success instead of the full `off_balance` rate -- a ball eased back up
 ## its own line is barely a decision -- and the redirect share below which a
 ## first-time ball to a man facing play is preferred at all. The bias is the
@@ -1715,7 +2080,7 @@ static func _clear_ahead(ctx: SimContext, team: int, point: Vector3, goal: Vecto
 
 ## Probability a ground pass reaches its target: the receiving side must win the
 ## arrival point, and nobody may cut the line off on the way.
-static func _pass_success(ctx: SimContext, player: SimPlayer, from: Vector3, to: Vector3, travel: float, receiver: SimPlayer, into_space: bool = false) -> float:
+static func _pass_success(ctx: SimContext, player: SimPlayer, from: Vector3, to: Vector3, travel: float, receiver: SimPlayer, into_space: bool = false, driven: bool = false) -> float:
 	# Three separate questions, and conflating them is how an engine talks
 	# itself into forty-metre passes: who owns that space, can this particular
 	# receiver be there when the ball is, and does the ball survive the journey.
@@ -1760,6 +2125,18 @@ static func _pass_success(ctx: SimContext, player: SimPlayer, from: Vector3, to:
 		in_time = _in_time(travel + 0.3 - receiver_time,
 			SimConsts.horizontal_length(to - receiver.pos))
 	var lane := _lane_survival(ctx, player, from, to, travel, LANE_TAIL if into_space else FEET_TAIL)
+	# The driven ball is airborne over the middle of its journey, and that is the
+	# whole football reason for hitting one (`docs/THE_FOOTBALL.md` 26). A leg put
+	# in the lane takes a rolled ball and misses a driven one, so the interception
+	# term is the one that has to know -- not the success as a whole, which is what
+	# a scale factor on the outside would have done.
+	#
+	# It is a share of the way to a clear lane rather than a clear lane, because
+	# the ball is only up for the middle of the flight: it leaves the floor and
+	# sits back down onto it, and a man standing right in front of the striker or
+	# right on the receiver can still take it.
+	if driven:
+		lane = lerpf(lane, 1.0, DRIVEN_LANE)
 	var distance := SimConsts.horizontal_length(to - from)
 	# The line is handed to the accuracy estimate, not just its length, so the ball
 	# the passer would have to hit blind off his back foot is priced as the harder
@@ -2313,8 +2690,7 @@ static func shield_skill(player: SimPlayer) -> float:
 	return clampf(player.attrs.strength * 0.65 + player.attrs.agility * 0.35, 0.0, 1.0)
 
 
-## Beating a man with the cut (docs/BACKLOG.md, "Keeping the ball without
-## spending a body"). The knock past a man is a foot race; this is the other
+## Beating a man with the cut. The knock past a man is a foot race; this is the other
 ## way, and it needs no new candidate: when a carrier at pace plays a scored
 ## touch sharply across a challenger who has committed at speed, the
 ## challenger's momentum is spent the wrong way and he is left. Resolved as a
@@ -2399,6 +2775,7 @@ static func _round_the_keeper(ctx: SimContext, player: SimPlayer, dir: Vector3) 
 			continue
 		if _near_segment(o.pos, player.pos, goal, 3.0):
 			return false
+	_note_rare(RARE_ROUND, false)
 	return true
 
 
@@ -2411,13 +2788,32 @@ static func _try_beat(ctx: SimContext, player: SimPlayer, dir: Vector3) -> bool:
 	if challenger.dist_to(player.pos) > BEAT_RANGE:
 		return false
 	# It is only a cut if he changes line at pace...
+	#
+	# ...or a feint if he is standing still. The two are the same act at opposite
+	# ends of the carrier's own momentum, and the engine only had the first: a man
+	# stopped on the ball with a defender arriving could shield it or lose it, and
+	# the third thing a footballer does there -- drop a shoulder from a standstill
+	# and go -- was `docs/THE_FOOTBALL.md` 32's missing half.
+	#
+	# It is harder from nothing, because the cut spends momentum the carrier
+	# already has and the feint has to manufacture it. `FEINT_COST` is what that
+	# costs, applied to the same roll below, and `agility` is the attribute that
+	# buys it back -- the small clever one's act, which is the roster this game is
+	# built to have both ends of (`PLAN.md` §14).
 	var travel := SimConsts.horizontal(player.vel)
-	if travel.length() < 1.5:
+	var standing := travel.length() < 1.5
+	if standing and challenger.dist_to(player.pos) > FEINT_RANGE:
 		return false
 	var d := SimConsts.horizontal(dir)
 	if d.length() < 1e-4:
 		return false
-	var swing := acos(clampf(travel.normalized().dot(d.normalized()), -1.0, 1.0))
+	# A standing man has no line to change, so the turn test is about where he is
+	# facing rather than where he is going.
+	var from_dir := travel.normalized() if not standing \
+		else SimConsts.horizontal(player.heading_dir()).normalized()
+	if from_dir.length() < 1e-4:
+		return false
+	var swing := acos(clampf(from_dir.dot(d.normalized()), -1.0, 1.0))
 	if swing < BEAT_TURN:
 		return false
 	# ...and only a beat if the man is committed across it. Momentum is what a
@@ -2434,6 +2830,8 @@ static func _try_beat(ctx: SimContext, player: SimPlayer, dir: Vector3) -> bool:
 	var edge: float = (player.attrs.dribbling * 0.6 + player.attrs.agility * 0.4) \
 		- (challenger.attrs.tackling * 0.5 + challenger.attrs.agility * 0.5)
 	var p: float = BEAT_BASE * clampf(0.5 + edge, 0.15, 0.95) * clampf(closing / 6.0, 0.4, 1.2)
+	if standing:
+		p *= lerpf(FEINT_COST, 1.0, player.attrs.agility)
 	if ctx.rng.chance(clampf(p, 0.02, 0.7)):
 		tally_beat += 1
 		# Left. The recovery is the turn he now has to make from a standing
@@ -2818,7 +3216,7 @@ static func _add_hold(ctx: SimContext, player: SimPlayer, uncontrolled: bool, re
 	_keep_factors()
 
 
-## The setting touch (docs/BACKLOG.md 29): a metre out of the feet, onto the
+## The setting touch: a metre out of the feet, onto the
 ## line of a strike the body is not set for. `strike_range` and `strike_scale`
 ## price what a bad facing costs; this is the act a footballer answers them
 ## with, made a candidate so it competes with playing something now. How far
@@ -2933,6 +3331,7 @@ static func _add_dummy(ctx: SimContext, player: SimPlayer) -> void:
 	var lane := _lane_survival(ctx, player, from, spot, when, FEET_TAIL)
 	var success: float = lane * lerpf(0.7, 0.92, mate.attrs.first_touch)
 	var xt := ctx.value.xt_at(player.team, spot, ctx.pitch)
+	_note_rare(RARE_DUMMY, false)
 	_candidates.append({
 		"action": Action.DUMMY,
 		"target": mate_id,
@@ -3739,7 +4138,7 @@ static func scan_gain(ctx: SimContext, player: SimPlayer) -> float:
 ## carries the rest, crudely. And it is a per-*decision* fix to what is really a
 ## per-*possession* problem: nothing here counts how long he has already held it,
 ## because the engine has no representation of a possession as a thing with a
-## history. `docs/BACKLOG.md` is where that belongs.
+## history. `docs/THE_FOOTBALL.md` is where that belongs.
 static func _hold_score(ctx: SimContext, player: SimPlayer, c: Dictionary, best_index: int,
 		ablate: int = -1, undo: float = 1.0, best_undo: float = 1.0) -> float:
 	var tactics := ctx.tactics(player.team)

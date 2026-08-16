@@ -196,7 +196,7 @@ func _cmd_diagnose(flags: Dictionary) -> void:
 ## Several matches rather than one, and it is not fussiness. A code change moves the
 ## match wholesale -- two runs of one seed become different football within seconds
 ## of the first different decision -- so a one-seed diff measures a different match
-## and not the change. `docs/BACKLOG.md` 19 is the same trap stated in full. Five
+## and not the change. `docs/THE_FOOTBALL.md` 19 is the same trap stated in full. Five
 ## seeds is not a sample either; it is enough that a conversion moving ten points is
 ## worth looking at.
 ##

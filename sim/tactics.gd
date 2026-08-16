@@ -164,6 +164,7 @@ static func balanced() -> SimTactics:
 	t.install(SimPattern.Kind.OVERLAP_LEFT)
 	t.install(SimPattern.Kind.OVERLAP_RIGHT)
 	t.install(SimPattern.Kind.SWITCH_FAR_SIDE, 0.6)
+	t.install(SimPattern.Kind.ONE_TWO, 0.7)
 	return t
 
 
@@ -234,4 +235,5 @@ static func deep_block_patient() -> SimTactics:
 	t.install(SimPattern.Kind.KEEPER_PLAYS_SHORT, 0.9)
 	t.install(SimPattern.Kind.SWITCH_FAR_SIDE, 0.8)
 	t.install(SimPattern.Kind.UNDERLAP, 0.6)
+	t.install(SimPattern.Kind.ONE_TWO, 0.9)
 	return t

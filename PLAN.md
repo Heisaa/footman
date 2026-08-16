@@ -8,9 +8,9 @@ This document specifies *what* to build and *why*. It contains no code and no la
 structure. The models, constants and criteria here are the design, and they hold regardless of how
 they are expressed.
 
-This file is the spec and nothing else. What was built and what it measured is in `docs/STATUS.md`;
-owner decisions and amendments to this document are in `DECISIONS.md`; proposals not yet built are
-in `docs/BACKLOG.md`.
+This file is the spec and nothing else. Where the build has got to is `docs/STATUS.md`; what
+football exists and what is proposed is `docs/THE_FOOTBALL.md`; owner decisions and amendments to
+this document are `DECISIONS.md`.
 
 ---
 
@@ -28,11 +28,8 @@ to be physically plausible. Expect to change most of them — and expect to chan
 the engine has stopped changing shape, a constant fitted against it is a constant that will need
 fitting again; §11.1.1 says when that stops being true, and §11 is arranged around it.
 
-The same applies to every number in §11. **The order of work is: make it look like football, ignore
-the numbers until it does, then tune.** A behaviour that reads right by eye goes in whatever it does
-to the statistics, and the statistics are fitted afterwards, once, to the engine that results. Read
-§11 with that in mind — it specifies what will eventually be measured and how, not a target to be
-steered toward now.
+The same applies to every number in §11: it specifies what will eventually be measured and how, not
+a target to steer toward now. `CLAUDE.md` has the order of work and the rules that follow from it.
 
 Anything marked `[DECIDE]` is an open question the implementing agent should surface to the project
 owner rather than resolve silently.
@@ -57,12 +54,11 @@ Realism still decides the floor. The sanity ranges of §11 exist so that "more e
 becomes "not recognisably football". Above that floor, the tuning targets are set by what is fun to
 watch.
 
-**What "looks like football" means here is the working criterion, not a slogan.** A match read by
-eye: the ball behaves like a ball, a carry can be ended, a defender gets round rather than
-tailgating, a pass is weighted for the man receiving it, players offer for it and are found. Each of
-those is a behaviour that either exists or does not, and each is judged by watching. None of them is
-a coefficient. The engine is finished being *built* when a match reads as football with the sound
-off; it is finished being *tuned* some time after that.
+**"Looks like football" is a working criterion, not a slogan**: the ball behaves like a ball, a
+carry can be ended, a defender gets round rather than tailgating, a pass is weighted for the man
+receiving it, players offer for it and are found. Each either exists or does not, each is judged by
+watching, and none is a coefficient. The engine is finished being *built* when a match reads as
+football with the sound off, and finished being *tuned* some time after that.
 
 **The register is the British football comic.** The tonal inspirations are *Hot-Shot Hamish* and
 *Mighty Mouse* — the strips that ran in *Scorcher*, *Tiger* and then *Roy of the Rovers* through the
@@ -224,8 +220,7 @@ Integrate with semi-implicit Euler.
   greasy, so it *multiplies* it down and the ball runs on faster. Wet long grass is still slower
   than a dry mown pitch. **The values live in `SimConsts` and are deliberately past what the physics
   would give** — a textbook 1.0 m/s² makes every loose ball a foot race to the touchline, and how
-  the ball reads matters more than the coefficient. The comment at the constant has the history;
-  `docs/STATUS.md`, "Rolling resistance", has what moving it measured.
+  the ball reads matters more than the coefficient. The comment at the constant has the history.
 - Below a small vertical-speed threshold after a bounce, snap into the rolling state.
 
 Implement the sliding-to-rolling transition properly. It is why a backspin pass checks up, why a
@@ -800,7 +795,7 @@ behaviour rather than a defect. Say which, and let the owner look.
 
 | Metric, per 90 minutes | Sanity range | Judgeable from |
 |---|---|---|
-| Goals, both teams | 0.5 – 8 | 3 |
+| Goals, both teams | 0.5 – 16 | 3 |
 | Shots per team | 3 – 35 | 3 |
 | Share of shots on target | 15 – 65 % | 3 |
 | Possession, higher side | 50 – 80 % | 3 |
@@ -811,13 +806,21 @@ behaviour rather than a defect. Say which, and let the owner look.
 | Corners per team | 0.5 – 20 | 5 |
 | Distance covered per player | 6 – 15 km | 2 |
 
+**The ceiling on goals is suspended for the attacking pass** (§11.4), which is temporary and ends
+with it. The attack is being built out against a defence missing most of its behaviours, so a high
+count is the intended shape of a half-built engine rather than breakage, and 8 would fire on every
+mechanic that lands. 16 stands in its place — enough to catch the failure the wire is for, twenty
+goals a game — and **returns to 8 when the defensive pass lands**
+(`GOALS_CEILING_SETTLED` in `tools/validation.gd`). The lower bound is unchanged, and every other
+range holds in both directions.
+
 **Tuning targets — where the engine should eventually land.** Reported on every run, but advisory:
 a number outside its band is information about drift, not a failing build. Only the acceptance run
 promotes them to pass/fail (`--strict`).
 
 | Metric, per 90 minutes | Target band | Converges by |
 |---|---|---|
-| Goals, both teams | 2.9 – 4.1 | 40 |
+| Goals, both teams | 2.9 – 4.1 | 40 |*
 | Shots per team | 8 – 18 | 40 |
 | Share of shots on target | 30 – 40 % | 40 |
 | Possession, stronger team | 52 – 65 % | 40 |
@@ -829,16 +832,14 @@ promotes them to pass/fail (`--strict`).
 | Distance covered per player | 9 – 12 km | 20 |
 | Score draws | 12 – 22 % of matches | 200 |
 
+\* Goals is where the *finished* game should land, with both halves of football built. The engine is
+not aiming at it now and is not meant to be near it — see §11.4.
+
 ### 11.1 How many matches, and how long each
 
-The runner is sized for the wall clock first, because a check that is not run is not a check. A
-ten-minute gate gets run at the end of a day's work; a forty-second one gets run whenever a
-structural answer is wanted, and catching a broken change in forty seconds is worth more than
-measuring an unbroken one to three decimal places.
-
-All three sizes are the owner's runs. `CLAUDE.md` has the day-to-day rule — compile, then diagnose
-one short match if the question is a quantity — and the reason is the one in §11.1.1: a batch
-measures a machine that is still missing parts.
+The runner is sized for the wall clock first, because a check that is not run is not a check. All
+three sizes are the owner's runs; `CLAUDE.md` has the day-to-day rule, and the reason is §11.1.1's:
+a batch measures a machine that is still missing parts.
 
 Three sizes, and the runner prints which one is being quoted beside the verdict:
 
@@ -852,30 +853,23 @@ Three sizes, and the runner prints which one is being quoted beside the verdict:
 
 Four consequences of sizing it this way, and each is load-bearing:
 
-**Every count is normalised to ninety minutes.** A twelve-minute match is a legitimate measurement
-of a rate; it is not a measurement of a total. `SimMatchStats.per_90` divides by the minutes the
-match actually played, added time included, so the same bands judge every run length. Two things
-short matches genuinely distort: fatigue never accumulates, so distance per player extrapolates
-high and late-match collapse goes unseen, and the kickoff transient is a larger share of the match.
-Both are reasons the gate exists at full length; neither is a reason to make the loop slow.
+**Every count is normalised to ninety minutes**, from the minutes the match actually played
+(`SimMatchStats.per_90`), so a short match is a legitimate measurement of a *rate* and the same
+bands judge every run length. What short matches genuinely distort is fatigue — distance per player
+extrapolates high and late-match collapse goes unseen — which is why the gate exists at full length.
 
-**A metric is only judged at a sample that can support it.** Each band carries the size it needs —
-the "converges by" column, in the runner as `min_n`. Below it, the figure is still printed, tagged
-`noisy at n=6`, and excluded from the verdict. A number with its sample size beside it is
-information; the same number quoted as a result is a lie. This is what makes a six-match gate
-honest rather than merely fast: it does not claim to have measured the score-draw rate.
+**A metric is only judged at a sample that can support it.** Each band carries the size it needs
+(`min_n`); below it the figure is printed, tagged `noisy at n=6`, and excluded from the verdict. A
+number with its sample size beside it is information; the same number quoted as a result is a lie.
 
-**The sample size is set by the noisiest metric, which is why the acceptance run still exists.**
-The score-draw rate is a proportion near 0.24, so its standard error is 6.8 points at n = 40 and
-only falls to 3.0 points at n = 200, against a band half-width of 4. Nothing short of a couple of
-hundred matches can tell a passing engine from a failing one on that metric.
+**The sample size is set by the noisiest metric, which is why the acceptance run exists.** The
+score-draw rate is a proportion near 0.24, so its standard error is 6.8 points at n = 40 and only
+3.0 at n = 200, against a band half-width of 4.
 
-**Matches are independent and each is reproducible from its seed, so a batch is sharded across
-cores.** Shard *w* takes a contiguous seed block, so the set of seeds a batch covers does not depend
-on the worker count — changing `--workers` changes how fast the run is, never what it measures. The
-Phase 5 distinguishability test shards the same way: each arm is an ordinary batch with `--plan`,
-and `compare` judges two shard directories against each other. Run it serially and it is hours,
-which is how a Phase 5 exit criterion quietly stops being run.
+**Matches are independent and reproducible from their seeds, so a batch is sharded across cores.**
+Shard *w* takes a contiguous seed block, so `--workers` changes how fast a run is, never what it
+measures. The Phase 5 test shards the same way, and run serially it is hours — which is how an exit
+criterion quietly stops being run.
 
 Wall-clock targets: smoke under a minute, gate under five minutes, acceptance under an hour.
 
@@ -933,21 +927,17 @@ is what is being tested, not to go faster.
 
 ### 11.3 The tuning table is an entertainment target
 
-Per §1, the goal is an entertaining game that feels somewhat realistic. The tuning bands are
-therefore set by what makes a watchable match, and the sport is the reference they are stated
-against rather than the thing they are trying to hit. Real football scores 2.2–3.4 goals a match,
-draws about a quarter of them, and spends long stretches with nothing happening. This game
-deliberately scores more, draws less, and plays at a higher tempo — and the intent is to keep moving
-in that direction rather than to converge back on the real figures.
+Per §1, the bands are set by what makes a watchable match, and the sport is the reference they are
+stated *against* rather than the thing they try to hit. Real football scores 2.2–3.4 goals a match
+and draws about a quarter of them; this game deliberately scores more, draws less, and plays at a
+higher tempo, and the intent is to keep moving that way rather than converge back.
 
-The distinction that still matters is between the two layers. The **sanity ranges** are the floor
-and stay honest: they are what stops "more entertaining" turning into "not recognisably football",
-and a metric leaving one of them is a question that has to be answered rather than noted. The answer
-is often the behaviour that just landed — see §0 and §11.1.1 — and then the range moves back when the
-mechanics that balance it are built, not when the behaviour is softened. The **tuning targets** above
-that floor are design decisions, and moving one is a conversation rather than a defect.
+The **sanity ranges** are the floor and stay honest: a metric leaving one is a question to answer,
+not a note. The answer is usually the behaviour that just landed, and then the range comes back when
+the mechanics that balance it are built, never by softening the one that went in. The **tuning
+targets** above that floor are design decisions, and moving one is a conversation.
 
-Where a number is doing something other than describing the sport, it says so at the point of use in
+Where a number does something other than describe the sport, it says so at the point of use in
 `tools/validation.gd`.
 
 Additionally, **a stronger squad must beat a weaker one roughly 60–70 % of the time, not 95 %.**
@@ -983,6 +973,22 @@ two-layer arrangement of §11.1 — sanity ranges reported on every run to catch
 tuning targets enforced only at the freeze. A golden digest moving after a deliberate behaviour
 change is expected; re-record it. A digest moving when nothing should have changed behaviour is a
 real finding.
+
+### 11.4 One half of football at a time: the attack first
+
+The table above describes the finished game, and the engine is not being built toward it in one
+pass. **The attacking pass comes first, and it is meant to overshoot.** The defensive layer is
+missing most of its behaviours — nobody blocks a shot with his body, nobody jockeys, nobody covers
+the man who was beaten, no side steps up, the penalty area does not resist a carrier — so an attack
+built against it scores far more than the same attack will once the defence exists. Balancing the
+goal count now would fit the attack to the absence of the defence: §11.1.1's argument, applied to a
+whole layer instead of a constant.
+
+Until the owner calls the switch, which is called by eye and not by a number: goals per match is
+expected well above 2.9–4.1 and above the suspended ceiling of 8; attacking behaviour is the work;
+and a defensive mechanic is not a response to a high score. It is the next pass, held in
+`docs/THE_FOOTBALL.md` in the order it is wanted. Then the tuning freeze, where the bands are fitted
+once to the engine both passes produce. `DECISIONS.md` (eighth amendment) is the record.
 
 ---
 

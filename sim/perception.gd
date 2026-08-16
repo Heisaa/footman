@@ -96,6 +96,58 @@ static func believed_pos(ctx: SimContext, observer: SimPlayer, target: SimPlayer
 	return ctx.beliefs[idx] + target.vel * age * 0.6
 
 
+## Whether the observer can see the target at all, right now.
+##
+## `docs/THE_FOOTBALL.md` 12, and checking it first is what the entry asked for.
+## The answer was that **there is no visibility model** — `update` refreshes every
+## observer's belief about every other player at 4 to 8 Hz whatever anyone is
+## looking at, and being behind you only widens the noise from 0.35 m to 1.5 m.
+## Nothing is ever unseen, so the option outside perception the proposal worried
+## about could not exist, and neither could the football it describes: a man
+## screaming for it over your shoulder who genuinely does not get the ball.
+##
+## So this is the model that was missing rather than a gate on the one that was
+## there. Inside `NEAR_ALWAYS` he is seen however he stands — you hear him, you
+## know he is there, and a five-metre ball to a man behind you is a real pass.
+## Beyond it he has to be inside the arc the observer is facing, widened by
+## `awareness`, which is the attribute whose whole job is this and which until now
+## only moved the refresh rate.
+##
+## Deliberately about the *observer's body*, not about a scan flag: `SimMovement`
+## already turns a receiver's hips and `SimTouch` already prices striking across
+## the body, so the same facing that decides whether he can hit the pass now
+## decides whether he can find it. A man who wants the ball behind him has to
+## turn, and turning is what the dwell is for.
+const NEAR_ALWAYS := 9.0
+## Half-arc of vision either side of where he is facing, in radians: a poor
+## scanner sees not much past his shoulders, a good one has eyes in the back of
+## his head. 1.4 rad is about 80 degrees each way, 2.2 about 126.
+const VIEW_HALF_POOR := 1.4
+const VIEW_HALF_GOOD := 2.2
+
+
+static func can_see(observer: SimPlayer, target: SimPlayer, scan: float = 0.5) -> bool:
+	if not ENABLED:
+		return true
+	var to := SimConsts.horizontal(target.pos - observer.pos)
+	var d := to.length()
+	if d <= NEAR_ALWAYS:
+		return true
+	var facing := SimConsts.horizontal(observer.heading_dir())
+	var f := facing.length()
+	if f < 0.01:
+		return true
+	var cos_a: float = to.dot(facing) / (d * f)
+	# How much he is looking, which is a plan quantity as much as an attribute: a
+	# side playing quick and direct plays with its head down and a patient one
+	# scans before it receives. `scan` is the plan's half of it, `awareness` the
+	# man's, and they average -- so a good scanner on a hurried plan still sees
+	# more than a poor one, which is what makes it an attribute and not a switch.
+	var half: float = lerpf(VIEW_HALF_POOR, VIEW_HALF_GOOD,
+		(observer.attrs.awareness + clampf(scan, 0.0, 1.0)) * 0.5)
+	return cos_a >= cos(half)
+
+
 ## How stale an observer's view of a target is, in seconds.
 static func staleness(ctx: SimContext, observer: SimPlayer, target: SimPlayer) -> float:
 	var n := ctx.players.size()

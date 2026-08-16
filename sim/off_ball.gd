@@ -71,7 +71,27 @@ const ASSIGN_TICKS := 12
 ## moving into space is the one kind that cannot swarm: no intent in this file
 ## ever targets the ball and the nearest of them stops ten metres off it, so the
 ## guard in `SimMovement._assign_chasers` has nothing to say about it.
-const QUOTA := [0, 1, 3, 2, 2, 1, 1]
+##
+## Box was two and is three, because `_box_point` authors exactly three targets --
+## near post, the penalty spot, far post -- and rationing them to two men is an
+## inconsistency inside one mechanic rather than a judgement about eagerness. It
+## only started to bite once the box run had a trigger that fired: with the old
+## one it was a candidate on 0.1% of decisions and the ration never came up, and
+## `and which idea he was allowed to have` now reads 18 blocked against 34 won.
+## **Both rations are now measured** (2026-08-15, twenty seeds each), which they
+## never had been -- `and which idea he was allowed to have` showed 88% of space
+## picks and 86% of show picks winning their softmax and being dropped here, and
+## nobody had asked whether that was right.
+##
+##   show 1 -> 2:   goals 4.45 to 3.52. **One is right.** A second man coming short
+##                  is the midfield collapse the owner watched, arriving by quota
+##                  instead of by score, and it agrees with his own words: one
+##                  midfielder dropping to meet the defenders is fine.
+##   space 3 -> 4:  shots 5.28 to 5.84, goals unchanged. Kept, on the same argument
+##                  the constant was raised from two on -- more of the side moving
+##                  is more of the side available -- and because the cost of being
+##                  wrong is a man drifting rather than a man abandoning his post.
+const QUOTA := [0, 1, 4, 2, 3, 1, 1]
 
 ## Nobody further than this from the ball is offering to receive it. He is
 ## holding shape, which at that distance is the right thing to be doing.
@@ -255,6 +275,56 @@ static var weight := PackedFloat32Array()
 ## `cut_short`, which was counting them as failures. See `_expire`.
 static var shot := PackedInt32Array()
 
+## Which of the six ideas a man off the ball actually gets to have.
+##
+## Everything above counts runs that were *taken*: 35 in behind and 6 into the box
+## in a match against 487 into space. That number cannot say which of three
+## different things went wrong, and they want three different fixes — the option
+## was never a candidate on the grass he was standing on, or it was a candidate
+## and lost the softmax, or it won the softmax and was then refused by `QUOTA`
+## because two men were already running. The last of those is silent: `_consider`
+## files a pick and `_assign` drops it without anything being recorded.
+##
+## So, per kind, over every man considered on every assignment tick: how often the
+## option existed at all, the share of the softmax it held while it did, how often
+## it won, and how often winning was not enough.
+##
+## The same one-way contract as every other tally here — written as the engine
+## picks, never read back, and it never touches `ctx.rng`.
+static var chose_seen := PackedInt32Array()
+static var chose_share := PackedFloat32Array()
+static var chose_won := PackedInt32Array()
+static var chose_blocked := PackedInt32Array()
+static var chose_men := 0
+
+
+## And, for the two kinds that are almost never on the list, which test refused
+## them. Measured because `on the list 6%` names no line of code, and a gate
+## upstream of every value knob is what this project has been caught by four
+## times. Each man is filed under the first test he fails, in the order they are
+## applied, so the rows read down like the function does.
+const BEHIND_WHY := [
+	"not his job", "under pressure", "too far from the ball", "ball too deep",
+	"behind the ball", "already offside", "no run to make", "on the list",
+]
+const BOX_WHY := [
+	"not his job", "too far from the ball", "not the final third", "already offside",
+	"no target in range", "on the list",
+]
+static var behind_why := PackedInt32Array()
+static var box_why := PackedInt32Array()
+
+
+static func _note_choice(kind: int, total: float) -> void:
+	chose_men += 1
+	for i in KIND_NAMES.size():
+		if _weights[i] <= 0.0:
+			continue
+		chose_seen[i] += 1
+		chose_share[i] += _weights[i] / total
+	if kind >= 0:
+		chose_won[kind] += 1
+
 ## The same question asked of the two seconds after a regain, which is the only
 ## window three separate mechanics fire in.
 ##
@@ -333,7 +403,7 @@ static var _weights := PackedFloat32Array()
 ## fired once: tick 0 is the kick-off, the ball is dead, and the movement layer —
 ## which is what calls `update` — only runs while the ball is in play. So every
 ## match after the first in a process started with the previous match's intents
-## and diverged from the same seed run on its own. `docs/PITFALLS.md` has it.
+## and diverged from the same seed run on its own. `docs/INVARIANTS.md` has it.
 static func reset() -> void:
 	_resize(0)
 
@@ -405,11 +475,17 @@ static func point_for(ctx: SimContext, p: SimPlayer) -> Vector3:
 	# line: he checks back onside instead of standing beyond it waiting to be
 	# flagged, and the next query sends him again. That is the arrival timed,
 	# and it is also fewer offsides.
-	if kind == BEHIND and ctx.ball.intended_target != p.id:
+	# The same rule for the man attacking the box. `BOX_EASE` below already times
+	# his *arrival*, and that is a different question from whether he is onside:
+	# he can ease short of the six-yard box and still be a stride beyond the last
+	# defender, which is the flag. Measured at n=20, offsides were running at 13.3
+	# a team per football-90 against a §11 ceiling of 12, and the two runs that
+	# were given triggers this week are the two that go past the line.
+	if (kind == BEHIND or kind == BOX) and ctx.ball.intended_target != p.id:
 		var dir := ctx.pitch.attack_dir(p.team)
 		var line: float = SimReferee.believed_offside_line(ctx, p) * dir
-		if p.pos.x * dir > line - 0.4:
-			return Vector3((line - 0.4) * dir, 0.0, _point[p.id].z)
+		if p.pos.x * dir > line - ONSIDE_MARGIN:
+			return Vector3((line - ONSIDE_MARGIN) * dir, 0.0, _point[p.id].z)
 		return _point[p.id]
 	# Timing the arrival at a cross: until the ball is up, he holds short of the
 	# spot -- arriving as the ball does, not standing on the six-yard line
@@ -444,6 +520,23 @@ static func drift_for(ctx: SimContext, p: SimPlayer) -> Vector3:
 ## current velocity, which cannot see the run that has been decided on and not
 ## yet begun -- and that run is exactly the one worth passing to.
 static func destination_for(ctx: SimContext, p: SimPlayer) -> Vector3:
+	# A man a pattern is running is a man with a destination, and this did not
+	# know it. `_assign` skips anyone `SimPatterns.movement_override` has an
+	# opinion about, so his intent stays `NONE`, so this returned `INF`, so
+	# `_shortlist` ranked him on the grass he was leaving and `_lead_point` aimed
+	# at dead reckoning off the velocity he happened to have. The pattern sent him
+	# somewhere and then hid where from the only man who could find him.
+	#
+	# Measured on the third man, which is the pattern that shows it worst: 71
+	# firings across both sides in a match, the ball it wants on the list 29.8% of
+	# the time — a better rate than the run in behind manages — and **not one
+	# success**. The move is generated, offered and aimed at the wrong yard.
+	#
+	# It goes first because it outranks the off-ball layer by construction: the
+	# override is why he has no intent to read.
+	var override := SimPatterns.movement_override(ctx, p)
+	if not is_inf(override.x):
+		return override
 	match intent_of(ctx, p):
 		SHOW, BEHIND, BOX, SECOND:
 			return _point[p.id]
@@ -575,6 +668,7 @@ static func _assign(ctx: SimContext, team: int, carrier: int) -> void:
 	for i in _pick_ids.size():
 		var kind: int = _pick_kinds[i]
 		if used[kind] >= int(QUOTA[kind]):
+			chose_blocked[kind] += 1
 			continue
 		used[kind] += 1
 		_commit(ctx, _pick_ids[i], kind, _pick_points[i], in_window)
@@ -708,7 +802,14 @@ static func _consider(ctx: SimContext, p: SimPlayer, team: int, carrier: int, ba
 		if marker != null and not marker.is_keeper:
 			var marked: float = clampf(1.0 - marker.dist_to(p.pos) / DECOY_MARKED, 0.0, 1.0)
 			if marked > 0.0:
-				_scores[DECOY] = ctx.value.xt_at(team, decoy, ctx.pitch) * marked * DECOY_WORTH \
+				# `teamwork` is what the attribute is for, and until now nothing on
+				# the pitch read it (`docs/THE_FOOTBALL.md` 14). The decoy is the one
+				# run in this file made entirely for somebody else — it is not
+				# offered to the passer at all — so willingness to make it is
+				# exactly the quantity the attribute names.
+				var willing: float = lerpf(0.55, 1.35, p.attrs.teamwork)
+				_scores[DECOY] = ctx.value.xt_at(team, decoy, ctx.pitch) * marked \
+					* DECOY_WORTH * willing \
 					* ctx.tactics(team).focus_at(decoy.z, ctx.pitch)
 				_points[DECOY] = decoy
 
@@ -718,8 +819,7 @@ static func _consider(ctx: SimContext, p: SimPlayer, team: int, carrier: int, ba
 	# and the man already standing there owns them.
 	var second := _second_ball_point(ctx, p, team)
 	if second != Vector3.INF:
-		_scores[SECOND] = (ctx.value.xt_at(team, second, ctx.pitch)
-			+ SimDecision.possession_value(ctx, team, second)) * SECOND_WORTH
+		_scores[SECOND] = _worth_at(ctx, team, second) * SECOND_WORTH
 		_points[SECOND] = second
 
 	# The give-and-go, from the side that has to make the run. A man who has
@@ -764,6 +864,14 @@ static func _consider(ctx: SimContext, p: SimPlayer, team: int, carrier: int, ba
 	for i in KIND_NAMES.size():
 		_weights[i] = 0.0 if is_inf(_scores[i]) else exp((_scores[i] - best) / temperature)
 	var kind: int = maxi(ctx.rng.weighted_index(_weights), 0)
+	# Counted before the NONE return, because "he held still" is one of the six
+	# answers and dropping it makes every share below add up against the wrong
+	# denominator.
+	var total := 0.0
+	for i in KIND_NAMES.size():
+		total += _weights[i]
+	if total > 0.0:
+		_note_choice(kind, total)
 	if kind == NONE:
 		return
 
@@ -913,8 +1021,8 @@ static func _show_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3)
 		if is_zero_approx(side):
 			side = 1.0
 		point += lateral * side * SHOW_STEP
-	# The lane, not just the marker. `docs/STATUS.md` ("Support is an angle
-	# problem") measured the filter on support as almost entirely the lane --
+	# The lane, not just the marker. The filter on support measured as almost
+	# entirely the lane --
 	# the men were there and unmarked, and the ball could not reach them. So a
 	# man showing into a blocked line takes one more lateral step, to whichever
 	# side opens it. The quota is untouched: this is effort from the men
@@ -949,7 +1057,27 @@ static func _space_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3
 	# the opponents' shape rather than at fixed offsets from his own.
 	var pocket := _pocket_point(ctx, p, team, base)
 	if pocket != Vector3.INF and SimConsts.horizontal_length(pocket - ball) <= RANGE:
-		var pv := _value_of(ctx, p, team, ball, pocket, 0.5, SPACE_LANE_POWER) * POCKET_LIFT
+		# The first man into the pocket is worth far more than the second, and the
+		# value function cannot say so: it prices a patch of grass, and the grass
+		# between the lines is just as good whether or not a teammate is already
+		# standing in it. So a side with nobody linking and a side with two both
+		# read the same, and the layer fills the pocket or leaves it empty by
+		# accident.
+		#
+		# The owner's ask (2026-08-15) is exactly this shape: "one midfielder
+		# dropping to meet the defenders is fine; there have to be link players."
+		# Coming short is already rationed to one by `QUOTA`; being *between the
+		# lines* was rationed by nothing and valued as ordinary space. Measured,
+		# 78% of touches were in the middle third and 12% in the final third.
+		#
+		# Stated as a lift on the empty pocket rather than a quota, because the
+		# football is that the pocket is worth occupying, not that a second man
+		# there is illegal -- and because a lift keeps it a value the softmax can
+		# still lose.
+		var lift := POCKET_LIFT
+		if not _anyone_between_the_lines(ctx, team, p.id, pocket):
+			lift = POCKET_LIFT_FIRST
+		var pv := _value_of(ctx, p, team, ball, pocket, 0.5, SPACE_LANE_POWER) * lift
 		if pv > best_value:
 			best_value = pv
 			best = pocket
@@ -982,23 +1110,29 @@ static func _break_lift(ctx: SimContext, team: int, carrier: int) -> float:
 ## is a question about the release, and the referee answers it.
 static func _behind_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3, urgency: float, breaking: float = 0.0) -> Vector3:
 	if not SimRole.is_attacking(p.role) and p.role != SimRole.CM:
+		behind_why[0] += 1
 		return Vector3.INF
 	if urgency > lerpf(BEHIND_MAX_PRESSURE, BEHIND_MAX_PRESSURE_BREAK, breaking):
+		behind_why[1] += 1
 		return Vector3.INF
 	if p.dist_to(ball) > BEHIND_RANGE:
+		behind_why[2] += 1
 		return Vector3.INF
 	var dir := ctx.pitch.attack_dir(team)
 	# Not worth it from deep in one's own half: the ball cannot be played that
 	# far, and a striker who makes the run anyway has left the team a man short
 	# for ninety minutes.
 	if ball.x * dir < -ctx.pitch.half_length * 0.25:
+		behind_why[3] += 1
 		return Vector3.INF
 	# Level with the ball or ahead of it. A run in behind from behind the ball is
 	# a different move and one the overlap patterns already make.
 	if (p.pos.x - ball.x) * dir < -8.0:
+		behind_why[4] += 1
 		return Vector3.INF
 	var line := SimReferee.believed_offside_line(ctx, p) * dir
 	if p.pos.x * dir > line + BEHIND_ONSIDE_SLACK:
+		behind_why[5] += 1
 		return Vector3.INF
 	var depth: float = minf(line + BEHIND_DEPTH, ctx.pitch.half_length - 3.0)
 	var run: float = depth - p.pos.x * dir
@@ -1006,8 +1140,10 @@ static func _behind_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector
 	# is committing to. A "run" he could never complete is a striker jogging
 	# hopefully at a spot the ball has long since left.
 	if run < 2.0 or run > BEHIND_MAX_RUN:
+		behind_why[6] += 1
 		return Vector3.INF
 	# Into the channel he already occupies, drifting a little toward goal.
+	behind_why[7] += 1
 	var point := Vector3(depth * dir, 0.0, p.pos.z * 0.85)
 	return ctx.pitch.clamp_to_pitch(point, 2.0)
 
@@ -1057,19 +1193,41 @@ const BOX_LATE := 1.2
 ## without anybody coordinating them.
 static func _box_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3) -> Vector3:
 	if not SimRole.is_attacking(p.role) and p.role != SimRole.CM:
+		box_why[0] += 1
 		return Vector3.INF
 	if p.dist_to(ball) > BOX_RANGE:
+		box_why[1] += 1
 		return Vector3.INF
 	var dir := ctx.pitch.attack_dir(team)
-	# The cross situation, and it is `_add_crosses`'s own test on the ball rather
-	# than a second opinion about when a cross is on.
-	if ball.x * dir <= ctx.pitch.half_length / 3.0 \
-			or absf(ball.z) <= ctx.pitch.half_width * SimDecision.CROSS_WIDE:
+	# The ball in the final third, and that is the whole trigger.
+	#
+	# It used to be `_add_crosses`'s own test — final third *and* wide — on the
+	# argument that a run to meet a ball nobody is going to play is worse than
+	# holding shape. Measured, that argument was being made twice. `and which idea
+	# he was allowed to have` says the box run was a candidate on 0.1% of the
+	# 7824 men considered in a match and that **every man whose job it was, was
+	# refused here**: 43% of all of them, against 57% taken by the role test above
+	# and nothing left over. Six box runs got made in ninety-three minutes, and the
+	# opposition area saw 4.6 touches a team against football's rough 25.
+	#
+	# And the argument it was making is already made, better, one layer down: the
+	# run is scored against `none`, which is holding station and is a candidate
+	# 100% of the time, and `QUOTA` allows two. Whenever the option did survive to
+	# be scored it took 97.2% of the softmax and won — the value layer has never
+	# disagreed that attacking the box is the right idea, it was only ever asked in
+	# the one situation where the ball was already going there.
+	#
+	# So the width test goes and the third stays. A cross is one ball that finds a
+	# man in the six-yard box; the cutback, the second ball and the through ball
+	# are the others, and none of them starts wide.
+	if ball.x * dir <= ctx.pitch.half_length / 3.0:
+		box_why[2] += 1
 		return Vector3.INF
 	# Not from a standing start beyond the last man: that is not attacking a
 	# cross, it is waiting offside for one.
 	var line := SimReferee.believed_offside_line(ctx, p) * dir
 	if p.pos.x * dir > line + BEHIND_ONSIDE_SLACK:
+		box_why[3] += 1
 		return Vector3.INF
 	var goal := ctx.pitch.target_goal(team)
 	var side: float = signf(ball.z)
@@ -1094,7 +1252,9 @@ static func _box_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3) 
 			best_worth = worth
 			best = point
 	if is_inf(best.x):
+		box_why[4] += 1
 		return Vector3.INF
+	box_why[5] += 1
 	return ctx.pitch.clamp_to_pitch(best, 2.0)
 
 
@@ -1113,7 +1273,28 @@ const SECOND_WORTH := 1.3
 ## and the lift is the football statement that a man there is playable and
 ## facing their goal while nobody's job is to press him.
 const POCKET_GAP := 8.0
+## How far onside a runner checks back to, and it is not a tuning number.
+##
+## It was 0.4 m. The line he is checking against is
+## `SimReferee.believed_offside_line` -- his *belief*, carrying `SimPerception`'s
+## positional noise of 0.35 m for a defender in view and 1.5 m for one behind him
+## -- and the flag is thrown against the truth. Holding forty centimetres off a
+## line he knows to within a metre and a half is not timing a run finely, it is
+## being flagged by arithmetic: about half of those checks put him level or beyond
+## the real line.
+##
+## A metre and a quarter is the noise, near enough, and it is what a striker
+## actually does -- he starts from a stride onside, not from the same blade of
+## grass. Measured, offsides ran at 12.8 to 13.3 a team per football-90 against a
+## §11 ceiling of 12 once the runs this week were given triggers, and the owner had
+## already asked for fewer of them by eye.
+const ONSIDE_MARGIN := 1.25
 const POCKET_LIFT := 1.15
+## And what the *first* man in is worth, when nobody is linking yet. See the note
+## where it is applied.
+const POCKET_LIFT_FIRST := 1.9
+## How near the pocket a man has to be to count as already occupying it.
+const POCKET_HELD := 9.0
 
 
 ## Where a decoy goes: forward and across the front of the defence, up to the
@@ -1166,6 +1347,21 @@ static func _second_ball_point(ctx: SimContext, p: SimPlayer, team: int) -> Vect
 
 ## The pocket between the opponents' lines, as a point in this player's own
 ## channel, or INF when the lines are too close to hold one.
+## Is anybody already linking? Counted off where men actually are rather than off
+## their intents, because a man holding station between the lines is linking just
+## as much as one who has decided to move there.
+static func _anyone_between_the_lines(ctx: SimContext, team: int, exclude: int, pocket: Vector3) -> bool:
+	for pid in ctx.team_players[team]:
+		if pid == exclude:
+			continue
+		var m: SimPlayer = ctx.players[pid]
+		if m.is_keeper or not m.on_pitch:
+			continue
+		if m.dist_to(pocket) <= POCKET_HELD:
+			return true
+	return false
+
+
 static func _pocket_point(ctx: SimContext, p: SimPlayer, team: int, base: Vector3) -> Vector3:
 	if not SimRole.is_attacking(p.role) and p.role != SimRole.CM:
 		return Vector3.INF
@@ -1211,6 +1407,35 @@ static func _pocket_point(ctx: SimContext, p: SimPlayer, team: int, base: Vector
 ## half of the same complaint the decision layer had: expected threat is flat in
 ## one's own half, so the only thing separating the pocket in front from the
 ## pocket behind was the open lane, and the lane behind the ball is always open.
+## What arriving on a patch of grass with the ball is worth, for the one run that
+## is not scored through `_value_of`.
+##
+## **The asymmetry this documents is real and closing it made the engine worse.**
+## `_value_of` returns `control * lane * (threat + possession_value * retain) *
+## promptness`, and in the middle third `possession_value` is about 0.013 against
+## an expected threat of 0.002 — so four fifths of the value of any position is
+## the possession, not the map. Holding station is scored with it. Three runs are
+## scored outside that function because pitch control is the wrong question for a
+## patch nobody is standing in yet, and only the second ball carried the
+## possession half: the run in behind and the run into the box were competing
+## against standing still on a fifth of the units.
+##
+## Priced the same way, the run in behind roughly doubled — its share of the
+## softmax went 8.1% to 19.5% — and across twenty seeds **goals fell 3.46 to 2.33,
+## shots 4.70 to 3.55 and touches in the opposition box 4.5 to 2.9**. Reverting it
+## alone put all three back. The men who go beyond are the men who were linking:
+## price the run past the last defender like a position and the side has nobody
+## left in the middle third to give it to, which is the owner's "there have to be
+## link players" arriving from the other side (`docs/THE_FOOTBALL.md` 30).
+##
+## So the two runs keep `xt` alone, and this is left holding the second ball and
+## the argument. **The units are still inconsistent** — that part was not wrong —
+## and whatever fixes it has to pay for the link players it takes away, which is
+## 30's job and not a scoring knob's.
+static func _worth_at(ctx: SimContext, team: int, point: Vector3) -> float:
+	return ctx.value.xt_at(team, point, ctx.pitch) + SimDecision.possession_value(ctx, team, point)
+
+
 static func _value_of(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3, point: Vector3, retain: float, lane_power: float = 1.0) -> float:
 	# A man who has to turn and travel is a later option than one already there.
 	var arrival: float = SimValueField.time_to_arrive(p, point, 0.0)
@@ -1363,6 +1588,17 @@ static func _clear() -> void:
 	offered.resize(KIND_NAMES.size())
 	weight.resize(KIND_NAMES.size())
 	shot.resize(KIND_NAMES.size())
+	behind_why.resize(BEHIND_WHY.size())
+	box_why.resize(BOX_WHY.size())
+	for i in behind_why.size():
+		behind_why[i] = 0
+	for i in box_why.size():
+		box_why[i] = 0
+	chose_seen.resize(KIND_NAMES.size())
+	chose_share.resize(KIND_NAMES.size())
+	chose_won.resize(KIND_NAMES.size())
+	chose_blocked.resize(KIND_NAMES.size())
+	chose_men = 0
 	for i in KIND_NAMES.size():
 		made[i] = 0
 		received[i] = 0
@@ -1372,3 +1608,7 @@ static func _clear() -> void:
 		offered[i] = 0
 		weight[i] = 0.0
 		shot[i] = 0
+		chose_seen[i] = 0
+		chose_share[i] = 0.0
+		chose_won[i] = 0
+		chose_blocked[i] = 0

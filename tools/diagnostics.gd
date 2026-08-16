@@ -1012,7 +1012,7 @@ static func _what_became_of_it(table: Dictionary) -> void:
 	# The join, and the reason for the whole field. It is an observational split
 	# and not a causal one: a spell containing a cross is a spell that had already
 	# reached the byline, so the shot rate beside it is partly the situation and
-	# partly the pass. `docs/BACKLOG.md` 17 is the version that separates them.
+	# partly the pass. `The coin the softmax tossed` is what separates them.
 	print("  and what had been played in it, by the spells containing one")
 	print("  %-16s %7s %7s %11s %10s" % [
 		"", "spells", "share", "-> a shot", "ground"])
@@ -1708,6 +1708,7 @@ static func _offering(ctx: SimContext) -> void:
 		# the last defender -- rising every time the engine got better at reaching
 		# the box, which is an instrument measuring its own success.
 		print("    cut short by a turnover: %s" % ", ".join(_cut_short_parts()))
+		_which_idea_he_had()
 
 	var trace := ctx.telemetry.trace
 	if trace.size() < 2:
@@ -2016,6 +2017,62 @@ static func _the_ball_in_behind(ctx: SimContext, events: Array) -> void:
 ## measured them there. "The counter is not on" has three causes — nobody is
 ## *eligible* to run, they are eligible and the run scores badly, or they run and
 ## the man on the ball never picks them — they live in three different files, and
+## Which idea a man off the ball was allowed to have, one gate at a time.
+##
+## `Offering for the ball` counts runs that were taken and cannot say why the ones
+## that were not, were not. Three different failures produce the same low count and
+## they are fixed in three different places:
+##
+##   `on the list` — the option existed at all on the grass he was standing on.
+##   A kind that is rarely a candidate is a geometry or a trigger problem
+##   (`_behind_point`, `_box_point` return `Vector3.INF`), and no score reaches it.
+##   `share` — the mean share of the softmax it held while it was a candidate,
+##   against `none`, which is holding station. A kind that is always on the list
+##   and never above a few per cent is losing on value, and the thing to read next
+##   is what it is scored with: `behind` and `box` are the two that skip
+##   `_value_of` and so carry no `possession_value` at all.
+##   `won` and `blocked` — it won the softmax, and then `QUOTA` refused it because
+##   the team already had its two. That one is silent everywhere else in the
+##   engine: the pick is filed and dropped without a trace.
+##
+## Read `won` against `taken` in the table above: they are the same event, so a
+## gap between them is the quota and nothing else.
+static func _which_idea_he_had() -> void:
+	if SimOffBall.chose_men == 0:
+		return
+	print("\n  and which idea he was allowed to have  (%d men considered)" % SimOffBall.chose_men)
+	print("    %-10s %10s %8s %8s %9s" % ["", "on the list", "share", "won", "blocked"])
+	for kind in SimOffBall.chose_seen.size():
+		var seen: int = SimOffBall.chose_seen[kind]
+		if seen == 0:
+			continue
+		print("    %-10s %9.1f%% %7.1f%% %8d %9d" % [
+			SimOffBall.KIND_NAMES[kind],
+			100.0 * float(seen) / float(SimOffBall.chose_men),
+			100.0 * SimOffBall.chose_share[kind] / float(seen),
+			SimOffBall.chose_won[kind],
+			SimOffBall.chose_blocked[kind],
+		])
+	print("    `share` is the mean over the passes the option was on the list for, so")
+	print("    a kind that is rarely listed can still read a healthy one")
+	_why_not(SimOffBall.BEHIND_WHY, SimOffBall.behind_why, "the run in behind")
+	_why_not(SimOffBall.BOX_WHY, SimOffBall.box_why, "the run into the box")
+
+
+## And which test refused it, in the order the function applies them.
+static func _why_not(names: Array, counts: PackedInt32Array, what: String) -> void:
+	var total := 0
+	for n in counts:
+		total += n
+	if total == 0:
+		return
+	var parts := PackedStringArray()
+	for i in counts.size():
+		if counts[i] > 0:
+			parts.append("%s %.0f%%" % [names[i], 100.0 * float(counts[i]) / float(total)])
+	print("    %s, first test failed:  %s" % [what, ",  ".join(parts)])
+
+
 ## `Offering for the ball` gives one number for all three.
 ##
 ## Read top to bottom, and stop at the first row that is wrong.
@@ -4137,6 +4194,26 @@ static func report(m: SimMatch) -> void:
 			print("    %-24s fired %3d   succeeded %3d   %3.0f%%" % [
 				row["name"], row["fired"], row["succeeded"], 100.0 * float(row["rate"]),
 			])
+	# A success rate of zero has two causes that look the same from outside: the
+	# ball was played there and did not arrive, or no ball there was ever on the
+	# list. `offered` separates them for the switch, which is the pattern that
+	# reads zero.
+	# Was the ball the pattern asks for ever on anybody's list? A pattern that
+	# fires and never succeeds is either a move that does not come off or a move
+	# nobody was ever offered, and only this separates them.
+	var any := false
+	for k in SimPatterns.asked_weighed.size():
+		if SimPatterns.asked_weighed[k] > 0:
+			any = true
+	if any:
+		print("  and was the ball it asks for ever on the list")
+		for k in SimPatterns.asked_weighed.size():
+			var w: int = SimPatterns.asked_weighed[k]
+			if w == 0:
+				continue
+			print("    %-24s %6d candidates weighed while live, %5d were the one it wanted (%.1f%%)" % [
+				SimPattern.KIND_NAMES[k], w, SimPatterns.asked_offered[k],
+				100.0 * float(SimPatterns.asked_offered[k]) / float(w)])
 
 	# --- Running ------------------------------------------------------------
 	print("\nDistance covered (km)")
@@ -4162,3 +4239,17 @@ static func _new_mechanics() -> void:
 	print("  cuts tried %4d   beat his man %4d   and was fouled %4d" % [
 		SimDecision.tally_feint, SimDecision.tally_beat, SimDecision.tally_beat_foul])
 	print("  chips                   %4d" % SimTouch.chips_played)
+	print("  volleys                 %4d" % SimTouch.volleys_struck)
+	# Generated against played, for the acts that read zero. A zero on the left is
+	# a gate and a zero on the right with a number on the left is the softmax
+	# declining it, and those are fixed in different files.
+	if SimDecision.rare_offered.size() == SimDecision.RARE_ACTS.size():
+		var parts := PackedStringArray()
+		for i in SimDecision.RARE_ACTS.size():
+			parts.append("%s %d offered" % [SimDecision.RARE_ACTS[i], SimDecision.rare_offered[i]])
+		print("  and were they even on the list:  %s" % ",  ".join(parts))
+	if SimDecision.shortlisted + SimDecision.unseen > 0:
+		print("  teammates he could not see, and so never weighed:  %d of %d (%.0f%%)" % [
+			SimDecision.unseen, SimDecision.shortlisted + SimDecision.unseen,
+			100.0 * float(SimDecision.unseen)
+				/ float(SimDecision.shortlisted + SimDecision.unseen)])

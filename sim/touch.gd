@@ -58,8 +58,8 @@ const DRIBBLE_AIM_BASE := 0.085
 ## footballer's while the execution layer struck it like nobody's. That is the
 ## whole of the gap between the engine's expected goals and its actual ones:
 ## summed xG ran at three times the goals scored. Two models of the same event
-## disagreeing, which is the failure `CLAUDE.md` calls pricing every path to the
-## same outcome.
+## disagreeing, which is the failure `docs/INVARIANTS.md` calls pricing every
+## path to the same outcome.
 const SHOT_AIM_BASE := 0.08
 ## How far ahead a dribble touch places the ball, in metres.
 ##
@@ -167,6 +167,7 @@ static func reset_tallies() -> void:
 	ft_played = 0
 	ft_layoff = 0
 	chips_played = 0
+	volleys_struck = 0
 
 
 ## How much of the first-time penalty a ball played along `dir` keeps, given the
@@ -470,7 +471,7 @@ static func lofted_flight(distance: float) -> float:
 ## So the lofted pass is aimed to *finish* at the target rather than to land on
 ## it: touchdown is pulled short by this share, the hops carry the rest, and
 ## the man it was played to meets a ball that has sat down — which is also what
-## `docs/BACKLOG.md` 23 asks of the ball over the top. A cross is exempt: it is
+## `docs/THE_FOOTBALL.md` 23 asks of the ball over the top. A cross is exempt: it is
 ## attacked in the air at the point it drops, so it keeps landing on its aim.
 const LOFT_RUNON_SHARE := 0.28
 
@@ -823,6 +824,15 @@ static var chips_played := 0
 ## `chip` lifts the ball over an advanced keeper instead of driving it: the
 ## strike is solved as a dropping arc onto the aim point, and everything else --
 ## the error model, the log, the referee -- treats it as the shot it is.
+## The height at which a shot is a full volley rather than a half-volley off the
+## bounce, and what that costs and buys. Above the knee the ball has to be met
+## with the body open, which is where both numbers come from.
+const VOLLEY_FULL := 0.75
+const VOLLEY_SIGMA := 1.9
+const VOLLEY_POWER := 1.12
+static var volleys_struck := 0
+
+
 static func shot(ctx: SimContext, player: SimPlayer, aim_point: Vector3, power: float, first_time: bool, chance_quality: float, chip: bool = false) -> void:
 	var line := aim_point - ctx.ball.pos
 	var speed: float = lerpf(SimConsts.SHOT_SPEED_MIN, SimConsts.SHOT_SPEED_MAX, clampf(power * lerpf(0.65, 1.0, player.attrs.power), 0.0, 1.0))
@@ -848,6 +858,28 @@ static func shot(ctx: SimContext, player: SimPlayer, aim_point: Vector3, power: 
 		SHOT_AIM_BASE * ctx.config.shot_sigma_scale(), line)
 	if first_time:
 		sigma *= 1.45
+	# The volley, as its own act rather than an ordinary shot at a ball that
+	# happens to be off the grass (`docs/THE_FOOTBALL.md` 29).
+	#
+	# Two things separate it and the engine had neither. A ball met in the air is
+	# struck by a man who cannot plant his standing foot and set his body over it,
+	# so it is far harder to keep down and to place -- and the elevation axis,
+	# which `SHOT_ELEVATION_SPREAD` already says is the one that misses, is where
+	# the error goes. And it comes off the boot faster than the same swing at a
+	# dead ball, because the ball's own pace is added to the strike rather than
+	# having to be generated.
+	#
+	# Scaled by height off the grass so an ankle-high half-volley is nearly the
+	# ordinary shot and one at thigh height is the spectacular one, and by
+	# `technique`, because that is the attribute the act is famous for needing.
+	var lift: float = clampf(ctx.ball.pos.y / VOLLEY_FULL, 0.0, 1.0)
+	if lift > 0.0:
+		var skill: float = lerpf(1.0, 0.45, player.attrs.technique)
+		sigma *= lerpf(1.0, VOLLEY_SIGMA * skill + (1.0 - skill), lift)
+		speed *= lerpf(1.0, VOLLEY_POWER, lift)
+		vel = ctx.ballistics.solve_direct(ctx.ball.pos, aim_point, speed, ctx.env, spin) \
+			if not chip else vel
+		volleys_struck += 1 if lift > 0.35 else 0
 	# Elevation is the harder axis: the goal is 7.32 m wide and 2.44 m high, and
 	# most missed shots miss over the bar rather than round the post.
 	vel = _perturb(ctx, vel, sigma, weight_sigma(player, player.attrs.finishing), 1.6)
@@ -893,7 +925,7 @@ static func _log_shot(ctx: SimContext, player: SimPlayer, from: Vector3, aim_poi
 ##
 ## The decision layer has to ask it. `SimDecision._add_hold` scores a first touch
 ## as keeping the ball, and where the ball ends up decides what that is worth --
-## so the two layers have to agree about where that is. `docs/PITFALLS.md` has
+## so the two layers have to agree about where that is. `docs/INVARIANTS.md` has
 ## the general case: the layer that scores an action and the layer that performs
 ## it holding separate opinions of it is this engine's most persistent bug, and
 ## the shared function is the only fix that stays fixed.
@@ -942,7 +974,7 @@ static func _resolve_first_touch(ctx: SimContext, player: SimPlayer, intent_dir:
 	# returned zero for nearly every touch in the match and both attributes might
 	# as well not have been read.
 	#
-	# It is also the disagreement `CLAUDE.md` warns about, in its clearest form
+	# It is also the disagreement `docs/INVARIANTS.md` warns about, in its clearest form
 	# yet: `SimDecision._shortlist` prices the same man's control of the same ball
 	# at `lerpf(0.72, 0.99, first_touch)` when deciding whether to pass it to him,
 	# while this graded what he then did with it at 0.02. One of the two was

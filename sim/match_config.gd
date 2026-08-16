@@ -52,8 +52,7 @@ var clock_rate := 10.0
 ## ninety-fourth minute, because that is what it is: there is no next possession
 ## to build toward and a ball kept is a ball wasted. Every constant that reads
 ## this keeps its measured, patient value at `clock_rate` 1, so the bands, the
-## goldens and every measurement in `docs/STATUS.md` describe the same engine
-## they always did.
+## goldens and every measurement describe the same engine they always did.
 ##
 ## Logarithmic rather than linear because what it feeds saturates: past a point a
 ## side cannot play any more directly than it already is, and the difference
@@ -86,8 +85,8 @@ var urgency_override := -1.0
 # the mechanics they scale. `docs/INVARIANTS.md`: "a constant that affects
 # scoring wants to be reachable from one place rather than buried in an
 # expression", and this is that place. Every one of them is 1.0 — a no-op — at
-# `clock_rate` 1, so the ninety-minute engine the goldens, the §11 bands and
-# `docs/STATUS.md` all describe is exactly the engine it was.
+# `clock_rate` 1, so the ninety-minute engine the goldens and the §11 bands
+# describe is exactly the engine it was.
 #
 # This is a fit to a format, not a football finding. The owner's call, made with
 # the arithmetic in front of them: a three-minute match holds 180 seconds of
@@ -115,7 +114,7 @@ var urgency_override := -1.0
 ## seeds during the re-fit suggested it now moves shots by a fifth, but three
 ## seeds cannot see a shot count at all: the same seed swung 14 to 32 between
 ## configurations that never touched shooting. Forty matches beat three seeds, so
-## it stays until a batch says otherwise. `docs/STATUS.md` has the comparison.
+## it stays until a batch says otherwise.
 const SHOT_APPETITE_URGENT := 8.0
 ## Multiplier on `SimTouch.SHOT_AIM_BASE`, so below one is a straighter shot.
 ##

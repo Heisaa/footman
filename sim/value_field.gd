@@ -105,6 +105,60 @@ func xt_at(team: int, point: Vector3, pitch: SimPitch) -> float:
 	return lerpf(a, b, tz)
 
 
+## How much of the defence a point has behind it, as a multiplier on what the
+## grass is worth.
+##
+## `docs/THE_FOOTBALL.md` 8b. Expected threat is a single-step map: it prices a
+## patch of grass by what possessions there historically become, and twenty-five
+## metres from goal is worth the same whether the back four is in front of the
+## receiver or behind him. Those are not the same football and the difference is
+## the entire value of a ball played in behind.
+##
+## **The map itself stays single-step and this is not it.** Making `xt_at` know
+## about players would mean handing it the context at every one of its call sites,
+## and the grid is deliberately a cheap pure lookup on a 5 Hz cadence. This is the
+## correction applied where the act *is* the line -- the ball in behind and what a
+## receiver builds from it -- rather than everywhere, which is the honest half of
+## 8b and leaves the other half named.
+##
+## Counted rather than modelled: men of the defending side who are goal-side of
+## the point, out of their outfielders. A point with none of them behind it is a
+## man through on goal; one with all of them is a pass into a full block.
+static func line_broken(ctx: SimContext, team: int, point: Vector3, pitch: SimPitch) -> float:
+	var dir := pitch.attack_dir(team)
+	var goal := pitch.target_goal(team)
+	var beyond := 0
+	var total := 0
+	for oid in ctx.opponent_ids(team):
+		var o: SimPlayer = ctx.players[oid]
+		if o.is_keeper or not o.on_pitch:
+			continue
+		total += 1
+		# Between the point and the goal they are defending.
+		if (o.pos.x - point.x) * dir > 0.0 and absf(o.pos.x - goal.x) < absf(point.x - goal.x):
+			beyond += 1
+	if total == 0:
+		return 1.0
+	var share := float(beyond) / float(total)
+	return lerpf(BROKEN_CLEAR, BROKEN_BLOCKED, share)
+
+
+## What a point with nobody behind it is worth against one with everybody behind
+## it. Both are multipliers on the map, so a ball that breaks the last line is
+## worth about twice the same grass reached in front of it.
+const BROKEN_CLEAR := 1.45
+const BROKEN_BLOCKED := 0.75
+
+## **Applied to the through ball and not to the lofted one, and that is measured
+## rather than an oversight.** Extending it to the ball over the top as well cost
+## 1.28 goals a match over twenty seeds (4.45 to 3.17) and 1.15 shots: the lofted
+## ball is the one act whose target is *already* chosen for being beyond the line,
+## so the term is nearly always at its maximum there and all it does is buy more
+## long balls, at the completion rate long balls have. The through ball is picked
+## among options that are mostly not in behind, which is where telling them apart
+## is worth something.
+
+
 # --- Pitch control ----------------------------------------------------------
 
 
@@ -232,7 +286,7 @@ func control_at_time(ctx: SimContext, point: Vector3, team: int, ball_time: floa
 ## Control of the point a pass is aimed at, for the side playing it.
 ##
 ## `_control` prices a neutral race for loose grass, and an aimed ball is not
-## one (docs/BACKLOG.md 24: "the arrival contest does not know the ball was
+## one (docs/THE_FOOTBALL.md 24: "the arrival contest does not know the ball was
 ## aimed at somebody"). Two facts break the symmetry, and both are already in
 ## the engine's own resolution rule -- `SimDuel._act` gives the arriving ball
 ## to whoever touches it first, and the man it was aimed at is standing where

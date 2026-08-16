@@ -135,6 +135,17 @@ static func _aggregate(all: Array[SimMatchStats], squad_size: int) -> Dictionary
 	}
 
 
+## The goals ceiling, **suspended rather than re-fitted**. The attacking pass
+## (`PLAN.md` §11.4) is meant to overshoot, so the settled ceiling would fire on
+## every mechanic that lands. What is left in its place is a wire against real
+## breakage -- twenty goals a game -- and not a band anything should be tuned
+## toward. **Restore `GOALS_CEILING_SETTLED` when the defensive pass lands**;
+## that is the whole of the change, and it is why the old value is kept here
+## rather than in a commit message.
+const GOALS_CEILING_SETTLED := 8.0
+const GOALS_CEILING := 16.0
+
+
 ## Is this still football? Wide enough that any plausibly working engine passes
 ## without anyone having tuned a number, narrow enough that the failures that
 ## actually happen -- the ball never leaving the centre circle, passes at 30%,
@@ -155,7 +166,7 @@ static func sanity_bands(all: Array[SimMatchStats], squad_size: int) -> Array[Ba
 	var a := _aggregate(all, squad_size)
 	var K := Band.Kind.SANITY
 	return [
-		Band.new("goals per 90", a["goals"], 0.5, 8.0, "", K, 3),
+		Band.new("goals per 90", a["goals"], 0.5, GOALS_CEILING, "", K, 3),
 		Band.new("shots per team", a["shots"], 3.0, 35.0, "", K, 3),
 		Band.new("shots on target", a["on_target_share"], 15.0, 90.0, "%", K, 3),
 		Band.new("possession, higher side", a["possession"], 50.0, 80.0, "%", K, 3),
@@ -209,6 +220,9 @@ static func report(all: Array[SimMatchStats], squad_size: int, strict: bool = fa
 		print(b.line(n))
 		if b.status(n) == Band.Status.OUT:
 			sane = false
+	if GOALS_CEILING != GOALS_CEILING_SETTLED:
+		print("    (the goals ceiling is suspended at %.0f for the attacking pass, PLAN.md §11.4;" % GOALS_CEILING)
+		print("     it returns to %.0f when the defensive pass lands)" % GOALS_CEILING_SETTLED)
 
 	print("\n  tuning — the §11 target table%s" % ("" if strict else ", advisory"))
 	var tuned := true

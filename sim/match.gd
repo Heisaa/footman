@@ -60,6 +60,7 @@ func setup(config: SimMatchConfig) -> void:
 	SimMovement.reset()
 	SimDecision.reset()
 	SimTouch.reset_tallies()
+	SimPatterns.reset_tallies()
 	SimAblation.reset()
 	SimChoices.reset()
 	ctx.config = config
@@ -556,8 +557,8 @@ func _score_goal(team: int) -> void:
 ##
 ## Everything downstream of here — the period boundaries, the referee's added
 ## time, the scoreboard — is expressed in match-clock seconds and needs no
-## knowledge of the rate. `SimMatchConfig.clock_rate` is 1.0 unless a caller
-## asks for a compressed match, and at 1.0 this is the increment it always was.
+## knowledge of the rate. `SimMatchConfig.clock_rate` is 10 everywhere — the
+## standard nine-minute match — and at 1.0 this is the increment it always was.
 func _advance_clock(dt: float) -> void:
 	var step := dt * ctx.config.clock_rate
 	ctx.clock += step

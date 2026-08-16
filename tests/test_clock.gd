@@ -36,7 +36,7 @@ func _default_is_the_standard_match() -> void:
 		"the runner must default to the standard match")
 
 
-## The property the goldens, the bands and docs/STATUS.md rest on: at real time
+## The property the goldens and the bands rest on: at real time
 ## the fit does not exist.
 func _no_op_at_real_time() -> void:
 	var c := _config(1.0)
