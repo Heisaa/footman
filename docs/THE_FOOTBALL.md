@@ -268,9 +268,24 @@ answered the onside question with an early `return`, which every box runner who 
 not the man a ball in flight is for takes, so `BOX_EASE` was never reached at all:
 **nought ticks of either arm over three matches**. The ease and the onside clamp
 compose now, in that order, and `Which idea he had` counts the two arms so a dead
-one says so. So the six metres above were never held and cannot be why he was late;
-the figures in this section were measured with the timing absent, and the run's
-timing has not yet had a match with it present.
+one says so. So the six metres above were never held and cannot be why he was late,
+and every figure in this section was measured with the timing absent.
+
+**Then the hold measured, seeds 1-3 at full length, against the two metres that
+had been running by accident.** The six metres are right and the accident was
+worse: a man within three metres of the dropping ball on 2 of 10 crosses against
+**0 of 11**, and the nearest of ours 8.4 m against **10.7**. Shots 30 against 28,
+headed attempts 74 against 96 with 3 at goal against 1. Held six metres short he
+arrives; standing on the spot he is already past it when the ball comes down,
+which is the run this was authored as. Thin -- three matches offer ten crosses --
+so it settles which of the two ships and nothing about what either is worth.
+
+The release is the part that does not work. It fired on 2, 4 and 31 ticks of a
+match against 392, 702 and 508 held, because `_cross_coming` asks where the
+carrier is standing this tick while the run was committed seconds earlier. The man
+therefore holds his six metres nearly always, including as the ball is struck. A
+trigger on a cross being *likely* is a mechanic rather than a knob, and it is what
+is left of the timing.
 
 What is left of 29 is a set-piece question as much as an open-play one: a large
 share of football's headed attempts come from corners, and corners are 0.02 a team
