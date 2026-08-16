@@ -308,7 +308,7 @@ const BEHIND_WHY := [
 	"behind the ball", "already offside", "no run to make", "on the list",
 ]
 const BOX_WHY := [
-	"not his job", "too far from the ball", "not the final third", "already offside",
+	"not his job", "too far from the ball", "not in their half", "already offside",
 	"no target in range", "on the list",
 ]
 static var behind_why := PackedInt32Array()
@@ -1220,7 +1220,24 @@ static func _box_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3) 
 	# So the width test goes and the third stays. A cross is one ball that finds a
 	# man in the six-yard box; the cutback, the second ball and the through ball
 	# are the others, and none of them starts wide.
-	if ball.x * dir <= ctx.pitch.half_length / 3.0:
+	#
+	# **And now the third goes too, for the same reason, one measurement later.**
+	# At the third the run reached the list on 0.6% of the men considered in a full
+	# match and **won 90.3% of the times it got there**: the value layer has never
+	# once disagreed, and the only thing deciding whether a man attacks the box was
+	# this line. The gate it was making is a timing argument -- do not set off
+	# before there is a ball to attack -- and timing is what `_box_reach` prices,
+	# with a window that scores a man at zero if he cannot be there inside
+	# `BOX_WINDOW` plus `BOX_LATE`. A man on halfway is refused by that on his legs
+	# rather than by a line on the pitch, which is the right refusal: it is his
+	# distance from the six-yard box that decides, not the ball's.
+	#
+	# The football says the same. The striker goes when he sees the winger's head
+	# come up, and the winger's head comes up before he crosses the line into the
+	# final third -- a run started only once the ball is 35 m from goal is a run
+	# started too late, which is `docs/THE_FOOTBALL.md` 29 and the 13 m median a
+	# headed attempt is struck from.
+	if ball.x * dir <= 0.0:
 		box_why[2] += 1
 		return Vector3.INF
 	# Not from a standing start beyond the last man: that is not attacking a

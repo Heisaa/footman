@@ -47,6 +47,18 @@ which is Phase 6's exit criterion and only the owner can call it.
   correlated-terms half of 24.
 - **Seventeen things were built on 2026-08-15**, listed with their numbers in
   `docs/THE_FOOTBALL.md`. The proposals table went from 18 open to 8.
+- **Where the shots come from is close to football; what happens to them is not.**
+  Measured over 24 matches at the standard clock: 70% of attempts inside the
+  penalty area, mean 14.5 m, mean sight-of-goal angle 29.5°, against football's
+  ~60-65% and ~17 m. The engine's own xG by band reads like football's conversion
+  by band — which is *why* the map is right — while the ball converts 43% inside
+  the box against football's 15%, and **7% of shots are blocked against football's
+  30%**. Both of those belong to the defensive pass, and the second is proposal 5
+  in one number.
+- **Headed attempts are a fifth of football's rate** — 0.85 a team a match after
+  the cross was fixed to arrive at heading height, against four or five — and are
+  struck from a median of 12 m rather than the six-yard box. `docs/THE_FOOTBALL.md`
+  29 has what is left of it.
 - **The middle-third lock has eased.** Touches by third 10/78/12 to 14/67/19 over
   the day, which is the item this list has called rough since it was written.
   Twenty seeds: goals 3.50 to 4.44, shots 5.09 to 5.84, box touches 4.6 to 7.3,

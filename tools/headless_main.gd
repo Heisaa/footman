@@ -30,6 +30,11 @@ extends SceneTree
 ## confuse. `--minutes 10` plays the first ten minutes of a match and stops;
 ## `--clock-rate 10` plays all ninety, kick-off to full time, in nine minutes
 ## of football. The first samples a rate, the second changes what a match is.
+##
+## **--clock-rate defaults to 10 and should be left there.** The nine-minute
+## match is the match that ships and the one every number is tuned to, so every
+## command here measures it by default. `--clock-rate 1` measures a match nobody
+## plays; `--urgency U` is the way to ask about the scoring fit on its own.
 
 
 func _initialize() -> void:

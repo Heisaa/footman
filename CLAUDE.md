@@ -73,6 +73,13 @@ the question, and no more.
   quantity.
 - **Measure only when the question is a quantity**, and take the quickest
   measurement that answers it. `diagnose --seed N --minutes 10` is about 15 s.
+- **Measure at `clock_rate` 10 and nowhere else.** The nine-minute match is the
+  default in every entry point, the match that ships, and the match the numbers
+  are tuned to. The scoring fit that comes with it — shot appetite, shot aim,
+  the keeper — is the format, not inflation to correct for. **Do not run
+  `--clock-rate 1`**: a figure from it describes a match nobody plays. Use
+  `--urgency U` if the fit itself is the question. `docs/STATUS.md`, "what every
+  figure here is worth".
 - **Ask before anything slower**, saying what it would tell you and how long it
   takes. Do not start it and report back afterwards.
 - **Do not add verification to feel thorough.** A check nobody asked for costs

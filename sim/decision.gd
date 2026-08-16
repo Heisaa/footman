@@ -237,6 +237,9 @@ static func reset() -> void:
 	reset_rare()
 	unseen = 0
 	shortlisted = 0
+	lists = 0
+	lists_capped = 0
+	dropped = 0
 	lost.resize(Action.size() * LOST_STRIDE)
 	for i in lost.size():
 		lost[i] = 0.0
@@ -533,6 +536,13 @@ static func reset_rare() -> void:
 ## Teammates refused a place on the list because the passer could not see them.
 static var unseen := 0
 static var shortlisted := 0
+## And refused for the other reason: the list is `MAX_PASS_TARGETS` long. Counted
+## because a cap that never binds and a cap that throws away half the team look
+## identical from outside, and the answer decides whether the number is worth
+## paying for. `dropped` excludes the men the guarantees below put back.
+static var lists := 0
+static var lists_capped := 0
+static var dropped := 0
 
 
 static func _note_shortlist_unseen() -> void:
@@ -639,7 +649,18 @@ const LOFTED_BIAS := 0.30
 ## times three pass kinds is most of the cost of the whole engine. A cheap
 ## pre-filter over values already computed this tick throws away the options
 ## nobody was ever going to take, and the softmax cannot tell the difference.
-const MAX_PASS_TARGETS := 6
+##
+## **Six was the cost of a saving that does not exist, and it is nine.** Measured
+## once the tally beside it was built: at six the cap bound on **78% of decisions
+## and threw away 2.6 men each**, so the passer's options were chosen by the proxy
+## score above and its three guarantee patches rather than by the model. The
+## paragraph above assumed a decision happens constantly; a full match holds about
+## 650 of them, so the whole cap was saving about 1,700 pass scorings. A
+## full-length `diagnose` on seed 7 runs 16.2 s at six and 16.6 s at nine, which is
+## one run of a diverging match against another and therefore no measurable cost
+## at all. At nine the cap binds on 20% and drops 0.9 men, which is a bound rather
+## than a chooser.
+const MAX_PASS_TARGETS := 9
 ## The nearest teammates are always considered whatever the filter thinks, so a
 ## player under pressure never loses their safe ball.
 const ALWAYS_KEEP_NEAREST := 2
@@ -1707,7 +1728,7 @@ static func _shortlist(ctx: SimContext, player: SimPlayer, from: Vector3) -> Pac
 		# gate is here rather than on the candidate because an option outside
 		# perception should never be generated at all -- scoring it and then
 		# discarding it would leave it in every tally as a ball he turned down.
-		if not SimPerception.can_see(player, mate, 1.0 - ctx.tactics(player.team).tempo):
+		if not SimPerception.can_see(ctx, player, mate, 1.0 - ctx.tactics(player.team).tempo):
 			_note_shortlist_unseen()
 			continue
 		var dx := mate.pos.x - from.x
@@ -1736,8 +1757,10 @@ static func _shortlist(ctx: SimContext, player: SimPlayer, from: Vector3) -> Pac
 		_short_ids.insert(i, mate_id)
 		_short_scores.insert(i, score)
 
+	lists += 1
 	if _short_ids.size() <= MAX_PASS_TARGETS:
 		return _short_ids
+	lists_capped += 1
 	# Keep the best few, but never drop the nearest couple: the safe ball has to
 	# stay on the table even when it looks worthless.
 	var kept := _short_ids.slice(0, MAX_PASS_TARGETS)
@@ -1786,6 +1809,7 @@ static func _shortlist(ctx: SimContext, player: SimPlayer, from: Vector3) -> Pac
 			switch_z = across
 		if switch_id >= 0:
 			kept.append(switch_id)
+	dropped += _short_ids.size() - kept.size()
 	return kept
 
 

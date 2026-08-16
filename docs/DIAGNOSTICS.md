@@ -38,7 +38,7 @@ Every one exists because a count in the event log cannot answer its question.
 | `Taking it down` | what a first touch did, bucketed by where the ball ended up relative to *where the man wanted to go* |
 | `Under challenge`, `touch` column | how big the carry touch was, by how hard he was being closed down. A row that does not shorten as pressure rises is a carrier who has not noticed the man on him |
 | `Where the carry went` | the touch judged by what was in front of it — a touch into empty grass and one into a defender six metres up the lane are the same kind, same size, same player |
-| `The small acts` | the mechanics that leave no event of their own: first-time balls, layoffs, setting touches, dummies, shielded holds, cuts, chips |
+| `The small acts` | the mechanics that leave no event of their own: first-time balls, layoffs, setting touches, dummies, shielded holds, cuts, chips — and the two ways a teammate never reaches the passer's list at all: he could not see him, or the cap cut him |
 | `Did he have a safe pass?` | whether a body near the ball was an *option*; a man with a defender in the lane is a pass that gets cut out |
 | `How the ball changes hands` | which touch put the ball out, over which line, with how much room beside him |
 | `The ball in behind, as a strike` | the through ball as a *weight*: did it arrive slower than the man can run, was it aimed further ahead than he can cover, did it reach the man it was for |
@@ -164,6 +164,12 @@ whole of the selection above it.
   `bias` column is the long axis signed, because an RMS cannot tell a scatter from a
   systematic short and those are different faults. **Anything touching `_perturb`,
   `aim_sigma`, `weight_sigma` or the lofted solver wants this run afterwards.**
+  **Each kind is read where its man meets it**, and getting that wrong cost a
+  measurement: a ground pass at the pace it was struck to arrive at, a lofted pass
+  where it stops because `LOFT_RUNON_SHARE` prices it to sit down, and a cross
+  coming down through heading height — read like the lofted ball, the cross was
+  being charged for grass it crossed at rest, tens of metres past the far post,
+  and `CROSS_RANGE_SPREAD` had been fitted to that.
 - **`./run.sh behind`** sets the through-ball geometry rather than sampling it: can
   the man it is for get to it? The `run` column says whether the aim came from a
   committed run or the projection made in its absence — and the projection is

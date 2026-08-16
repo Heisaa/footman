@@ -4253,3 +4253,11 @@ static func _new_mechanics() -> void:
 			SimDecision.unseen, SimDecision.shortlisted + SimDecision.unseen,
 			100.0 * float(SimDecision.unseen)
 				/ float(SimDecision.shortlisted + SimDecision.unseen)])
+	# The other way onto the list is off it: the cap. A high share here with the
+	# line above low means the passer's options are being chosen by a constant
+	# rather than by what he could see.
+	if SimDecision.lists > 0:
+		print("  lists cut to the %d best:  %d of %d (%.0f%%), dropping %.1f men each" % [
+			SimDecision.MAX_PASS_TARGETS, SimDecision.lists_capped, SimDecision.lists,
+			100.0 * float(SimDecision.lists_capped) / float(SimDecision.lists),
+			float(SimDecision.dropped) / maxf(float(SimDecision.lists_capped), 1.0)])

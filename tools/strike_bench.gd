@@ -145,21 +145,41 @@ static func _strike(ctx: SimContext, player: SimPlayer, kind: int, aim: Vector3,
 	SimTouch.lofted_pass(ctx, player, aim, SimTouch.lofted_flight(distance), -1, kind)
 
 
-## Where it finishes. For a ball in the air that is where it first comes down;
-## for one on the floor it is where it has decayed to the pace it was struck to
-## arrive at, which is the point the pass model aims at and the point a receiver
-## meets it.
+## Where the ball gets to the man it was struck for, which is a different point
+## for each of the three kinds and has to be.
+##
+## A **ground pass** finishes where it has decayed to the pace it was struck to
+## arrive at, which is the point the pass model aims at.
+##
+## A **lofted pass** finishes where it stops, because `LOFT_RUNON_SHARE` prices it
+## to sit down at its man: it touches down short and the hops carry it the rest.
+##
+## A **cross** is neither, and reading it like a lofted pass is what this had
+## wrong. It is attacked in the air, so the point that matters is where it first
+## drops through heading height -- and that is not where it lands, still less
+## where it stops. Measured: a cross aimed 20 m touches down at 18.3 m and rolls
+## to rest at 35.6 m, so the old reading charged it 16 m of error for grass it
+## crossed long after somebody had headed it. `HEADABLE` is a forehead's height.
+const HEADABLE := 1.9
+
+
 static func _land(ctx: SimContext, kind: int, from: Vector3, distance: float) -> Vector3:
 	var ball := ctx.ball
 	var pace := SimDecision.arrival_pace(distance, ctx.tactics(SimConsts.TEAM_HOME))
+	var falling := false
 	var t := 0.0
 	while t < 8.0:
 		var previous := ball.pos
 		ball.integrate(SimConsts.FORECAST_DT, ctx.env)
 		t += SimConsts.FORECAST_DT
+		if ball.vel.y <= 0.0:
+			falling = true
 		if kind == SimTelemetry.Touch.GROUND_PASS:
 			if ball.vel.length() <= pace:
 				return ball.pos
+		elif kind == SimTelemetry.Touch.CROSS:
+			if falling and ball.pos.y <= HEADABLE:
+				return previous
 		elif ball.pos.y <= SimConsts.BALL_RADIUS + 0.01 and ball.vel.y <= 0.0:
 			return previous
 	return ball.pos

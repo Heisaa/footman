@@ -113,6 +113,10 @@ var pattern_runs: Array[Dictionary] = []
 var beliefs := PackedVector3Array()
 ## Tick at which each observer last refreshed each belief.
 var belief_ticks := PackedInt32Array()
+## Tick at which each target was last inside each observer's arc of vision. The
+## refresh above happens whichever way a man is facing; this is the narrower
+## fact, and it is what `SimPerception.can_see` reads.
+var seen_ticks := PackedInt32Array()
 
 ## Which team the sim currently considers to be in possession, derived from the
 ## last touch and contest range. There is no possession flag on the ball

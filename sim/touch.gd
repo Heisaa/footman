@@ -475,6 +475,24 @@ static func lofted_flight(distance: float) -> float:
 ## attacked in the air at the point it drops, so it keeps landing on its aim.
 const LOFT_RUNON_SHARE := 0.28
 
+## The height a cross is aimed to arrive at, and the other half of the exemption
+## above.
+##
+## "It is attacked in the air at the point it drops" was the argument, and the
+## ball was still solved to arrive at **grass level** on the aim point, which is
+## not the same thing: it comes down through a forehead's height several metres
+## before it gets there. Measured on the bench once the bench was reading the
+## right point — a cross aimed 20, 30 and 40 m is headable **5.3, 4.2 and 3.6 m
+## short** of where it was aimed, every time, which puts it behind a man attacking
+## the near post rather than on him. That is `docs/THE_FOOTBALL.md` 29 in one
+## number, and it is why a headed attempt is struck from a median of 13 m.
+##
+## Solved rather than fudged: the aim keeps its point and gains a height, and
+## `SimBallistics.solve_lofted` already takes the target height and already
+## insists the ball be falling when it reaches it. `SimAerial.HEADER_FROM` is 1.75
+## m, so a ball arriving here is one a man can actually head.
+const CROSS_ARRIVE := 1.9
+
 
 ## The spread of where a struck ball finishes, along its own line.
 ##
@@ -524,12 +542,24 @@ static func long_sigma(player: SimPlayer, skill: float, distance: float, axis: i
 ## that used to amplify a weight error into rest-position scatter are spent
 ## short of him: re-rolled on the bench after the change, 2.6, 2.9 and 1.9
 ## times the weight error at twenty, thirty and forty metres, and a flat
-## number in the middle is again closer than any shape. The cross keeps its
-## hot landing — it is attacked in the air where it drops — and the old 4.4,
-## which the bench still confirms against its rows (rolled 10.4/13.0/16.0 m
-## against said 9.1/13.7/18.3), stays its number.
+## number in the middle is again closer than any shape.
+##
+## **The cross was 4.4 and is 2.3, because the bench was reading the wrong point
+## of its flight.** `tools/strike_bench.gd` took an air ball's finish to be where
+## it stops, which is right for the lofted pass and wrong for the one ball that is
+## attacked before it ever gets there: it was charging the cross with 10.4, 13.0
+## and 16.0 m of scatter measured at rest, tens of metres past the far post. Read
+## where a cross is actually met -- coming down through heading height, which is
+## what `CROSS_ARRIVE` now solves for -- the same strike rolls **5.8, 6.5 and
+## 7.7 m**, or 2.8, 2.1 and 1.9 times the weight error, and a flat 2.3 is again
+## closer than any shape.
+##
+## This is the two models being made to share one again rather than a softening:
+## at 4.4 the decision layer was told a thirty-metre cross lands inside its
+## tolerance 36% of the time when the ball manages 69%, so it turned down crosses
+## it could hit. `docs/THE_FOOTBALL.md` 29.
 const AIR_RANGE_SPREAD := 2.5
-const CROSS_RANGE_SPREAD := 4.4
+const CROSS_RANGE_SPREAD := 2.3
 
 
 
@@ -793,6 +823,9 @@ static func lofted_pass(ctx: SimContext, player: SimPlayer, target: Vector3, fli
 		aim = ctx.ball.pos + whole * (1.0 - LOFT_RUNON_SHARE)
 		aim.y = maxf(target.y, SimConsts.BALL_RADIUS)
 		flight_time = lofted_flight(SimConsts.horizontal_length(whole) * (1.0 - LOFT_RUNON_SHARE))
+	elif kind == SimTelemetry.Touch.CROSS:
+		# Arrive on the head, not on the grass. See `CROSS_ARRIVE`.
+		aim.y = maxf(aim.y, CROSS_ARRIVE)
 	var skill: float = player.attrs.crossing if kind == SimTelemetry.Touch.CROSS else player.attrs.passing
 	var spin := Vector3.UP * curl
 	var vel := ctx.ballistics.solve_lofted(ctx.ball.pos, aim, flight_time, ctx.env, spin)

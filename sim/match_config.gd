@@ -92,9 +92,15 @@ var urgency_override := -1.0
 # the arithmetic in front of them: a three-minute match holds 180 seconds of
 # football, 2.7 goals in 180 seconds is 81 goals per ninety minutes of play, and
 # nothing that reads as football produces that. So the compressed match is tuned
-# to the scoreline and the real-time match is left alone. Anything measured
-# through these values is a measurement of the format, and the honest way to ask
-# what the football is doing is still `clock_rate` 1.
+# to the scoreline and the real-time match is left alone.
+#
+# **These values are on in every measurement, and that is correct.** `clock_rate`
+# 10 is the default everywhere and the match the player gets, so it is what the
+# engine is built around and judged by; a figure taken at `clock_rate` 1
+# describes a match nobody plays. What the fit touches -- how often a sight of
+# goal is taken, how straight it is struck, what the keeper keeps out -- is
+# therefore part of every shooting number the instruments print. `--urgency U`
+# separates the fit from the shortened match when the fit itself is the question.
 #
 # Why these three. Goals are shots times conversion, so a fit needs one knob on
 # each and a third to keep the shape from going somewhere silly. Appetite decides

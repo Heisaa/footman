@@ -26,10 +26,12 @@ static func ensure_storage(ctx: SimContext) -> void:
 		return
 	ctx.beliefs.resize(n * n)
 	ctx.belief_ticks.resize(n * n)
+	ctx.seen_ticks.resize(n * n)
 	for i in n:
 		for j in n:
 			ctx.beliefs[i * n + j] = ctx.players[j].pos
 			ctx.belief_ticks[i * n + j] = -1000
+			ctx.seen_ticks[i * n + j] = -1000
 
 
 static func update(ctx: SimContext) -> void:
@@ -47,6 +49,9 @@ static func update(ctx: SimContext) -> void:
 		if (ctx.tick_index + observer.id) % cadence != 0:
 			continue
 		var facing := observer.heading_dir()
+		# The plan's half of how much he is looking, read once for the whole scan.
+		var scan := 1.0 - ctx.tactics(observer.team).tempo
+		var cos_half := cos(view_half(observer, scan))
 		# Half the field of view per scan, alternating. Beliefs are noisy and
 		# stale by design, so spreading the refresh over two passes costs
 		# nothing real and halves the most expensive loop in the module.
@@ -80,6 +85,12 @@ static func update(ctx: SimContext) -> void:
 			)
 			ctx.beliefs[i * n + j] = target.pos + err
 			ctx.belief_ticks[i * n + j] = ctx.tick_index
+			# And whether this one was actually in front of him, which is the
+			# thing `can_see` remembers. Stamped in the scan rather than tested
+			# on demand, so one scan is one look: a man who was in the arc when
+			# the observer last swept it stays passable for `SEEN_MEMORY`.
+			if in_view >= cos_half:
+				ctx.seen_ticks[i * n + j] = ctx.tick_index
 
 
 ## Where `observer` believes `target` is. Between refreshes the belief is
@@ -118,15 +129,48 @@ static func believed_pos(ctx: SimContext, observer: SimPlayer, target: SimPlayer
 ## the body, so the same facing that decides whether he can hit the pass now
 ## decides whether he can find it. A man who wants the ball behind him has to
 ## turn, and turning is what the dwell is for.
+##
+## **It is a memory, not a cone, and that is the correction.** Written as an
+## instantaneous arc it refused 46% of every teammate a passer weighed (`The small
+## acts`, seed 7), because a man is outside a 200-degree arc a little under half
+## the time and nothing above remembers he was inside it a moment ago. That is also
+## two models of the same event, which `docs/INVARIANTS.md` names as its own class
+## of bug: `update` refreshes a belief about a man behind you and prices the
+## staleness, and then this said he did not exist. Real football is the memory --
+## scanning is coached precisely so that the man you checked over your shoulder is
+## a pass you can still play, and the ball you cannot play is to a man who has
+## arrived somewhere you have never looked.
+##
+## So the question is when he was last in the arc, and `update` stamps that in the
+## same sweep it refreshes the belief in. `believed_pos` already prices what the
+## delay costs: the position is stale by up to `SEEN_MEMORY` and extrapolated along
+## a velocity that may have changed, which is exactly the blind ball this is for.
 const NEAR_ALWAYS := 9.0
 ## Half-arc of vision either side of where he is facing, in radians: a poor
 ## scanner sees not much past his shoulders, a good one has eyes in the back of
 ## his head. 1.4 rad is about 80 degrees each way, 2.2 about 126.
 const VIEW_HALF_POOR := 1.4
 const VIEW_HALF_GOOD := 2.2
+## How long a man stays findable after the last look that found him. A footballer
+## scans every few seconds and plays off what the last scan told him; a poor one
+## looks less often and forgets sooner, which is the second thing `awareness`
+## buys after the refresh rate.
+const SEEN_MEMORY_POOR := 1.2
+const SEEN_MEMORY_GOOD := 3.0
 
 
-static func can_see(observer: SimPlayer, target: SimPlayer, scan: float = 0.5) -> bool:
+## How much of the world he takes in at once: a plan quantity as much as an
+## attribute, since a side playing quick and direct plays with its head down and a
+## patient one scans before it receives. `scan` is the plan's half of it,
+## `awareness` the man's, and they average -- so a good scanner on a hurried plan
+## still sees more than a poor one, which is what makes it an attribute and not a
+## switch.
+static func view_half(observer: SimPlayer, scan: float) -> float:
+	return lerpf(VIEW_HALF_POOR, VIEW_HALF_GOOD,
+		(observer.attrs.awareness + clampf(scan, 0.0, 1.0)) * 0.5)
+
+
+static func can_see(ctx: SimContext, observer: SimPlayer, target: SimPlayer, scan: float = 0.5) -> bool:
 	if not ENABLED:
 		return true
 	var to := SimConsts.horizontal(target.pos - observer.pos)
@@ -137,15 +181,15 @@ static func can_see(observer: SimPlayer, target: SimPlayer, scan: float = 0.5) -
 	var f := facing.length()
 	if f < 0.01:
 		return true
-	var cos_a: float = to.dot(facing) / (d * f)
-	# How much he is looking, which is a plan quantity as much as an attribute: a
-	# side playing quick and direct plays with its head down and a patient one
-	# scans before it receives. `scan` is the plan's half of it, `awareness` the
-	# man's, and they average -- so a good scanner on a hurried plan still sees
-	# more than a poor one, which is what makes it an attribute and not a switch.
-	var half: float = lerpf(VIEW_HALF_POOR, VIEW_HALF_GOOD,
-		(observer.attrs.awareness + clampf(scan, 0.0, 1.0)) * 0.5)
-	return cos_a >= cos(half)
+	if to.dot(facing) / (d * f) >= cos(view_half(observer, scan)):
+		return true
+	# Not in front of him now. Then it is what the last look found, and how long
+	# ago that was.
+	var idx := observer.id * ctx.players.size() + target.id
+	if idx >= ctx.seen_ticks.size():
+		return true
+	var since := float(ctx.tick_index - ctx.seen_ticks[idx]) * SimConsts.DT
+	return since <= lerpf(SEEN_MEMORY_POOR, SEEN_MEMORY_GOOD, observer.attrs.awareness)
 
 
 ## How stale an observer's view of a target is, in seconds.

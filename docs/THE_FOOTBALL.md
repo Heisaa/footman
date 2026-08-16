@@ -212,12 +212,36 @@ out-score a pass rather than being the default); the third is that nothing costs
 man time to decide. **Which of the two facts is the target is the owner's call and
 is not settled here** — see the open question at the end of the order.
 
-**29 is what happens in the box.** 4.6 penalty-area touches per team a match
-against football's rough 25, and **22 headers in a match produced none at goal**.
-Near post and far post as authored positions rather than whoever is nearest the
-aerial ball, the pull-back, and the volley as its own act. Whether the box is
-reached often enough is 28's question, not this one; what happens on arrival is
-this one.
+**29 is what happens in the box, and most of it was the cross arriving at the
+wrong height.** The pull-back and the volley are built. What was left, measured
+over 24 matches by where every attempt on goal was struck from: 68% of shots
+inside the penalty area and a mean of 15.3 m, which is football, but **headed
+attempts at 0.60 a team a match against football's four or five, and struck from a
+median of 13 m** — the edge of the box, not the six-yard box. Two causes, both now
+answered, and neither was in the box:
+
+- **The run into the box started too late.** `_box_point` carried the final-third
+  test, so the striker set off when the ball was already 35 m from goal. It
+  reached the list on 0.6% of the men considered and **won 90.3% of the times it
+  did**. The test is the attacking half now, and the timing argument it was making
+  is `_box_reach`'s to make — a man too far away is refused by his legs.
+- **The cross came down through heading height 4 to 5 m short of its aim.** It was
+  solved to arrive at *grass level* on the near post, which is a different point;
+  `SimTouch.CROSS_ARRIVE` solves it to arrive at 1.9 m instead. And the bench that
+  should have caught this was reading an air ball's finish as where it stops
+  rolling, tens of metres past the far post, so `CROSS_RANGE_SPREAD` had been
+  fitted to that: the decision layer was told a thirty-metre cross lands inside
+  tolerance 36% of the time when the ball manages 69%, and turned down crosses it
+  could hit.
+
+**Where that left it, same 24 seeds:** headed attempts 29 to **41** and headed
+goals 6 to **10**, shots inside the box 68% to **70%** with the six-yard share 13%
+to **15%**, mean shot distance 15.3 to 14.5 m. Headers are still a fifth of
+football's rate and their median distance did not move (13.1 to 12.2 m), so the
+remaining half of 29 is **who is in the six-yard box when the ball drops** — the
+near and far post as authored positions rather than three targets scored on a
+race — and it wants the defensive pass beside it, since nobody contests an aerial
+ball yet.
 
 **30 is the owner's, 2026-08-15.** Keep structure and width, and make the midfield
 a real link between the defence and the strikers. One midfielder dropping to meet
@@ -286,6 +310,14 @@ ball; **2**; **12**, which needed the visibility model built rather than a gate
 added to one; **8b**, on the ball in behind; **32** entire — inviting contact and
 the feint at a standstill; and **30**, the link players.
 
+**Built 2026-08-16.** The passer's memory — `can_see` was an instantaneous cone
+and refused 46% of every teammate weighed, which is two models of the same event
+(`update` prices the staleness of a man behind you, and this said he was not
+there); it asks when he was last in the arc now, and refuses 19%. The pass
+shortlist's cap, which bound on 78% of decisions and threw away 2.6 men each to
+save about 1,700 scorings a match: nine, measured at no cost. And **29**'s two
+halves, above.
+
 **Where it left the engine, twenty seeds, start of day to end:** goals 3.50 to
 **4.44**, shots 5.09 to **5.84**, touches in the opposition box 4.6 to **7.3**,
 offsides 10.4 to **8.4**, distance 13.0 to 14.4 km, pass completion 69.5% to 64.0%.
@@ -320,12 +352,12 @@ line, which is **5**.
 1. **33, second half — the runner is made and not served.** `behind` runs 52 a
    match, received about 3% of the time. `A man could be played in behind` refuses
    42% at "not moving forward yet" and offers 7%.
-2. **The cross's two thin links**, and they are different problems. The offer rate
-   has not moved all day (11.7% to 11.8%) and is generation. The last link is
-   delivery — 22.9% of played crosses reach the area — and the cause is
-   `SimTouch.long_sigma`, which was measured against the integrator and is either a
-   physical statement the aim points should respect or a tuning-freeze decision.
-   Neither is a bug. See `CROSS_FROM`.
+2. **The cross's offer rate**, which is what is left of its two thin links. The
+   delivery half is answered: the ball was arriving below heading height short of
+   its aim and the model was told it scattered twice as far as it does
+   (`SimTouch.CROSS_ARRIVE`, `CROSS_RANGE_SPREAD`, and **29**). The offer rate had
+   not moved all day at 11.7% to 11.8% and is generation — one seed now reads 16%,
+   which is one seed. See `CROSS_FROM`.
 3. **24 and 27**, both now wanting a fresh idea rather than their named one.
 4. **8b's other half** — the map itself is still single-step; only the ball in
    behind is corrected, and the lofted ball measured worse for it.
