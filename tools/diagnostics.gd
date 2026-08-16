@@ -2057,6 +2057,17 @@ static func _which_idea_he_had() -> void:
 	print("    a kind that is rarely listed can still read a healthy one")
 	_why_not(SimOffBall.BEHIND_WHY, SimOffBall.behind_why, "the run in behind")
 	_why_not(SimOffBall.BOX_WHY, SimOffBall.box_why, "the run into the box")
+	# Three authored points are three positions only if the men spread over them.
+	var box_runs := 0
+	for c in SimOffBall.box_target:
+		box_runs += c
+	if box_runs > 0:
+		var where := PackedStringArray()
+		for i in SimOffBall.box_target.size():
+			where.append("%s %.0f%%" % [SimOffBall.BOX_TARGETS[i],
+				100.0 * float(SimOffBall.box_target[i]) / float(box_runs)])
+		print("    and which point he went to:  %s  (%d runs)" % [
+			",  ".join(where), box_runs])
 
 
 ## And which test refused it, in the order the function applies them.
@@ -2791,6 +2802,110 @@ const KEEPER_HANDS_UP := SimConsts.FOOT_REACH_HEIGHT
 ## `head` on the touch is the intent `SimAerial` stamped, so the third question
 ## is read rather than inferred. The keeper rows are inferred, from the height
 ## the ball was at when he took it.
+## How near the six-yard box counts as being in it when the ball comes down, and
+## how near a man has to be to the dropping ball to be attacking it rather than
+## watching it.
+const AT_THE_BALL := 3.0
+const IN_THE_AREA := 8.0
+
+
+## Who is there when the cross drops.
+##
+## `docs/THE_FOOTBALL.md` 29's own question, and nothing could answer it. The
+## chain says whether a cross reached the penalty area and `In the air` says how
+## many headers happened, but a cross that lands on an empty six-yard box and one
+## that drops onto three men are the same event in both. This reads the trace at
+## the moment the ball arrives -- the strike tick plus the flight the ball was
+## solved for -- and counts bodies around the point it was aimed at.
+##
+## The rows say different things and the second is the one that matters. A man
+## within `AT_THE_BALL` is attacking it; men in the area with nobody at the ball
+## is a box full of players and a cross nobody meets, which is what a viewer sees
+## as "the ball goes through everybody".
+static func _when_the_cross_drops(ctx: SimContext, events: Array) -> void:
+	var trace := ctx.telemetry.trace
+	if trace.is_empty():
+		return
+	var crosses := 0
+	var contested := 0
+	var at_ball := 0.0
+	var in_area := 0.0
+	var nearest_sum := 0.0
+	var theirs_first := 0
+	var intended := 0
+	var intended_miss := 0.0
+	var intent := {}
+	for e in events:
+		if e["ev"] != SimTelemetry.Ev.PASS_ATTEMPT:
+			continue
+		if int(e.get("kind", -1)) != SimTelemetry.Touch.CROSS:
+			continue
+		if not e.has("to"):
+			continue
+		var to: Vector3 = e["to"]
+		var flight: float = SimTouch.lofted_flight(float(e.get("dist", 0.0)))
+		var tick := int(e["t"]) + int(flight * float(SimConsts.TICK_HZ))
+		var index := tick / SimConsts.TRACE_TICKS
+		if index < 0 or index >= trace.size():
+			continue
+		var sample: PackedVector3Array = trace[index]
+		if sample.size() != ctx.players.size() + 1:
+			continue
+		var team := int(e["team"])
+		var mine := 0
+		var area := 0
+		var nearest := INF
+		var nearest_theirs := INF
+		for pid in ctx.players.size():
+			var player := ctx.players[pid]
+			if not player.on_pitch or player.is_keeper or pid == int(e["p"]):
+				continue
+			var d := SimConsts.horizontal_length(sample[pid + 1] - to)
+			if player.team == team:
+				if d <= AT_THE_BALL:
+					mine += 1
+				if d <= IN_THE_AREA:
+					area += 1
+				nearest = minf(nearest, d)
+			else:
+				nearest_theirs = minf(nearest_theirs, d)
+		crosses += 1
+		at_ball += float(mine)
+		in_area += float(area)
+		nearest_sum += minf(nearest, 40.0)
+		if mine > 0:
+			contested += 1
+		if nearest_theirs < nearest:
+			theirs_first += 1
+		# And the man it was actually played to: what he was doing when it was
+		# struck, and how far off it he was when it came down. The crosser picks
+		# him on a race he has not agreed to run, so these two are the coordination
+		# between the ball and the run, which nothing else measures.
+		var target := int(e.get("target", -1))
+		if target >= 0 and target < ctx.players.size():
+			intended += 1
+			intended_miss += minf(SimConsts.horizontal_length(sample[target + 1] - to), 40.0)
+			var call := int(e.get("call", SimOffBall.NONE))
+			intent[call] = int(intent.get(call, 0)) + 1
+	if crosses == 0:
+		return
+	var n := float(crosses)
+	print("\nWhen the cross drops  (%d crossed, read off the trace at the strike plus the flight)" % crosses)
+	print("  ours at the ball (%.0f m)   %.2f men   -- %.0f%% of crosses had one" % [
+		AT_THE_BALL, at_ball / n, 100.0 * float(contested) / n])
+	print("  ours in the area (%.0f m)   %.2f men" % [IN_THE_AREA, in_area / n])
+	print("  nearest of ours            %.1f m from where it came down" % (nearest_sum / n))
+	print("  and theirs was nearer on %.0f%% of them" % (100.0 * float(theirs_first) / n))
+	if intended > 0:
+		var parts := PackedStringArray()
+		var kinds: Array = intent.keys()
+		kinds.sort()
+		for k in kinds:
+			parts.append("%s %d" % [SimOffBall.KIND_NAMES[k], int(intent[k])])
+		print("  the man it was for was %.1f m off it, and was running:  %s" % [
+			intended_miss / float(intended), ",  ".join(parts)])
+
+
 static func _in_the_air(ctx: SimContext, events: Array) -> void:
 	var headers := PackedInt32Array()
 	headers.resize(SimAerial.INTENT_NAMES.size())
@@ -4054,6 +4169,7 @@ static func report(m: SimMatch) -> void:
 	_passing_quality(ctx, events)
 	_pass_destination(ctx, events)
 	_in_the_air(ctx, events)
+	_when_the_cross_drops(ctx, events)
 	_restarts(ctx, events)
 	_goalkeeping(ctx, events)
 

@@ -55,10 +55,13 @@ which is Phase 6's exit criterion and only the owner can call it.
   the box against football's 15%, and **7% of shots are blocked against football's
   30%**. Both of those belong to the defensive pass, and the second is proposal 5
   in one number.
-- **Headed attempts are a fifth of football's rate** — 0.85 a team a match after
-  the cross was fixed to arrive at heading height, against four or five — and are
-  struck from a median of 12 m rather than the six-yard box. `docs/THE_FOOTBALL.md`
-  29 has what is left of it.
+- **Headed attempts are a fifth of football's rate** — 0.56 to 0.85 a team a match
+  across the day's arms, against football's four or five — and are struck from a
+  median of 12 m rather than the six-yard box. The box is now attacked as three
+  claimed points and the cross is aimed at the man who claimed one, which took the
+  nearest man to a dropping cross from 9-12 m to 5-8 m; **the outcome did not
+  follow the mechanism**, and a large share of football's headers come from corners,
+  which are 0.02 a team a match until proposal 5. `docs/THE_FOOTBALL.md` 29.
 - **The middle-third lock has eased.** Touches by third 10/78/12 to 14/67/19 over
   the day, which is the item this list has called rough since it was written.
   Twenty seeds: goals 3.50 to 4.44, shots 5.09 to 5.84, box touches 4.6 to 7.3,

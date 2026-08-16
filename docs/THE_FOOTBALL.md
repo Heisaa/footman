@@ -236,12 +236,34 @@ answered, and neither was in the box:
 
 **Where that left it, same 24 seeds:** headed attempts 29 to **41** and headed
 goals 6 to **10**, shots inside the box 68% to **70%** with the six-yard share 13%
-to **15%**, mean shot distance 15.3 to 14.5 m. Headers are still a fifth of
-football's rate and their median distance did not move (13.1 to 12.2 m), so the
-remaining half of 29 is **who is in the six-yard box when the ball drops** — the
-near and far post as authored positions rather than three targets scored on a
-race — and it wants the defensive pass beside it, since nobody contests an aerial
-ball yet.
+to **15%**, mean shot distance 15.3 to 14.5 m.
+
+**Then the other half: who is there when it drops, and it was nobody.** `When the
+cross drops` reads the trace at the strike tick plus the flight and counts bodies
+around the point the ball was aimed at. It found **0.00 of ours within three
+metres, on every cross of three matches**, with the nearest 9.3 m away and the man
+it was aimed at 6 to 16 m off it — while making a box run. The ball and the run
+were being decided in different moments by two copies of the same three points:
+
+- The three points are **claimed, one man each** (`SimOffBall._box_claims`), best
+  pair first, computed once for the side and read off by every man. Scored on his
+  own race, nothing had stopped two men attacking the same point and nothing sent
+  anybody to the far post: 15% went there, now 19-29%.
+- **The cross is aimed at the man who claimed the point**, from the same
+  `box_targets` the runs use, and still only if he can be there inside the flight.
+- **The runner stops easing when a man is wide with his head up.** `BOX_EASE` held
+  him six metres short until the ball left the grass, which is most of why he was
+  never on it; `BOX_EASE_CROSS` is two.
+
+Nearest of ours at the drop went 9.3/11.6/6.2 m to **4.8/6.8/8.2**, and a quarter
+of crosses now have a man within three metres of the ball, which is a quarter and
+not most. **The outcome over 24 seeds went the other way**: shots 294 to 271 and
+headed attempts 41 to 27, inside-the-box share 70% to 60%, goals 103 to 106. The
+mechanism moved and the football did not follow it, which is the honest state.
+
+What is left of 29 is a set-piece question as much as an open-play one: a large
+share of football's headed attempts come from corners, and corners are 0.02 a team
+a match until **5** lands.
 
 **30 is the owner's, 2026-08-15.** Keep structure and width, and make the midfield
 a real link between the defence and the strikers. One midfielder dropping to meet
@@ -343,6 +365,12 @@ its numbers, because the next reader of the proposal will reach for the same thi
   more long balls at the rate long balls complete.
 - **`QUOTA` show 1 → 2** — cost 0.93 goals. One man coming short is right, which is
   the owner's own words arriving as a measurement.
+- **`SimOffBall.CROSS_ON`** — the run into the box worth three times as much while
+  a man is wide with the ball. It is the third time this shape has been measured:
+  more men in the box, fewer in the link. Over 24 matches it bought 6 headed
+  attempts (27 to 33) and cost 23 shots and 13 goals. The same fact is kept as
+  *timing* — `_cross_coming` still decides how far short the runner holds — because
+  where a man should be standing is not what a value knob answers.
 
 **Struck on reading the code:** the two "dead pass factors"; three of the "four
 constant knobs"; `territory`; **4**, an observation wanting the owner's seed rather

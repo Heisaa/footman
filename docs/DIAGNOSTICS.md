@@ -41,6 +41,7 @@ Every one exists because a count in the event log cannot answer its question.
 | `The small acts` | the mechanics that leave no event of their own: first-time balls, layoffs, setting touches, dummies, shielded holds, cuts, chips — and the two ways a teammate never reaches the passer's list at all: he could not see him, or the cap cut him |
 | `Did he have a safe pass?` | whether a body near the ball was an *option*; a man with a defender in the lane is a pass that gets cut out |
 | `How the ball changes hands` | which touch put the ball out, over which line, with how much room beside him |
+| `When the cross drops` | who is there when it comes down — read off the trace at the strike tick plus the flight. A cross into an empty six-yard box and one onto three heads are the same event in every other block |
 | `The ball in behind, as a strike` | the through ball as a *weight*: did it arrive slower than the man can run, was it aimed further ahead than he can cover, did it reach the man it was for |
 | `What became of the ball` | what a spell of possession produced — the only block that reaches forward from an act to an outcome |
 | `Chains` | where an attack stopped, link by link, including links no event log holds: a cross that was never a candidate leaves nothing behind |

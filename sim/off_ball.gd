@@ -224,6 +224,9 @@ const CHECK_PACE := 0.5
 ## Timing the arrival at a cross: how far short of the spot a box runner holds
 ## until the ball is up, and the pace he holds there at.
 const BOX_EASE := 6.0
+## And how far short he holds once a man is wide on the ball with his head up.
+## Near enough that the flight of the cross is the rest of his run.
+const BOX_EASE_CROSS := 2.0
 const BOX_EASE_PACE := 0.8
 
 ## Live intent per player id, and where it is going. Flat arrays rather than
@@ -309,10 +312,16 @@ const BEHIND_WHY := [
 ]
 const BOX_WHY := [
 	"not his job", "too far from the ball", "not in their half", "already offside",
-	"no target in range", "on the list",
+	"no point free for him", "on the list",
 ]
 static var behind_why := PackedInt32Array()
 static var box_why := PackedInt32Array()
+## And which of the three he went to, when he went. Three points authored as the
+## near post, the penalty spot and the far post are only three positions if the
+## men actually spread across them; scored on his own race, every man can pick the
+## same one and the box is one body deep.
+const BOX_TARGETS := ["near post", "penalty spot", "far post"]
+static var box_target := PackedInt32Array()
 
 
 static func _note_choice(kind: int, total: float) -> void:
@@ -492,7 +501,11 @@ static func point_for(ctx: SimContext, p: SimPlayer) -> Vector3:
 	# waiting for it.
 	if kind == BOX and ctx.ball.grounded:
 		var d2 := ctx.pitch.attack_dir(p.team)
-		return _point[p.id] - Vector3(d2 * BOX_EASE, 0.0, 0.0)
+		# Unless the man wide has the ball and is about to hit it, in which case
+		# the run is already late: measured, the man a cross was aimed at was 8 to
+		# 16 m off it when it came down, and six of those metres were this line.
+		var ease: float = BOX_EASE_CROSS if _cross_coming(ctx, p.team) else BOX_EASE
+		return _point[p.id] - Vector3(d2 * ease, 0.0, 0.0)
 	return _point[p.id]
 
 
@@ -554,7 +567,7 @@ static func pace_for(ctx: SimContext, p: SimPlayer) -> float:
 	# box runner eases until the ball is up, then attacks it.
 	if kind == SHOW and ctx.tick_index < _check_until[p.id]:
 		return CHECK_PACE
-	if kind == BOX and ctx.ball.grounded:
+	if kind == BOX and ctx.ball.grounded and not _cross_coming(ctx, p.team):
 		return BOX_EASE_PACE
 	return PACE[kind]
 
@@ -1187,10 +1200,24 @@ const BOX_LATE := 1.2
 ## So this is the run that meets it, and the geometry is deliberately the same
 ## geometry. The three targets are the three the cross is aimed at, and the
 ## situation that triggers the run is the situation that generates the ball:
-## a teammate on it, wide, in the final third. Two men go, by the quota above,
-## and they sort themselves onto different posts because each is scored on his
-## own race -- the near man wins the near post and the far man the far one
-## without anybody coordinating them.
+## a teammate on it, wide, in the final third.
+##
+## **The three points are claimed, one man each, and that is the other half of
+## `docs/THE_FOOTBALL.md` 29.** Each man scoring his own race was the first
+## version, on the argument that the near man would win the near post and the far
+## man the far one without anybody coordinating them. Measured, they do spread --
+## near post 33-38%, penalty spot around half, far post 15% -- but that is a tally
+## over a match and not over a moment: nothing stopped two men racing the same
+## point at the same time, and nothing sent anybody to the far post when the spot
+## was worth more to all of them. Half of every run went to the penalty spot,
+## which is eleven metres, and a headed attempt was struck from a median of twelve.
+##
+## Football authors the box: one man attacks the near post, one the spot, one the
+## far post, and the value of each is that the *set* is covered rather than that
+## the point is worth more than the grass beside it. So the assignment is made
+## once for the side, best pair first, and each man reads off his own share of it
+## -- a pure function of where everybody is standing, so every man computes the
+## same one and nobody needs to be told.
 static func _box_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3) -> Vector3:
 	if not SimRole.is_attacking(p.role) and p.role != SimRole.CM:
 		box_why[0] += 1
@@ -1246,33 +1273,141 @@ static func _box_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3) 
 	if p.pos.x * dir > line + BEHIND_ONSIDE_SLACK:
 		box_why[3] += 1
 		return Vector3.INF
+	var claims := _box_claims(ctx, team, ball)
+	if not claims.has(p.id):
+		box_why[4] += 1
+		return Vector3.INF
+	var claim: Array = claims[p.id]
+	box_why[5] += 1
+	box_target[int(claim[1])] += 1
+	return ctx.pitch.clamp_to_pitch(claim[0], 2.0)
+
+
+## What the run into the box is worth when there is a man wide with the ball,
+## about to cross it, against when there is not.
+##
+## This is the trigger the box run used to carry as a *gate* -- `_add_crosses`'s
+## own test, a teammate on it, wide, in the final third -- and removing it was
+## right: it refused every man whose job it was, and a cross is not the only ball
+## that finds the six-yard box. Removing it also disconnected the two, and the
+## measurement says so: box runs went from 6 a match to 44-77, and **the man a
+## cross was aimed at was 6 to 16 m off it when it came down**, because the run
+## and the ball were being decided in different moments.
+##
+## So the same fact, priced instead of gating. The striker goes when he sees the
+## winger's head come up: with a man wide and deep on the ball the run into the
+## box is worth several times what it is worth on any other phase, and without one
+## it is still available, at what the grass is worth. The lift is on the run, not
+## on the cross, because a cross into an empty box is the fault this pair has.
+const CROSS_ON := 1.0
+
+
+static func _cross_coming(ctx: SimContext, team: int) -> float:
+	var carrier := ctx.possession_player
+	if carrier < 0:
+		return 1.0
+	var c: SimPlayer = ctx.players[carrier]
+	if c.team != team or c.is_keeper:
+		return 1.0
+	if c.pos.x * ctx.pitch.attack_dir(team) <= ctx.pitch.half_length / 3.0:
+		return 1.0
+	if absf(c.pos.z) <= ctx.pitch.half_width * SimDecision.CROSS_WIDE:
+		return 1.0
+	return CROSS_ON
+
+
+## The three points of the box, in the frame of the side attacking it.
+static func box_targets(ctx: SimContext, team: int, ball: Vector3) -> Array:
+	var dir := ctx.pitch.attack_dir(team)
 	var goal := ctx.pitch.target_goal(team)
 	var side: float = signf(ball.z)
 	if side == 0.0:
 		side = 1.0
-	var targets := [
+	return [
 		Vector3(goal.x - dir * 5.5, 0.0, side * ctx.pitch.goal_half_width),
 		Vector3(goal.x - dir * ctx.pitch.penalty_spot_dist, 0.0, 0.0),
 		Vector3(goal.x - dir * 8.0, 0.0, -side * ctx.pitch.goal_half_width * 1.15),
 	]
-	var best := Vector3.INF
-	var best_worth := 0.0
-	for t in targets:
-		var point: Vector3 = t
-		var run := p.dist_to(point)
-		# Long enough to be a run and short enough to be finished while the ball
-		# is still worth arriving for, on the same reasoning as `BEHIND_MAX_RUN`.
-		if run < 2.0 or run > BOX_MAX_RUN:
+
+
+## Who takes which point, decided once for the side.
+##
+## Held for the tick it was computed on, because every man on the side asks the
+## same question of the same positions and the answer cannot differ between them.
+## A static outlives the match, so `reset` clears the tick.
+static var _claim_tick := [-1, -1]
+static var _claims := [{}, {}]
+
+
+## Who is attacking a given one of the three points, or -1 if nobody is.
+##
+## The cross asks this. Before it did, `_add_crosses` picked its target on which
+## teammate *could* reach each point -- a race the man had not agreed to run --
+## and the man was meanwhile running to a different one of the three, so the ball
+## and the run went to different places: measured over three matches, nobody was
+## ever within three metres of a cross coming down and the man it was aimed at was
+## 6 to 16 m off it, while making a box run.
+static func box_claimant(ctx: SimContext, team: int, ball: Vector3, index: int) -> int:
+	for pid in _box_claims(ctx, team, ball):
+		if int(_box_claims(ctx, team, ball)[pid][1]) == index:
+			return pid
+	return -1
+
+
+static func _box_claims(ctx: SimContext, team: int, ball: Vector3) -> Dictionary:
+	if _claim_tick[team] == ctx.tick_index:
+		return _claims[team]
+	var targets := box_targets(ctx, team, ball)
+	# Every pair of a man who could go and a point he could take, worth first.
+	# The worth is the point's, the race is his, and both belong in the ranking:
+	# a man who can only just reach the far post still takes it if nobody better
+	# is going, and does not take it off a man who is arriving on time.
+	var pairs: Array = []
+	for pid in ctx.team_players[team]:
+		var m: SimPlayer = ctx.players[pid]
+		if m.is_keeper or not m.on_pitch:
 			continue
-		var worth := ctx.value.xt_at(team, point, ctx.pitch) * _box_reach(p, point)
-		if worth > best_worth:
-			best_worth = worth
-			best = point
-	if is_inf(best.x):
-		box_why[4] += 1
-		return Vector3.INF
-	box_why[5] += 1
-	return ctx.pitch.clamp_to_pitch(best, 2.0)
+		if not SimRole.is_attacking(m.role) and m.role != SimRole.CM:
+			continue
+		if m.dist_to(ball) > BOX_RANGE:
+			continue
+		# The same offside test the caller applies to himself, so a man who would
+		# be refused it cannot stand on a point and keep somebody else off it.
+		var dir := ctx.pitch.attack_dir(team)
+		var line := SimReferee.believed_offside_line(ctx, m) * dir
+		if m.pos.x * dir > line + BEHIND_ONSIDE_SLACK:
+			continue
+		for i in targets.size():
+			var point: Vector3 = targets[i]
+			var run := m.dist_to(point)
+			# Long enough to be a run and short enough to be finished while the
+			# ball is still worth arriving for, as `BEHIND_MAX_RUN`.
+			if run < 2.0 or run > BOX_MAX_RUN:
+				continue
+			var worth := ctx.value.xt_at(team, point, ctx.pitch) * _box_reach(m, point)
+			if worth <= 0.0:
+				continue
+			pairs.append([worth, i, pid, point])
+	# Best pair first, and ties broken on the point and then the man so that the
+	# order is a fact about the positions rather than about the array.
+	pairs.sort_custom(func(a, b):
+		if not is_equal_approx(a[0], b[0]):
+			return a[0] > b[0]
+		if a[1] != b[1]:
+			return a[1] < b[1]
+		return a[2] < b[2])
+	var claims := {}
+	var taken := {}
+	for pair in pairs:
+		var i: int = pair[1]
+		var pid: int = pair[2]
+		if taken.has(i) or claims.has(pid):
+			continue
+		taken[i] = true
+		claims[pid] = [pair[3], i]
+	_claim_tick[team] = ctx.tick_index
+	_claims[team] = claims
+	return claims
 
 
 ## The decoy run. How close the marker must be for there to be anybody to
@@ -1611,6 +1746,11 @@ static func _clear() -> void:
 		behind_why[i] = 0
 	for i in box_why.size():
 		box_why[i] = 0
+	box_target.resize(BOX_TARGETS.size())
+	for i in box_target.size():
+		box_target[i] = 0
+	_claim_tick = [-1, -1]
+	_claims = [{}, {}]
 	chose_seen.resize(KIND_NAMES.size())
 	chose_share.resize(KIND_NAMES.size())
 	chose_won.resize(KIND_NAMES.size())

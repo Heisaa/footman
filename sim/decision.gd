@@ -1626,12 +1626,11 @@ static func _add_crosses(ctx: SimContext, player: SimPlayer, uncontrolled: bool)
 	if side == 0.0:
 		side = 1.0
 	# Near post, penalty spot, far post. The far one is pulled back and past the
-	# post because that is where the ball hangs up for somebody arriving.
-	var targets := [
-		Vector3(goal.x - attack_dir * 5.5, 0.0, side * ctx.pitch.goal_half_width),
-		Vector3(goal.x - attack_dir * ctx.pitch.penalty_spot_dist, 0.0, 0.0),
-		Vector3(goal.x - attack_dir * 8.0, 0.0, -side * ctx.pitch.goal_half_width * 1.15),
-	]
+	# post because that is where the ball hangs up for somebody arriving. Read
+	# from `SimOffBall` rather than written out again here, because the ball and
+	# the run have to be aimed at the same three points or neither is worth
+	# anything -- which is what they were, in two copies, until one of them moved.
+	var targets := SimOffBall.box_targets(ctx, player.team, from)
 	var off_balance: float = 1.0
 	if uncontrolled:
 		off_balance = lerpf(0.3, 0.7, player.attrs.first_touch * player.attrs.technique)
@@ -1643,27 +1642,38 @@ static func _add_crosses(ctx: SimContext, player: SimPlayer, uncontrolled: bool)
 	var best_mate := -1
 	var best_flight := 0.0
 	var best_worth := 0.0
-	for t in targets:
-		var point: Vector3 = t
+	for i in targets.size():
+		var point: Vector3 = targets[i]
 		var distance := SimConsts.horizontal_length(point - from)
 		if distance < CROSS_FROM or distance > SimTouch.strike_range(player, point - from, MAX_LOFTED_PASS):
 			continue
 		var flight: float = SimTouch.lofted_flight(distance)
-		# Who is attacking it. Not who is standing there.
-		var mate := -1
-		var soonest := INF
-		for mid in ctx.teammate_ids(player.team):
-			if mid == player.id:
-				continue
-			var m := ctx.players[mid]
-			if not m.on_pitch or m.is_keeper:
-				continue
-			var t_arrive := SimValueField.time_to_arrive(m, point, SimValueField.reaction_of(m))
-			if t_arrive > flight + CROSS_LATE:
-				continue
-			if t_arrive < soonest:
-				soonest = t_arrive
-				mate = mid
+		# Who is attacking it, and the man who has claimed the point is that man.
+		# `SimOffBall.box_claimant` is the run being made right now; the race below
+		# is the fallback for a ball into an area nobody has set off for yet, which
+		# is still a cross a footballer plays.
+		var mate := SimOffBall.box_claimant(ctx, player.team, from, i)
+		# He has to be able to get there, claim or no claim: the run's own window
+		# (`SimOffBall.BOX_WINDOW`) allows a man four seconds away, and a ball that
+		# hangs for one and a half does not.
+		if mate >= 0 and (mate == player.id or SimValueField.time_to_arrive(
+				ctx.players[mate], point, SimValueField.reaction_of(ctx.players[mate]))
+				> flight + CROSS_LATE):
+			mate = -1
+		if mate < 0:
+			var soonest := INF
+			for mid in ctx.teammate_ids(player.team):
+				if mid == player.id:
+					continue
+				var m := ctx.players[mid]
+				if not m.on_pitch or m.is_keeper:
+					continue
+				var t_arrive := SimValueField.time_to_arrive(m, point, SimValueField.reaction_of(m))
+				if t_arrive > flight + CROSS_LATE:
+					continue
+				if t_arrive < soonest:
+					soonest = t_arrive
+					mate = mid
 		if mate < 0:
 			continue
 		# Ranked on what the ball would be worth if it came off, so the choice
