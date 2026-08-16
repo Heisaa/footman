@@ -40,6 +40,43 @@ which is Phase 6's exit criterion and only the owner can call it.
   overshoot the goal count and it does not. **Whether the answer is more football
   inside the nine minutes or a re-based §11 density table is the owner's call**,
   and `docs/THE_FOOTBALL.md` closes the order with it.
+- **The side does not stand in its own formation, and that is what the clump is.**
+  `diagnose` now carries `The clump` and `Holding the shape`, and the second one
+  answered it: every outfielder sat a mean 11 m from the point the shape had given
+  him, all lagging the same way, because the station itself moved at 2.6 to 4.6
+  m/s and the target he was actually running at at 4 to 7 — against 1.9 m/s of
+  shape-holding pace and 7.5 flat out. **A shape that moves faster than a
+  footballer has no occupants**, so ten men trailed the ball in a bunch. The cause
+  was `shape_position` reading the live ball; `ctx.shape_ball` follows it at 3 m/s
+  now. Three seeds: the station's target speed 4.1 → 2.3 m/s, a man simply holding
+  station 8% of samples → 12%, the side 11.0 m off its shape → 10.1, and the
+  errands' net pull onto the ball 6.0 m → 5.0. Then the four arms the block had
+  ranked, of which **one turned out to be the cause of three**: `_support_adjust`
+  returned a 12 m ring round the ball outright, four or five men at a time, and it
+  is the base `drift` and `ascent` are built on top of. Stepped rather than
+  teleported and reading the shape's ball, all three came down together; `press`
+  had its side-of-the-ball sign latched for the length of a press.
+  **Over the whole day, three seeds:** off its own shape 11.0 → 8.7 m, net pull
+  onto the ball 6.0 → 3.6 m, teammates within 8 m 3.7 → 2.5 of ten, cells occupied
+  6.5 → 7.1 of fifteen, twenty men inside one 12 m circle 5.7 → 4.8, every arm's
+  target bar the chase 4-8 m/s → 1.5-3.4, mean speed 2.7 m/s throughout. **A side
+  spread properly occupies eight or nine cells**, so 7.1 is progress and not the
+  answer.
+- **The station's own jumps are eased** (`SimContext.shape_phase`). Four things
+  switched between the attacking and defending shapes on
+  `possession_team == p.team`, worth fifteen metres of station between them and
+  arriving in one tick at every change of hands. A mean cannot see a
+  once-a-turnover teleport, so `Holding the shape` gained the column that can —
+  the share of samples where the station outran a sprinter — and it halved on
+  every seed, 1.4/1.3/0.7% to 0.7/0.6/0.3%. Mean speed 2.7 → 2.4 m/s, the side
+  0.6 m closer to its own targets. What still jumps is `SHAPE_BALL_LEASH` behind
+  a ball hit sixty metres, which is meant.
+- **Marking was made zonal away from the ball** (`SimMovement.mark_tightness`).
+  It is 40% of all outfielder-samples and was the largest single arm taking the
+  side out of shape. Ablated against itself over three seeds it is worth about
+  0.6 m of the closing-in and a quarter of `mark`'s own pull; it belongs to the
+  defensive pass and is here because it reads as football, not because it fixed
+  the clump.
 - **The middle third still holds most of play** — 78% of touches, 12% in the final
   third. The pass model no longer referees a race nobody is running, and
   progression improved with it, but the lock eased rather than lifted. What is left

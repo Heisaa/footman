@@ -131,6 +131,11 @@ func setup(config: SimMatchConfig) -> void:
 	_fetcher_id = -1
 	finished = false
 	SimSetPiece.kickoff(ctx, SimConsts.TEAM_HOME)
+	# The shape's ball starts on the real one rather than walking out from the
+	# corner flag over the first few seconds of the match. Both sides start in
+	# their defending shape, which is what a kickoff looks like.
+	ctx.shape_ball = ctx.ball.ground_pos()
+	ctx.shape_phase = PackedFloat32Array([0.0, 0.0])
 
 
 # --- The tick loop ----------------------------------------------------------
@@ -234,6 +239,11 @@ func _refresh_shared_state() -> void:
 	# The forecast is computed lazily: agents that need it call
 	# ctx.trajectory_now(), and the first caller in a tick pays for everyone.
 	ctx.invalidate_trajectory()
+	# Before anything reads a station: the shape's own ball follows the real one
+	# at a pace a footballer can hold. Never strided -- it is an integration, and
+	# a coarse tier that stepped it four times as far would make a different
+	# shape rather than a cheaper one.
+	ctx.advance_shape(SimConsts.DT)
 	if ctx.tick_index % (SimConsts.PRESSURE_TICKS * ctx.config.decision_stride()) == 0:
 		ctx.update_pressure()
 	ctx.update_possession()
@@ -618,6 +628,23 @@ func _record_trace() -> void:
 	for i in ctx.players.size():
 		sample[i + 1] = ctx.players[i].pos
 	ctx.telemetry.log_trace(sample)
+	# And where the shape wanted each of them, alongside. `shape_position` is a
+	# pure function of the context -- no rng, no state written -- so sampling it
+	# here cannot change the match, and the keeper takes his own station rather
+	# than an outfielder's, so his entry is meaningless and the diagnostics skip
+	# him.
+	var stations := PackedVector3Array()
+	var targets := PackedVector3Array()
+	var errands := PackedInt32Array()
+	stations.resize(ctx.players.size())
+	targets.resize(ctx.players.size())
+	errands.resize(ctx.players.size())
+	for i in ctx.players.size():
+		var p := ctx.players[i]
+		stations[i] = SimMovement.shape_position(ctx, p)
+		targets[i] = p.move_target
+		errands[i] = p.errand
+	ctx.telemetry.log_shape(stations, targets, errands)
 
 
 # --- Driving ----------------------------------------------------------------

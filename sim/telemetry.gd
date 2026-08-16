@@ -72,6 +72,22 @@ var events: Array[Dictionary] = []
 ## Positional trace at 5 Hz: one entry per sample, each a PackedVector3Array of
 ## ball position followed by every player position, in fixed id order.
 var trace: Array[PackedVector3Array] = []
+## Parallel to `trace`, sample for sample: where the formation wanted each
+## player at that instant, in player id order with no ball entry in front, and
+## which arm of the movement ladder had him instead.
+##
+## Recorded with the trace and read by nothing in `sim/`. It exists because the
+## question "is the side holding its shape" cannot be answered from positions
+## alone: `SimMovement.shape_position` slides every station with play, so a man
+## twenty metres from his formation home may be exactly where the shape put him
+## or nowhere near it, and those look identical in the trace.
+var shape_trace: Array[PackedVector3Array] = []
+## And where he was actually being sent, which is the shape with the errand
+## applied on top. Kept apart from `shape_trace` because "the errand moved his
+## target" and "he is a long way behind his own target" are different faults and
+## one distance cannot tell them apart.
+var target_trace: Array[PackedVector3Array] = []
+var errand_trace: Array[PackedInt32Array] = []
 var trace_enabled := true
 var events_enabled := true
 
@@ -79,6 +95,9 @@ var events_enabled := true
 func clear() -> void:
 	events.clear()
 	trace.clear()
+	shape_trace.clear()
+	target_trace.clear()
+	errand_trace.clear()
 
 
 ## `poss` is stamped on by `SimContext.log_event`, which is the only caller: it is
@@ -106,6 +125,13 @@ func in_possession(poss: int) -> Array[Dictionary]:
 func log_trace(sample: PackedVector3Array) -> void:
 	if trace_enabled:
 		trace.append(sample)
+
+
+func log_shape(stations: PackedVector3Array, targets: PackedVector3Array, errands: PackedInt32Array) -> void:
+	if trace_enabled:
+		shape_trace.append(stations)
+		target_trace.append(targets)
+		errand_trace.append(errands)
 
 
 func count_of(kind: int) -> int:

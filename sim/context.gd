@@ -20,6 +20,80 @@ var telemetry: SimTelemetry
 var ballistics: SimBallistics
 var value: SimValueField
 
+## Where the shape thinks the ball is: the ball's position, followed at a walk.
+##
+## The formation's stations slide with the ball (`SimMovement.BALL_PULL_X`), and
+## reading the live ball meant every station in the side moved at the ball's own
+## speed times the pull. Measured off `diagnose`'s `Holding the shape`, the point
+## a man was running at moved at 4 to 7 m/s while he was allowed 1.9 to hold
+## shape, and the station of a man doing nothing else moved at 2.6. Nobody can
+## occupy a shape that moves faster than he does, so nobody did: every outfielder
+## sat a permanent eight to nine metres behind his own point, all lagging the same
+## way, which is ten men trailing the ball in a bunch. That is the clump the owner
+## watches, and it is not a spacing constant -- it is a shape being defined faster
+## than a footballer can run.
+##
+## A block shifts with the phase of play, not with the ball's velocity. Chasing,
+## pressing, marking and every decision still read the real ball: those are about
+## this pass. Only the shape reads this one.
+var shape_ball := Vector3.ZERO
+
+## How fast it may follow, in metres per second, and how far behind it will ever
+## be allowed to fall.
+##
+## The speed is what caps the station's own motion: at `BALL_PULL_X` of 0.36 a
+## station moves at about a third of this, comfortably inside the pace a man
+## holds shape at. The leash is what stops a side being left in its own half by
+## a long ball -- past it the shape moves with the ball again, which is the one
+## time a block really does have to sprint.
+const SHAPE_BALL_SPEED := 3.0
+const SHAPE_BALL_LEASH := 22.0
+
+## How much each side is playing as the side in possession: 0 defending, 1 with
+## the ball, per team.
+##
+## The shape has an attacking form and a defending form, and it used to switch
+## between them on `possession_team == p.team`, which is a boolean and changes in
+## one tick. Four things read it — `ball_pull_shift`'s hold for the midfield,
+## `_build_up_width`, `lateral_pull` and the phase shift — and they are worth up
+## to fifteen metres between them, so a centre-half's station crossed fifteen
+## metres of pitch in a sixtieth of a second every time the ball changed hands.
+## It is `shape_ball` one layer up: a shape that arrives faster than a footballer
+## has no occupants, and this one arrived instantly.
+##
+## A side does not become its attacking self in one frame. It transitions, and a
+## transition is the one moment men really do sprint — which is why this is eased
+## rather than crawled: `SHAPE_PHASE_SECONDS` puts the largest of those swings at
+## about 5 m/s, a hard run, against the tick's infinity.
+var shape_phase := PackedFloat32Array([0.0, 0.0])
+
+## How long a side takes to change between its two shapes, in seconds.
+const SHAPE_PHASE_SECONDS := 2.5
+
+
+func shape_phase_of(team: int) -> float:
+	return shape_phase[team] if team >= 0 and team < shape_phase.size() else 0.0
+
+
+## Follows the ball and the phase of play for the shape. Called once a tick from
+## `SimMatch`, before anything reads a station.
+func advance_shape(dt: float) -> void:
+	var live := ball.ground_pos()
+	shape_ball.y = 0.0
+	shape_ball = shape_ball.move_toward(live, SHAPE_BALL_SPEED * dt)
+	var behind := live - shape_ball
+	var d := behind.length()
+	if d > SHAPE_BALL_LEASH:
+		shape_ball = live - behind / d * SHAPE_BALL_LEASH
+	# A loose ball reorganises nobody. Both sides hold the shape they had until
+	# somebody actually has it -- otherwise every fifty-fifty starts both teams
+	# easing toward their defensive form and the transition runs backwards.
+	if possession_team < 0:
+		return
+	var step := dt / SHAPE_PHASE_SECONDS
+	for team in shape_phase.size():
+		shape_phase[team] = move_toward(shape_phase[team], 1.0 if possession_team == team else 0.0, step)
+
 ## Both sides, indexed by SimConsts.TEAM_HOME / TEAM_AWAY.
 var teams: Array[SimTeam] = []
 ## Every player on the pitch, in fixed id order. players[i].id == i always.

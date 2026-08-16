@@ -110,6 +110,13 @@ var move_deadband := 0.4
 ## run has to be made precisely -- a striker who is four metres short of the
 ## shoulder is not making a run, they are standing still.
 var making_run := false
+## Which arm of `SimMovement._recompute_target` last decided where this player
+## should be: a `SimMovement.Errand`. Written by the ladder itself as it goes,
+## rather than worked out afterwards from the target, because a second function
+## that infers the arm is a model of the first and drifts from it. Read by
+## nothing in `sim/` -- it is there so the diagnostics can say which errand
+## takes a side out of its shape.
+var errand := 0
 ## Cached gradient-ascent offset and the tick it was computed on. The value
 ## field is a 5 Hz quantity (PLAN.md §2.5); recomputing it on the 10 Hz movement
 ## cadence was doing the work twice.

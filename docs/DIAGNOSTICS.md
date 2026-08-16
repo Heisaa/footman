@@ -25,6 +25,8 @@ Every one exists because a count in the event log cannot answer its question.
 | `A man could be played in behind` | which gate refused the through ball, over every teammate ahead of the ball rather than every decision |
 | `The two seconds after a regain` | the same three questions asked of the counter's window instead of the match |
 | `The width` | the z-extent of the side in possession, and how many of its men stand within twelve metres of its ball — a clump retains the ball fine and cannot pass out of itself |
+| `The clump` | the density the eye sees: distance to the nearest shirt of the same colour, how many of a 5 x 3 grid's cells the ten outfielders are spread over, and how many of both sides stand inside one circle round the ball. `The width` is satisfied by two men on the touchlines while the other eight ring the carrier |
+| `Holding the shape` | whether the shape the side is standing in *is* the formation, and which errand took it somewhere else. The only block with both numbers side by side — every other one reads positions, and `shape_position` slides every station with play, so a back four squeezed into the middle third may be exactly where the formation asked or nowhere near it |
 | `Why an option lost` | which *term* beat the option that lost: `success 0.05 v 0.45` is a pass model problem, `gain 0.02 v 0.10` a value one |
 | `what the pass model made of them` | `success` broken into its five factors — a product of 0.05 could be one factor at 0.05 or four at 0.55, which are unrelated faults |
 | `is it ordered?` / `which factor knew` | the same calibration one ball at a time: does the model rise across its own buckets, and did each factor separate the balls that arrived from the ones that did not |
@@ -75,6 +77,26 @@ Every one exists because a count in the event log cannot answer its question.
   decided nothing, and the model is out by the whole of it.**
 - **The `gain` column is not comparable across kinds.** A shot carries a gain of 1.0
   by construction. Compare within a column, on `success`.
+- **`Holding the shape`: read the second table before the first.** `off station`
+  splits into `pulled`, how far the errand moved his target off the formation's
+  point, and `behind`, how far he is from that target — and `behind` is only about
+  him if the target stood still. The second table says how fast the target was
+  moving, and at 4 to 7 m/s against a footballer's 7.5 flat out there is no pace
+  that closes it. Read that way it found the live ball driving every station in
+  the side; read the other way it says "he is too slow", and that was tried and
+  measured nothing (`SimMovement.SHAPE_SPEED`).
+- **`over 8 m/s` is the column for anything that happens at a moment**, and the
+  mean beside it cannot see those at all. A station that teleports fifteen metres
+  once a turnover and stands still in between reads as a gentle drift; the share
+  of samples where it outran a sprinter reads as what it is. It is how the phase
+  switch was found and how the fix was checked — 1.4/1.3/0.7% of samples down to
+  0.7/0.6/0.3% over three seeds. What is left of it is `SHAPE_BALL_LEASH` doing
+  its job on a ball hit sixty metres, which is the one time a side really is
+  dragged at the speed of the ball.
+- **`pulls in` is the column that ranks the arms**, because it is the share and
+  the gap multiplied and the arms sum to the total. An errand that draws a man ten
+  metres onto the ball on 2% of samples is not the swarm; one that draws six on
+  40% is. `chase` and `press` belong near the ball and are not faults there.
 - **A constant whose input range nobody measured may be doing nothing.** The
   `turnover_exposure` line prints what the term actually came out at, which is how
   you tell inside one run.
@@ -140,7 +162,22 @@ and never executed once; `_cross_coming` returned `1.0` on every path into two
 call sites that read it as a truth value. Both read as healthy in every block
 here, because a run to a point is a run to a point and the diagnostics see the
 point. The check is a counter on each arm of the branch — `Which idea he had`
-carries one now — and it costs a line.
+carries one now, and `Holding the shape` is the same idea for the movement
+ladder: `SimMovement._recompute_target` stamps `SimPlayer.errand` from inside the
+branch that takes it, so an arm that stops firing stops appearing rather than
+looking healthy — and it costs a line.
+
+**The chain has a movement twin, and it is shorter.** A positioning rule reaches
+the grass down three links, and only the third is a distance:
+
+| | the link | what says it broke |
+|---|---|---|
+| 1 | the arm fires at all | `Holding the shape`, `share` |
+| 2 | the point it names can be occupied | the same block's `station m/s` / `target m/s` / `switched` |
+| 3 | he is standing on it | `pulled`, `behind` |
+
+Read in that order, the clump resolved to link 2 — the shape was defined faster
+than a footballer can run — and every reading of link 3 before that was noise.
 
 **Two things the chain cannot say.** That a term is *right* — `_pass_success`'s
 `control` factor passes links 1 to 3 outright and was worth nothing, because the

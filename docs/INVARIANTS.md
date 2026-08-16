@@ -41,6 +41,53 @@ never sees tick 0. Determinism is what this protects.
 Only an explicitly chosen handful of players per team may move toward the ball.
 `TestMatch._whole_match_invariants` measures it.
 
+**The shape reads `ctx.shape_ball` and `ctx.shape_phase`, never the live ball or
+the possession flag.** Both are damped, both are advanced once a tick by
+`SimContext.advance_shape` before anything reads a station, and between them they
+are what stops the formation moving faster than the men in it. Stations slide with
+the ball, so whatever the shape reads sets how fast every station in the side
+moves — and a shape that moves faster than a footballer cannot be occupied by
+one. It was the live ball, and the whole side sat a permanent eight to nine
+metres behind its own points, all lagging the same way, which is what the clump
+around the ball actually was. Chasing, pressing, marking and every decision keep
+reading the real ball: those are about this pass. Only the shape is about the
+phase of play. `advance_shape` is never strided — it is an integration, and a
+coarse tier stepping it four times as far would build a different shape rather
+than a cheaper one.
+
+`shape_phase` is the same rule for the *other* input the shape has. The formation
+has an attacking form and a defending one, and four things cross-fade between
+them — `ball_pull_shift`'s midfield hold, `_build_up_width`, `lateral_pull` and
+the phase shift — worth about fifteen metres of station between them. Switched on
+`possession_team == p.team`, all fifteen arrived in one tick at every change of
+hands. **A boolean in a positioning rule is a station that teleports**, and the
+answer is to compute both forms and lerp, never to branch.
+
+**Any positioning rule is answerable for how fast the point it names moves.**
+The general form, and the one that keeps being missed: a target that moves at
+7 m/s has no occupant at any pace, so the gap to it measures the target and not
+the man. `diagnose`'s `Holding the shape` prints that speed per errand, and the
+first cut of a positioning fix should be read there before its distance is.
+
+Four shapes it has taken, all found by that column or the `over 8 m/s` one beside
+it — **and read that one for anything that happens at a moment.** A station that
+teleports fifteen metres once a turnover and stands still the rest of the time
+reads as a gentle drift in the mean; the share of samples where it outran a
+sprinter is what sees it, and it halved when the phase was eased.
+- **A point defined relative to the ball moves at the speed of the ball.**
+  `_support_adjust` returned a 12 m ring round it, so four or five men at a time
+  were sent to a circle travelling at 15 m/s. Return a bounded *step* toward such
+  a point, never the point.
+- **A sign recomputed every tick flips.** `_support_press_point` chose its side of
+  the ball from `signf(...)` on the presser's own position, and a man near the
+  line through the ball crossed ten metres and came back. Latch a discrete choice
+  for the length of the act.
+- **A boolean is a teleport**, above: `shape_phase`.
+- **Rules compose, so the base one is worth fixing first.** `drift` and `ascent`
+  are computed on top of the support-adjusted shape and inherited the whole of
+  its motion; fixing support brought all three under control and neither of the
+  other two needed touching.
+
 **Tune late** (`PLAN.md` §11.1.1). Until the decision and tactics layers stop
 changing shape, a fitted coefficient is one that will need fitting again.
 

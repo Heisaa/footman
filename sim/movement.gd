@@ -47,10 +47,27 @@ const BALL_PULL_Z_BUILD := 0.10
 
 
 ## How hard this player's station slides sideways with the ball.
-static func lateral_pull(ctx: SimContext, p: SimPlayer, ball_x: float) -> float:
-	if ctx.possession_team == p.team and ball_x < 0.0:
-		return BALL_PULL_Z_BUILD
-	return BALL_PULL_Z
+##
+## Two eased conditions where there were two switched ones. `phase` is how much
+## his side is the side in possession (`SimContext.shape_phase`). It used to be
+## `possession_team == p.team and ball_x < 0.0`, a pair of booleans, and with the
+## ball wide each was worth about seven metres of station: one jumped at every
+## turnover and the other every time play crossed the halfway line.
+##
+## **The fade is short on purpose.** The first cut shared `_build_up_width`'s
+## depth ramp, which reaches full strength only in the defensive third — and
+## since four fifths of the football happens in the middle third, that quietly
+## put the possessing side back near `BALL_PULL_Z` almost everywhere and undid
+## the owner's 0.16-to-0.10 dial. Measured: the side closed 0.8 m further onto
+## its own ball on all three seeds. `BALL_PULL_Z_BUILD` is meant to hold for the
+## whole of the own half, so the fade is a band at the halfway line and nothing
+## more.
+const BUILD_UP_FADE := 12.0
+
+
+static func lateral_pull(_ctx: SimContext, _p: SimPlayer, ball_x: float, phase: float = 0.0) -> float:
+	var behind: float = clampf(-ball_x / BUILD_UP_FADE, 0.0, 1.0)
+	return lerpf(BALL_PULL_Z, BALL_PULL_Z_BUILD, phase * behind)
 
 
 ## How far the station slides for a ball at `ball_x`, in the canonical attacking
@@ -58,18 +75,23 @@ static func lateral_pull(ctx: SimContext, p: SimPlayer, ball_x: float) -> float:
 ## meet: a striker pushes on once the ball is over it and holds his height while
 ## the side builds behind it.
 ##
-## `building` is "this player's own side has the ball": with it, the CM holds
-## his height against a deep ball the same way the front line always has.
-## Trailing all the way back onto the carrier is the midfield collapse the
-## owner watched (DECISIONS.md, "Width in build-up") — the pivot still comes,
-## because a DM dropping to offer for his centre-halves is build-up, but the
-## man between the lines stays between the lines. Defending, everyone tracks
-## at the full rate as before.
-static func ball_pull_shift(role: int, ball_x: float, building: bool = false) -> float:
+## `building` is how much this player's own side has the ball
+## (`SimContext.shape_phase`, 0 to 1): with it, the CM holds his height against a
+## deep ball the same way the front line always has. Trailing all the way back
+## onto the carrier is the midfield collapse the owner watched (DECISIONS.md,
+## "Width in build-up") — the pivot still comes, because a DM dropping to offer
+## for his centre-halves is build-up, but the man between the lines stays between
+## the lines. Defending, everyone tracks at the full rate as before.
+##
+## It was a bool, and for a midfielder with the ball on his own goal line the two
+## rates are six metres of station apart, arriving in one tick at the turnover.
+static func ball_pull_shift(role: int, ball_x: float, building: float = 0.0) -> float:
 	if ball_x >= 0.0:
 		return BALL_PULL_X * ball_x
-	if SimRole.is_attacking(role) or (building and role == SimRole.CM):
+	if SimRole.is_attacking(role):
 		return BALL_PULL_X_HOLD * ball_x
+	if role == SimRole.CM:
+		return lerpf(BALL_PULL_X, BALL_PULL_X_HOLD, building) * ball_x
 	return BALL_PULL_X * ball_x
 
 
@@ -104,9 +126,20 @@ const BUILD_UP_WIDTH_MID := 1.30
 ## back four that stays split at halfway is one about to be played through.
 const BUILD_UP_DEPTH := 0.55
 
-## Speed a player uses to hold shape, as a fraction of their maximum.
+## Speed a player uses to hold shape, as a fraction of their maximum, and the
+## gap past which he is not holding shape but getting back into it.
+##
+## 0.25 of top speed is about 1.9 m/s, and the obvious reading of `diagnose`'s
+## `Holding the shape` -- every errand leaving its man eight to nine metres
+## behind his own target -- is that this is too slow. It was tried: a continuous
+## ramp from `SHAPE_SPEED` at the station to `RECOVER_SPEED` at twelve metres.
+## The gap did not move (8.5 m against 8.5) and the mean speed of an outfielder
+## went from 2.49 m/s to 3.34, against football's two. It was not the pace. The
+## point he was running at was moving at 4 to 7 m/s -- see `SimContext.shape_ball`
+## -- and no pace closes a gap to something moving faster than you.
 const SHAPE_SPEED := 0.25
 const RECOVER_SPEED := 0.72
+const SHAPE_SPEED_GAP := 12.0
 ## How far off their station a player is willing to be before bothering to move.
 const SHAPE_DEADBAND := 3.9
 ## A probe has to be this much better than standing still before an attacker
@@ -161,6 +194,11 @@ static var _chase_role := PackedInt32Array()
 ## race, and recomputing it for that would be walking the forecast twice.
 static var _chase_time := PackedFloat32Array()
 
+## Which side of the ball each support presser chose to close, latched for the
+## length of his press and zero when he is not pressing. See
+## `_support_press_point`, which is the only reader and the only writer.
+static var _press_side := PackedFloat32Array()
+
 
 ## Read-only views of the assignment, for the debug overlay. The anti-swarm guard
 ## lives in `_assign_chasers` and nowhere else; these two say what it decided and
@@ -173,6 +211,31 @@ static func chase_time_of(id: int) -> float:
 	return _chase_time[id] if id >= 0 and id < _chase_time.size() else INF
 
 
+## The arms of `_recompute_target`, in the order the ladder tries them. Each is
+## stamped on `SimPlayer.errand` by the branch that takes it, so this list and
+## the code cannot drift: an arm that stops firing stops appearing.
+##
+## `STATION` is the shape and nothing on top of it, and it is the one that has
+## to be common. Everything else is a reason a man is somewhere his formation
+## did not put him, and the diagnostics count them because "they all clump on
+## the ball" is a claim about which of these arms is winning.
+enum Errand {
+	STATION,   ## the formation's own point, slid with play
+	CHASE,     ## designated to go to the ball
+	PRESS,     ## the second man, supporting the press
+	PATTERN,   ## a named pattern is running him somewhere
+	SHOULDER,  ## a forward playing on the last defender
+	OFFER,     ## SimOffBall relocated him: show, space, behind, box, decoy, second
+	SUPPORT,   ## came short to give the carrier a angle
+	DRIFT,     ## a few metres off his station, into a pocket
+	ASCENT,    ## the value field's local gradient moved him
+	MARK,      ## goal-side of an opponent
+}
+
+const ERRAND_NAMES := [
+	"station", "chase", "press", "pattern", "shoulder", "offer", "support",
+	"drift", "ascent", "mark",
+]
 
 
 ## Clears the chase assignment, for the same reason `SimOffBall.reset` exists: it
@@ -181,6 +244,7 @@ static func chase_time_of(id: int) -> float:
 static func reset() -> void:
 	_chase_role = PackedInt32Array()
 	_chase_time = PackedFloat32Array()
+	_press_side = PackedFloat32Array()
 
 
 static func update(ctx: SimContext) -> void:
@@ -246,6 +310,7 @@ static func _assign_chasers(ctx: SimContext) -> void:
 	if _chase_role.size() != n:
 		_chase_role.resize(n)
 		_chase_time.resize(n)
+		_press_side.resize(n)
 	for i in n:
 		_chase_role[i] = CHASE_NONE
 		_chase_time[i] = INF
@@ -346,6 +411,12 @@ static func _assign_chasers(ctx: SimContext) -> void:
 			_chase_role[carrier] = CHASE_PRIMARY
 		if loose:
 			_add_nearby_chaser(ctx, team, receiver, ball_ground)
+	# A man who is not a support presser has no side to close. Cleared here so
+	# that the next press he is given picks one afresh, rather than inheriting
+	# whichever side he happened to be on in some earlier phase.
+	for i in n:
+		if _chase_role[i] != CHASE_SUPPORT:
+			_press_side[i] = 0.0
 
 
 ## How many men a side sends at a ball in the air.
@@ -532,6 +603,7 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 	var is_support := role == CHASE_SUPPORT
 
 	if is_primary:
+		p.errand = Errand.CHASE
 		var point := _intercept_point(ctx, p)
 		# A chaser coming from behind a man in possession runs round him rather
 		# than into the back of him.
@@ -585,6 +657,7 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 		p.move_deadband = 0.25
 		return
 	if is_support:
+		p.errand = Errand.PRESS
 		p.move_target = _support_press_point(ctx, p)
 		p.move_speed_cap = p.max_speed() * 0.68
 		p.move_deadband = 2.0
@@ -594,6 +667,7 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 	# target the ordinary locomotion has to reach, not a special mode.
 	var scripted := SimPatterns.movement_override(ctx, p)
 	if scripted != Vector3.INF:
+		p.errand = Errand.PATTERN
 		p.move_target = scripted
 		p.move_speed_cap = p.max_speed() * 0.95
 		p.move_deadband = 1.2
@@ -601,6 +675,7 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 		return
 
 	var shape := shape_position(ctx, p)
+	p.errand = Errand.STATION
 	if ctx.possession_team == p.team:
 		shape = _attacking_adjust(ctx, p, shape)
 	else:
@@ -608,7 +683,7 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 	p.move_target = ctx.pitch.clamp_to_pitch(shape, 0.5)
 	# Holding shape is a jog; recovering a long way out of position is not.
 	var gap := p.dist_to(p.move_target)
-	p.move_speed_cap = p.max_speed() * (SHAPE_SPEED * lerpf(0.85, 1.2, p.attrs.work_rate) if gap < 12.0 else RECOVER_SPEED)
+	p.move_speed_cap = p.max_speed() * (SHAPE_SPEED * lerpf(0.85, 1.2, p.attrs.work_rate) if gap < SHAPE_SPEED_GAP else RECOVER_SPEED)
 	# A footballer holding a station does not sprint to be exactly on it. This
 	# tolerance is what keeps a match inside 9-12 km per player. A timed run in
 	# behind is the exception: it has to be made to the metre.
@@ -650,13 +725,21 @@ static func shape_position(ctx: SimContext, p: SimPlayer, ball_at: Vector3 = SHA
 
 	# Work in the canonical frame where this team attacks +X.
 	var home := pitch.scale_point(team.formation.homes[slot])
-	var ball_c := pitch.orient(p.team, ctx.ball.ground_pos() if ball_at.y < 0.0 else ball_at)
+	# `ctx.shape_ball`, not the live ball: the shape follows play rather than the
+	# pass. A restart overrides it outright, because a side lining up for a free
+	# kick is standing where that ball is going to be struck from and nowhere else.
+	var ball_c := pitch.orient(p.team, ctx.shape_ball if ball_at.y < 0.0 else ball_at)
+
+	# How much this side is the side in possession, eased over a couple of seconds
+	# rather than switched in a tick. Four things below read it and they are worth
+	# fifteen metres of station between them; see `SimContext.shape_phase`.
+	var phase := ctx.shape_phase_of(p.team)
 
 	# The shape slides with play rather than being pinned to the formation, and
 	# the front of it does not trail back with a ball played behind it.
-	var x := home.x + ball_pull_shift(p.role, ball_c.x, ctx.possession_team == p.team)
-	var z := home.z * tactics.width_scale() * _build_up_width(ctx, p, ball_c.x) \
-		+ ball_c.z * lateral_pull(ctx, p, ball_c.x)
+	var x := home.x + ball_pull_shift(p.role, ball_c.x, phase)
+	var z := home.z * tactics.width_scale() * _build_up_width(ctx, p, ball_c.x, phase) \
+		+ ball_c.z * lateral_pull(ctx, p, ball_c.x, phase)
 
 	# Defensive line height. Only the back line and the pivot are anchored to
 	# it; the front line hangs off the shape ahead of them.
@@ -678,16 +761,21 @@ static func shape_position(ctx: SimContext, p: SimPlayer, ball_at: Vector3 = SHA
 	# forty-nine metres of pitch with ten players spread over it. That is a team
 	# with no bands, and it is the shape behind a carrier who has nothing on but a
 	# square pass -- every option is a long way away, so every lane is long.
-	var phase_shift := 0.0
-	if ctx.possession_team == p.team:
-		var squeeze: float = 0.7
-		if SimRole.is_defensive(p.role):
-			squeeze = 1.6
-		elif not SimRole.is_attacking(p.role):
-			squeeze = 1.0
-		phase_shift = lerpf(3.0, 9.0, tactics.tempo) * squeeze
-	elif ctx.possession_team >= 0:
-		phase_shift = -lerpf(4.5, 0.5, tactics.press_intensity)
+	#
+	# Both halves are computed and crossfaded on `phase`. Branched, this was the
+	# largest jump of the four -- a centre-half's push is +11 m with the ball and
+	# -2.5 without it, so his station crossed thirteen metres of pitch in one
+	# sixtieth of a second at every change of hands, and did it again on the way
+	# back. The magnitudes are unchanged; only the arrival is.
+	var squeeze: float = 0.7
+	if SimRole.is_defensive(p.role):
+		squeeze = 1.6
+	elif not SimRole.is_attacking(p.role):
+		squeeze = 1.0
+	var phase_shift := lerpf(
+		-lerpf(4.5, 0.5, tactics.press_intensity),
+		lerpf(3.0, 9.0, tactics.tempo) * squeeze,
+		phase)
 	x += phase_shift
 
 	# A defender never positions behind their own goal line.
@@ -701,10 +789,13 @@ static func shape_position(ctx: SimContext, p: SimPlayer, ball_at: Vector3 = SHA
 ##
 ## `ball_x` is the ball in this player's canonical frame, so "his own half" is
 ## simply a negative number and the same expression works at either end.
-static func _build_up_width(ctx: SimContext, p: SimPlayer, ball_x: float) -> float:
-	if ctx.possession_team != p.team:
+static func _build_up_width(ctx: SimContext, p: SimPlayer, ball_x: float, phase: float = 0.0) -> float:
+	if phase <= 0.0:
 		return 1.0
-	var depth: float = clampf(-ball_x / maxf(ctx.pitch.half_length * BUILD_UP_DEPTH, 1.0), 0.0, 1.0)
+	# `phase` multiplies the depth rather than gating on it. Gated, a full-back
+	# standing 23 m off centre went to 31 and back in one tick at every change of
+	# hands -- eight metres of station, which is the single largest of the four.
+	var depth: float = clampf(-ball_x / maxf(ctx.pitch.half_length * BUILD_UP_DEPTH, 1.0), 0.0, 1.0) * phase
 	if p.role == SimRole.CB or p.role == SimRole.FB:
 		return lerpf(1.0, BUILD_UP_WIDTH, depth)
 	if p.role == SimRole.DM or p.role == SimRole.CM or p.role == SimRole.AM:
@@ -997,10 +1088,22 @@ static func _support_press_point(ctx: SimContext, p: SimPlayer) -> Vector3:
 	var base := ball + toward_goal / d * 7.0
 	# Fan out to the side of the ball this player already occupies, so two
 	# support pressers do not stand on each other.
+	#
+	# Latched for the length of the press. Recomputed from his position every
+	# tick, the sign flips whenever he is anywhere near the line through the ball
+	# -- and the two points are ten metres apart, so his target crossed the pitch
+	# and came back. It was the last errand naming a point nobody could stand on:
+	# `Holding the shape` measured `press` at 4 to 9 m/s and changing its mind on
+	# 34-40% of consecutive samples, where every other arm had come under 3.5.
+	# The same fix, and the same reason, as the chase assignment's own stagger.
 	var lateral := Vector3(-toward_goal.z, 0.0, toward_goal.x) / d
-	var side: float = signf(lateral.dot(p.pos - ball))
+	var side: float = _press_side[p.id] if p.id < _press_side.size() else 0.0
 	if is_zero_approx(side):
-		side = 1.0
+		side = signf(lateral.dot(p.pos - ball))
+		if is_zero_approx(side):
+			side = 1.0
+		if p.id < _press_side.size():
+			_press_side[p.id] = side
 	return ctx.pitch.clamp_to_pitch(base + lateral * side * 5.0, 1.0)
 
 
@@ -1041,6 +1144,7 @@ static func _run_in_behind(ctx: SimContext, p: SimPlayer, shape: Vector3) -> Vec
 	# two: a striker glued to the offside line stops offering anything else.
 	var depth: float = minf(target_depth, current + 9.0)
 	p.making_run = true
+	p.errand = Errand.SHOULDER
 	return Vector3(depth * dir, shape.y, shape.z)
 
 
@@ -1048,6 +1152,21 @@ static func _run_in_behind(ctx: SimContext, p: SimPlayer, shape: Vector3) -> Vec
 const SUPPORT_RADIUS := 12.0
 ## Nobody further than this from the ball bothers to come and support it.
 const SUPPORT_REACH := 34.0
+## How far a man will travel to do it.
+##
+## Support is a few steps from where he stands, not a place on a circle. It used
+## to return the ring outright: every man level with or behind the ball whose
+## station was between 12 and 34 m from it was put on one 12 m circle round the
+## ball, which is a relocation of up to 22 m and, for a 4-3-3, four or five men
+## at once. `The clump` and `Holding the shape` between them are that stated
+## twice -- the ten outfielders standing on six cells of a fifteen-cell grid, and
+## a `support` target moving at 5.3 m/s with its man 13.7 m behind it, because a
+## circle round the ball travels at the speed of the ball.
+##
+## Stepped instead, the ring becomes a gradient: the man at 15 m arrives at
+## supporting distance, the man at 30 m comes to 23 and stays in his band, and
+## nobody is asked for a journey he cannot finish before the ball has gone.
+const SUPPORT_STEP := 7.0
 
 
 ## Players near the ball come and offer a short option.
@@ -1059,7 +1178,10 @@ const SUPPORT_REACH := 34.0
 static func _support_adjust(ctx: SimContext, p: SimPlayer, shape: Vector3) -> Vector3:
 	if ctx.possession_player == p.id:
 		return shape
-	var ball := ctx.ball.ground_pos()
+	# The shape's ball, like every other station rule: coming short is about where
+	# play is, not about a ball that is in the air. Read live, the whole ring flew
+	# with every pass and no one on it was ever standing still.
+	var ball := ctx.shape_ball
 	var away := shape - ball
 	away.y = 0.0
 	var d := away.length()
@@ -1071,9 +1193,10 @@ static func _support_adjust(ctx: SimContext, p: SimPlayer, shape: Vector3) -> Ve
 	var dir := ctx.pitch.attack_dir(p.team)
 	if (shape.x - ball.x) * dir > 6.0:
 		return shape
-	# Come to supporting distance along the line they already occupy, so the
-	# shape keeps its angles instead of everyone converging on the same spot.
-	return ball + away / d * SUPPORT_RADIUS
+	# Come along the line they already occupy, so the shape keeps its angles
+	# instead of everyone converging on the same spot, and come only a few steps.
+	p.errand = Errand.SUPPORT
+	return shape - away / d * minf(SUPPORT_STEP, d - SUPPORT_RADIUS)
 
 
 ## In possession: attackers climb the local gradient of control x threat, and
@@ -1086,6 +1209,7 @@ static func _attacking_adjust(ctx: SimContext, p: SimPlayer, shape: Vector3) -> 
 	var offer := SimOffBall.point_for(ctx, p)
 	if offer != Vector3.INF:
 		p.making_run = SimOffBall.is_running_in_behind(ctx, p)
+		p.errand = Errand.OFFER
 		return offer
 	shape = _support_adjust(ctx, p, shape)
 	# Drifting into a pocket is not a relocation, it is a few metres off a
@@ -1094,6 +1218,7 @@ static func _attacking_adjust(ctx: SimContext, p: SimPlayer, shape: Vector3) -> 
 	# is the ascent, made deliberately and then committed to.
 	var drift := SimOffBall.drift_for(ctx, p)
 	if drift != Vector3.ZERO:
+		p.errand = Errand.DRIFT
 		return ctx.pitch.clamp_to_pitch(shape + drift, 1.0)
 	if not SimRole.is_attacking(p.role) and p.role != SimRole.CM and p.role != SimRole.FB:
 		return shape
@@ -1102,11 +1227,27 @@ static func _attacking_adjust(ctx: SimContext, p: SimPlayer, shape: Vector3) -> 
 	# the 10 Hz movement cadence doubled the cost of the most expensive thing in
 	# the module for no change in behaviour.
 	if ctx.tick_index - p.value_offset_tick < SimConsts.VALUE_FIELD_TICKS * ctx.config.decision_stride():
+		if p.value_offset != Vector3.ZERO:
+			p.errand = Errand.ASCENT
 		return shape + p.value_offset
 
 	# The probes are a few metres apart, so the players who could contest any of
 	# them are the same set. Gather it once rather than per probe.
 	ctx.value.begin_local(ctx, shape, PROBE_DISTANCE + 15.0)
+	# **Built, measured and reverted: the incumbent may not be the point he is
+	# already going to.** `PROBE_MARGIN` defends the station, and the obvious
+	# reading is that it is defending a point he has already left -- a man with a
+	# probe either side of him flips between the two, and `Holding the shape`
+	# measured the point an `ascent` man was running at moving at 7.7 m/s, faster
+	# than he can run, leaving him eleven metres off it. Starting `best` at
+	# `shape + p.value_offset` instead fixed exactly that: the target came down to
+	# 4.7-6.2 m/s and the gap to 7.8-9.4 m over three seeds.
+	#
+	# It also stopped the attack. Touches in the final third went to 0%, 12%, 2%
+	# against 28%, 9%, 13%, and touches in the opposition box to 0, 0, 0 against
+	# 6, 3, 1. The ascent is what climbs a man toward goal; made sticky, it holds
+	# him wherever he first found value and the side never arrives. Whatever damps
+	# it has to leave the climb intact, which a margin on the incumbent does not.
 	var best := shape
 	var best_value := ctx.value.value_at_local(ctx, shape, p.team) * PROBE_MARGIN
 	# Four probes, clamped: a local ascent, not a search. Attackers drifting to
@@ -1119,6 +1260,8 @@ static func _attacking_adjust(ctx: SimContext, p: SimPlayer, shape: Vector3) -> 
 			best = point
 	p.value_offset = best - shape
 	p.value_offset_tick = ctx.tick_index
+	if best != shape:
+		p.errand = Errand.ASCENT
 	return best
 
 
@@ -1142,7 +1285,11 @@ static func _hold_the_line(ctx: SimContext, p: SimPlayer, shape: Vector3) -> Vec
 	# Pull each defender toward the shared line, then step it up by the trap.
 	var own_depth := ctx.pitch.scale_point(team.formation.homes[clampi(p.slot, 0, team.formation.size() - 1)]).x
 	var aligned: float = line_depth + (formation_depth - own_depth) * 0.6
-	var ball_far: float = clampf((p.dist_to(ctx.ball.ground_pos()) - 18.0) / 22.0, 0.0, 1.0)
+	# The shape's ball. Where a back line holds its trap is a station like any
+	# other, and read live it was the last thing in this function driven at the
+	# speed of a pass -- worth up to `offside_trap * 5` metres of line height,
+	# arriving as fast as the ball crossed the eighteen-metre band.
+	var ball_far: float = clampf((SimConsts.horizontal_length(p.pos - ctx.shape_ball) - 18.0) / 22.0, 0.0, 1.0)
 	aligned += tactics.offside_trap * 5.0 * ball_far
 	return Vector3(aligned * dir, shape.y, shape.z)
 
@@ -1154,6 +1301,7 @@ static func _defensive_adjust(ctx: SimContext, p: SimPlayer, shape: Vector3) -> 
 	var mark := _assign_mark(ctx, p)
 	if mark < 0:
 		return shape
+	p.errand = Errand.MARK
 	p.marking_target = mark
 	var opponent := ctx.players[mark]
 	var opp_pos := SimPerception.believed_pos(ctx, p, opponent)
@@ -1171,9 +1319,38 @@ static func _defensive_adjust(ctx: SimContext, p: SimPlayer, shape: Vector3) -> 
 	var station := goal_side
 	if to_ball.length() > 0.1:
 		station = goal_side + to_ball.normalized() * 1.1
-	# Blend with the shape so marking never drags the block apart.
+	# Blend with the shape so marking never drags the block apart, and go with a
+	# man only as far as the ball makes him a threat. Away from the ball a
+	# defender holds his zone and keeps half an eye on whoever is in it.
 	var pull: float = clampf(ctx.tactics(p.team).press_intensity * 0.5 + 0.35, 0.0, 0.9)
+	pull *= mark_tightness(SimConsts.horizontal_length(opp_pos - ctx.ball.ground_pos()))
 	return shape.lerp(station, pull)
+
+
+## How near the ball a man has to be before his marker goes with him.
+##
+## Inside `MARK_TIGHT_BALL` the ball can reach him at once, and that is the
+## moment marking is for. Beyond `MARK_LOOSE_BALL` he is not receiving the next
+## pass and following him is how a block comes apart.
+##
+## This was the largest single force taking the side out of its shape, and the
+## instrument that found it is `diagnose`'s `Holding the shape`: marking was 40%
+## of every outfielder-sample, the marker's own station stood 31.6 m from the
+## ball and the marker stood 25.4 m from it, which is ten defenders each drawn a
+## net six metres toward the ball for no reason but that somebody was standing
+## there. Flat man-marking at any distance also has no answer to a side that
+## simply moves: the block goes with it and the shape is whatever the opposition
+## drew.
+const MARK_TIGHT_BALL := 16.0
+const MARK_LOOSE_BALL := 40.0
+## What is left of the pull out there. Not nothing -- a defender still leans
+## toward the man in his zone, he just does not travel with him.
+const MARK_ZONAL := 0.3
+
+
+static func mark_tightness(opponent_to_ball: float) -> float:
+	var t: float = clampf((opponent_to_ball - MARK_TIGHT_BALL) / (MARK_LOOSE_BALL - MARK_TIGHT_BALL), 0.0, 1.0)
+	return lerpf(1.0, MARK_ZONAL, t)
 
 
 ## Nearest unclaimed opponent in this player's zone. Deliberately simple: a

@@ -374,6 +374,75 @@ called rough since it was written, easing at last. **One sanity range is broken 
 it is the held one:** corners at 0.02 a team a match, which needs a defender to put
 the ball behind and is **5**.
 
+**Built 2026-08-16, second half of the day: the shape.** Two instruments and one
+cause. `diagnose` gained `The clump` — the density the eye sees rather than the
+extent `The width` measures — and `Holding the shape`, which puts the formation's
+own point beside where the man ended up, split by which arm of
+`SimMovement._recompute_target` took him there. It found the side standing a mean
+11 m off its shape, every arm alike, and the second table said why: the point each
+man was running at was moving at 4 to 7 m/s against 1.9 of shape-holding pace.
+**The shape was defined faster than a footballer can run**, because
+`shape_position` read the live ball and every station slides with it.
+`ctx.shape_ball` follows the ball at 3 m/s now, and only the shape reads it.
+Marking was made zonal away from the ball in the same pass — it is 40% of every
+outfielder-sample and was the largest single arm out of shape.
+
+Then the same question of the four remaining arms, which the block had ranked:
+`drift` naming a point moving at 7.9 m/s, `ascent` 7.7, `support` 5.3, `press`
+changing its mind on 47% of consecutive samples. **One of the four was the cause
+of three.** `_support_adjust` returned the ring outright — every man level with
+or behind the ball and inside `SUPPORT_REACH` put on one 12 m circle round it,
+four or five at a time, and a circle round the ball travels at the speed of the
+ball. It is also the base `drift` and `ascent` are computed on top of, so both
+inherited its motion. Stepped instead of teleported (`SUPPORT_STEP`), and reading
+the shape's ball like every other station rule, all three came down together.
+`press` was the only one left, and its side-of-the-ball sign was recomputed every
+tick: a presser near the line through the ball flipped it and his target crossed
+ten metres. Latched for the length of the press.
+
+**Where that left it, three seeds, against the start of the day:**
+
+| | before | after |
+|---|---|---|
+| off its own shape | 11.0 m | 8.7 m |
+| of that, errand | 11.2 m | 9.0 m |
+| net pull onto the ball | 6.0 m | 3.6 m |
+| teammates within 8 m, of ten | 3.7 | 2.5 |
+| cells of fifteen occupied | 6.5 | 7.1 |
+| most in one cell | 3.2 | 2.8 |
+| of twenty inside one 12 m circle | 5.7 | 4.8 |
+| every arm's target, bar the chase | 4-8 m/s | 1.5-3.4 m/s |
+| mean speed | 2.7 m/s | 2.7 m/s |
+
+**The picture followed the mechanism this time**, which the first cut's did not.
+
+**And then the station's own jumps.** The shape has an attacking form and a
+defending one, and four things switched between them on
+`possession_team == p.team` — `ball_pull_shift`'s midfield hold,
+`_build_up_width`, `lateral_pull` and the phase shift — worth fifteen metres of
+station between them and arriving in a single tick at every change of hands. A
+mean cannot see a once-a-turnover teleport, so `Holding the shape` gained the
+column that can: the share of samples where the station outran a sprinter.
+`SimContext.shape_phase` eases the switch over 2.5 s, and with
+`SHAPE_PHASE_SECONDS` set to nothing as an ablation the old behaviour comes back
+exactly: **1.4%, 1.3%, 0.7% of samples against 0.7%, 0.6%, 0.3%**, halved on
+every seed. Mean speed came down with it, 2.7 m/s to 2.4, and the side ended
+0.6 m closer to its own targets. What is left is item 7.
+
+**One thing was got wrong on the way and is worth keeping.** The first cut gave
+`lateral_pull` `_build_up_width`'s depth ramp, on the reasoning that build-up
+width and build-up lateral pull are the same idea. They are, but that ramp only
+reaches full strength in the defensive third, and four fifths of the football is
+in the middle third — so it quietly put the possessing side back near
+`BALL_PULL_Z` almost everywhere and undid the owner's own 0.16-to-0.10 dial. It
+cost 0.8 m of closing onto the ball on all three seeds before the block caught
+it. `BUILD_UP_FADE` is a 12 m band at the halfway line instead. **A smoothing
+that changes where a constant applies is not a smoothing.**
+
+The subject in one line: **a positioning rule is answerable for how fast the
+point it names moves**, and its corollary — **a boolean in one is a station that
+teleports.**
+
 **Tried, measured and reverted — results, not gaps.** Each is left in the code with
 its numbers, because the next reader of the proposal will reach for the same thing:
 
@@ -422,6 +491,12 @@ line, which is **5**.
    which `chains` does not. At n=1 the switch has read 0% and 25% in one day.
 6. **`QUOTA` behind, decoy and second** — show and space are now measured, these
    three are not.
+7. **What is left of the station's motion is the leash, and it is meant.** The
+   four possession switches are eased (`SimContext.shape_phase`); the stations
+   that still outrun a sprinter, 0.3 to 0.9% of samples, are `SHAPE_BALL_LEASH`
+   dragging the shape behind a ball hit sixty metres. That is the one moment a
+   side really does turn and run, so it stays until somebody watching says
+   otherwise.
 
 **The defensive pass — next, not now.** Held deliberately; each costs goals, and
 the attacking pass is allowed to run high until they land. **5** first — it is

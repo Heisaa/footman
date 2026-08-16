@@ -2563,6 +2563,352 @@ static func _team_width(ctx: SimContext) -> void:
 		])
 
 
+## The pitch is cut into this many channels across and bands along, and the ten
+## outfielders are counted into the grid. Five and three because that is how a
+## coach draws it: two half-spaces, two flanks, a middle, and three thirds.
+const GRID_CHANNELS := 5
+const GRID_BANDS := 3
+## Two shirts closer than this are standing on each other. A footballer's
+## nearest teammate is rarely inside it and never for long.
+const CLOSE_MATE := 8.0
+
+
+## The clump, as the eye sees it: how far a man is from the nearest shirt of his
+## own colour, how much of the pitch his side is standing on, and how many
+## bodies of both colours are inside one circle round the ball.
+##
+## `The width` measures the possessing side's z-extent, which two men on either
+## touchline satisfy while the other eight stand in a ring round the carrier.
+## This is the density question instead, and it is asked of both sides, because
+## what the owner watches is twenty-two shirts converging and a defending side
+## swarming is half of that.
+##
+## `nearest mate` is the mean over the ten outfielders of the distance to the
+## closest of the other nine. `cells` is how many of the %d x %d grid cells the
+## ten are spread across, and `biggest` the most of them in any one cell -- a
+## side properly spread occupies eight or nine cells with two in the fullest, a
+## clump three or four with five. `crowd` counts every outfielder of both sides
+## within `WIDTH_NEAR` of the ball, which is the picture rather than one team's
+## half of it.
+##
+## Off the trace, so it owes the sim nothing. Possession is inferred the way
+## `_team_width` infers it, so dead-ball and in-flight samples drop out.
+static func _the_clump(ctx: SimContext) -> void:
+	var trace := ctx.telemetry.trace
+	if trace.size() < 2:
+		return
+	var full := ctx.pitch.half_length * 2.0
+	var wide := ctx.pitch.half_width * 2.0
+	# Row 0 is the side in possession, row 1 the side without it.
+	var n := PackedFloat32Array()
+	var mate_sum := PackedFloat32Array()
+	var close_sum := PackedFloat32Array()
+	var cells_sum := PackedFloat32Array()
+	var biggest_sum := PackedFloat32Array()
+	var crowd_sum := PackedFloat32Array()
+	n.resize(2)
+	mate_sum.resize(2)
+	close_sum.resize(2)
+	cells_sum.resize(2)
+	biggest_sum.resize(2)
+	crowd_sum.resize(2)
+	var both_sum := 0.0
+	var both_n := 0.0
+	var counts := PackedInt32Array()
+	counts.resize(GRID_CHANNELS * GRID_BANDS)
+	for i in trace.size():
+		var sample := trace[i]
+		if sample.size() != ctx.players.size() + 1:
+			continue
+		var ball := sample[0]
+		var carrier := -1
+		var best := OWN_BALL
+		for pid in ctx.players.size():
+			var p := ctx.players[pid]
+			if p.is_keeper or not p.on_pitch:
+				continue
+			var d := SimConsts.horizontal_length(sample[pid + 1] - ball)
+			if d < best:
+				best = d
+				carrier = pid
+		if carrier < 0:
+			continue
+		var holder := ctx.players[carrier].team
+		var both := 0.0
+		for team in 2:
+			var row: int = 0 if team == holder else 1
+			for c in counts.size():
+				counts[c] = 0
+			var mates := 0.0
+			var mate_total := 0.0
+			var close := 0.0
+			var crowd := 0.0
+			for pid in ctx.team_players[team]:
+				var p := ctx.players[pid]
+				if p.is_keeper or not p.on_pitch:
+					continue
+				var at: Vector3 = sample[pid + 1]
+				var nearest := INF
+				for other in ctx.team_players[team]:
+					if other == pid:
+						continue
+					var q := ctx.players[other]
+					if q.is_keeper or not q.on_pitch:
+						continue
+					nearest = minf(nearest, SimConsts.horizontal_length(sample[other + 1] - at))
+				if not is_inf(nearest):
+					mates += 1.0
+					mate_total += nearest
+					if nearest < CLOSE_MATE:
+						close += 1.0
+				# The grid is read in pitch coordinates and never flipped: which
+				# end a side is attacking does not change how spread out it is.
+				var cx: int = clampi(int((at.x + ctx.pitch.half_length) / full * float(GRID_BANDS)), 0, GRID_BANDS - 1)
+				var cz: int = clampi(int((at.z + ctx.pitch.half_width) / wide * float(GRID_CHANNELS)), 0, GRID_CHANNELS - 1)
+				counts[cx * GRID_CHANNELS + cz] += 1
+				if SimConsts.horizontal_length(at - ball) < WIDTH_NEAR:
+					crowd += 1.0
+					both += 1.0
+			if mates <= 0.0:
+				continue
+			var used := 0.0
+			var biggest := 0.0
+			for c in counts.size():
+				if counts[c] > 0:
+					used += 1.0
+				biggest = maxf(biggest, float(counts[c]))
+			n[row] += 1.0
+			mate_sum[row] += mate_total / mates
+			close_sum[row] += close
+			cells_sum[row] += used
+			biggest_sum[row] += biggest
+			crowd_sum[row] += crowd
+		both_sum += both
+		both_n += 1.0
+	if n[0] <= 0.0:
+		return
+	print("\nThe clump  (off the trace, both sides; %d cells of a %d x %d grid, %.0f m circle round the ball)"
+		% [GRID_CHANNELS * GRID_BANDS, GRID_BANDS, GRID_CHANNELS, WIDTH_NEAR])
+	print("  %-14s %13s %11s %8s %9s %8s" % [
+		"side", "nearest mate", "under %.0f m" % CLOSE_MATE, "cells", "biggest", "crowd",
+	])
+	var names := ["in possession", "defending"]
+	for row in 2:
+		if n[row] <= 0.0:
+			continue
+		print("  %-14s %11.1f m %10.1f %8.1f %9.1f %8.1f" % [
+			names[row], mate_sum[row] / n[row], close_sum[row] / n[row],
+			cells_sum[row] / n[row], biggest_sum[row] / n[row], crowd_sum[row] / n[row],
+		])
+	if both_n > 0.0:
+		print("  and %.1f of the 20 outfielders stand inside that one circle" % (both_sum / both_n))
+
+
+## Distance from a man's own station at which he has stopped holding it. Wide
+## enough that the shape's own deadband and the jog back to it are inside it.
+const OFF_STATION := 8.0
+
+## Above this a station is moving faster than the man on it can run flat out, so
+## whatever it is doing is not something he can follow. A shade under the
+## engine's own top speed, which is 7.5 m/s before sharpness.
+const SPRINT_SPEED := 8.0
+
+
+## How far the side is from the shape it was given, and which errand took it
+## there.
+##
+## `The lines`, `The width` and `The clump` all say what the shape looked like.
+## None of them can say whether that *was* the shape: `SimMovement.shape_position`
+## slides every station with play, so a back four squeezed into the middle third
+## may be exactly where the formation asked or nowhere near it, and both read the
+## same off the trace. This is the only block that has both numbers side by side.
+##
+## The distance from the station splits in two and the split is the point.
+## `pulled` is how far the errand moved his *target* off the formation's point --
+## the shape being overridden. `behind` is how far he is from that target -- the
+## shape being asked for and not reached. They add up to `off station`, and they
+## are different faults with different fixes.
+##
+## The errand is stamped by the branch of `SimMovement._recompute_target` that
+## took him, so an arm that stops firing stops appearing here -- which is
+## `docs/DIAGNOSTICS.md` link 0, a counter on each arm of the branch.
+##
+## The reading: a side is holding a shape when most of its player-seconds are on
+## `station` with a small `pulled`. A large `pulled` on a big share is a
+## formation that is decoration; a large `behind` is one nobody can keep up with.
+static func _holding_shape(ctx: SimContext) -> void:
+	var shapes := ctx.telemetry.shape_trace
+	var targets := ctx.telemetry.target_trace
+	var errands := ctx.telemetry.errand_trace
+	var trace := ctx.telemetry.trace
+	if shapes.size() < 2 or shapes.size() != trace.size():
+		return
+	var dt := float(SimConsts.TRACE_TICKS) / float(SimConsts.TICK_HZ)
+	var arms := SimMovement.ERRAND_NAMES.size()
+	var n := PackedFloat32Array()
+	var off_sum := PackedFloat32Array()
+	var pull_sum := PackedFloat32Array()
+	var behind_sum := PackedFloat32Array()
+	var ball_sum := PackedFloat32Array()
+	var station_ball_sum := PackedFloat32Array()
+	var moved_sum := PackedFloat32Array()
+	var station_moved_sum := PackedFloat32Array()
+	var moved_n := PackedFloat32Array()
+	var switched := PackedFloat32Array()
+	var jumped := PackedFloat32Array()
+	var pairs := PackedFloat32Array()
+	var far := PackedFloat32Array()
+	n.resize(arms)
+	moved_sum.resize(arms)
+	station_moved_sum.resize(arms)
+	moved_n.resize(arms)
+	switched.resize(arms)
+	jumped.resize(arms)
+	pairs.resize(arms)
+	off_sum.resize(arms)
+	pull_sum.resize(arms)
+	behind_sum.resize(arms)
+	ball_sum.resize(arms)
+	station_ball_sum.resize(arms)
+	far.resize(arms)
+	var roles := SimRole.NAMES.size()
+	var role_n := PackedFloat32Array()
+	var role_off := PackedFloat32Array()
+	var role_station := PackedFloat32Array()
+	var role_far := PackedFloat32Array()
+	role_n.resize(roles)
+	role_off.resize(roles)
+	role_station.resize(roles)
+	role_far.resize(roles)
+	for i in shapes.size():
+		var sample := trace[i]
+		var station := shapes[i]
+		var target := targets[i]
+		var arm := errands[i]
+		if sample.size() != ctx.players.size() + 1 or station.size() != ctx.players.size():
+			continue
+		var ball := sample[0]
+		for pid in ctx.players.size():
+			var p := ctx.players[pid]
+			if p.is_keeper or not p.on_pitch:
+				continue
+			var e: int = clampi(arm[pid], 0, arms - 1)
+			var d := SimConsts.horizontal_length(sample[pid + 1] - station[pid])
+			n[e] += 1.0
+			off_sum[e] += d
+			pull_sum[e] += SimConsts.horizontal_length(target[pid] - station[pid])
+			behind_sum[e] += SimConsts.horizontal_length(sample[pid + 1] - target[pid])
+			ball_sum[e] += SimConsts.horizontal_length(sample[pid + 1] - ball)
+			station_ball_sum[e] += SimConsts.horizontal_length(station[pid] - ball)
+			# How fast the point he is running at is itself running away. A target
+			# that moves faster than a footballer cannot be occupied at any pace,
+			# and then the gap to it is a fact about the target rather than about
+			# him -- which is the difference between "he is too slow" and "he is
+			# being sent somewhere new ten times a second".
+			#
+			# Measured only across pairs where he was on the same errand, because a
+			# target that jumps when the errand changes is the errand changing, and
+			# that is counted separately as `switched`. Mixed together, an arm that
+			# is perfectly steady while it lasts reads as chaos because it keeps
+			# being handed over.
+			if i > 0 and targets[i - 1].size() == ctx.players.size():
+				if errands[i - 1][pid] == arm[pid]:
+					moved_sum[e] += SimConsts.horizontal_length(target[pid] - targets[i - 1][pid]) / dt
+					var station_speed := SimConsts.horizontal_length(station[pid] - shapes[i - 1][pid]) / dt
+					station_moved_sum[e] += station_speed
+					# A mean cannot see a discontinuity: a station that teleports
+					# fifteen metres once a turnover and stands still the rest of
+					# the time reads as a gentle drift. This counts the samples
+					# where it outran a sprinter, which is the fault itself.
+					if station_speed > SPRINT_SPEED:
+						jumped[e] += 1.0
+					moved_n[e] += 1.0
+				else:
+					switched[e] += 1.0
+				pairs[e] += 1.0
+			if d > OFF_STATION:
+				far[e] += 1.0
+			var r: int = clampi(p.role, 0, roles - 1)
+			role_n[r] += 1.0
+			role_off[r] += d
+			if d > OFF_STATION:
+				role_far[r] += 1.0
+			if e == SimMovement.Errand.STATION:
+				role_station[r] += 1.0
+	var total := 0.0
+	for e in arms:
+		total += n[e]
+	if total <= 0.0:
+		return
+	print("\nHolding the shape  (every outfielder every sample: where the formation put him against where he was)")
+	print("  the last two are the whole clump question: a station further from the ball than the")
+	print("  man standing on it is an errand that pulled him in, and ten of those is the swarm")
+	print("  %-10s %7s %12s %9s %9s %14s %8s %9s" % [
+		"errand", "share", "off station", "pulled", "behind",
+		"ball: station", "him", "pulls in",
+	])
+	var order := []
+	for e in arms:
+		order.append(e)
+	order.sort_custom(func(a, b): return n[a] > n[b])
+	var off_all := 0.0
+	var pull_all := 0.0
+	var behind_all := 0.0
+	var ball_all := 0.0
+	var station_ball_all := 0.0
+	for e in order:
+		if n[e] <= 0.0:
+			continue
+		off_all += off_sum[e]
+		pull_all += pull_sum[e]
+		behind_all += behind_sum[e]
+		ball_all += ball_sum[e]
+		station_ball_all += station_ball_sum[e]
+		# The share and the gap multiplied: how many of the side's mean six metres
+		# of closing-in this arm is responsible for. It sums to the total below,
+		# so the arms can be ranked against each other rather than read one at a
+		# time -- an arm that pulls a man ten metres in on 2% of samples is not
+		# the swarm, and one that pulls six on 40% is.
+		print("  %-10s %6.0f%% %10.1f m %7.1f m %7.1f m %12.1f m %6.1f m %7.2f m" % [
+			SimMovement.ERRAND_NAMES[e], 100.0 * n[e] / total, off_sum[e] / n[e],
+			pull_sum[e] / n[e], behind_sum[e] / n[e],
+			station_ball_sum[e] / n[e], ball_sum[e] / n[e],
+			(station_ball_sum[e] - ball_sum[e]) / total,
+		])
+	print("  the side is a mean %.1f m from its own shape: %.1f m of errand, %.1f m of not getting there"
+		% [off_all / total, pull_all / total, behind_all / total])
+	print("  the shape stands %.1f m from the ball and the side stands %.1f m from it: %.1f m of closing in"
+		% [station_ball_all / total, ball_all / total, (station_ball_all - ball_all) / total])
+	# Whether a man can hold his position at all is a separate question from where
+	# he was asked to stand, and no pace will close a gap to a point that is
+	# moving faster than he can run. A footballer tops out near 8 m/s.
+	print("  and could he hold it  (how fast the point he was running at moved, while he stayed on that errand)")
+	print("  %-10s %13s %12s %11s %11s" % [
+		"errand", "station m/s", "target m/s", "over %.0f m/s" % SPRINT_SPEED, "switched",
+	])
+	var jumped_all := 0.0
+	var moved_all := 0.0
+	for e in order:
+		if pairs[e] <= 0.0:
+			continue
+		var mn: float = maxf(moved_n[e], 1.0)
+		jumped_all += jumped[e]
+		moved_all += moved_n[e]
+		print("  %-10s %11.1f %12.1f %10.1f%% %10.0f%%" % [
+			SimMovement.ERRAND_NAMES[e], station_moved_sum[e] / mn, moved_sum[e] / mn,
+			100.0 * jumped[e] / mn, 100.0 * switched[e] / pairs[e],
+		])
+	print("  the station outran a sprinter on %.1f%% of samples" % (100.0 * jumped_all / maxf(moved_all, 1.0)))
+	print("  %-10s %13s %12s %11s" % ["role", "off station", "on station", "over %.0f m" % OFF_STATION])
+	for r in roles:
+		if role_n[r] <= 0.0:
+			continue
+		print("  %-10s %11.1f m %11.0f%% %10.0f%%" % [
+			SimRole.NAMES[r], role_off[r] / role_n[r],
+			100.0 * role_station[r] / role_n[r], 100.0 * role_far[r] / role_n[r],
+		])
+
+
 static func _giving_up_ground(ctx: SimContext) -> void:
 	var trace := ctx.telemetry.trace
 	if trace.size() < 2:
@@ -4101,6 +4447,8 @@ static func report(m: SimMatch) -> void:
 	_safe_options(ctx)
 	_team_lines(ctx)
 	_team_width(ctx)
+	_the_clump(ctx)
+	_holding_shape(ctx)
 	_giving_up_ground(ctx)
 	_new_mechanics()
 
