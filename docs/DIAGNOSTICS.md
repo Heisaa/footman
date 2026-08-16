@@ -134,6 +134,14 @@ break on its own:
 outcome, and a link broken at 2 makes every measurement below it noise. The first
 three cost nothing and answer most complaints on their own.
 
+**Link 0, which is not in the table because it is not a measurement.** Whether the
+code runs at all. `BOX_EASE` sat behind an earlier `return` in the same function
+and never executed once; `_cross_coming` returned `1.0` on every path into two
+call sites that read it as a truth value. Both read as healthy in every block
+here, because a run to a point is a run to a point and the diagnostics see the
+point. The check is a counter on each arm of the branch — `Which idea he had`
+carries one now — and it costs a line.
+
 **Two things the chain cannot say.** That a term is *right* — `_pass_success`'s
 `control` factor passes links 1 to 3 outright and was worth nothing, because the
 balls it liked did not arrive any more often. And that it is about the right

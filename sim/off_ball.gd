@@ -322,6 +322,13 @@ static var box_why := PackedInt32Array()
 ## same one and the box is one body deep.
 const BOX_TARGETS := ["near post", "penalty spot", "far post"]
 static var box_target := PackedInt32Array()
+## And whether he is holding short of it or attacking it, which is `BOX_EASE`
+## against `BOX_EASE_CROSS`. Counted because both halves of this timing have now
+## been dead once each -- the ease unreachable behind the onside return, the
+## trigger a float read as a truth value -- and a run to a point looks the same
+## from outside either way.
+const BOX_EASE_NAMES := ["holding", "attacking the cross"]
+static var box_ease := PackedInt32Array()
 
 
 static func _note_choice(kind: int, total: float) -> void:
@@ -490,12 +497,14 @@ static func point_for(ctx: SimContext, p: SimPlayer) -> Vector3:
 	# defender, which is the flag. Measured at n=20, offsides were running at 13.3
 	# a team per football-90 against a §11 ceiling of 12, and the two runs that
 	# were given triggers this week are the two that go past the line.
-	if (kind == BEHIND or kind == BOX) and ctx.ball.intended_target != p.id:
-		var dir := ctx.pitch.attack_dir(p.team)
-		var line: float = SimReferee.believed_offside_line(ctx, p) * dir
-		if p.pos.x * dir > line - ONSIDE_MARGIN:
-			return Vector3((line - ONSIDE_MARGIN) * dir, 0.0, _point[p.id].z)
-		return _point[p.id]
+	#
+	# The two are applied in that order and not as alternatives. Written as an
+	# early return for the onside case, this branch answered for every box runner
+	# who was not the man the ball in flight was for -- which is all of them, most
+	# ticks -- and `BOX_EASE` below was never reached at all. Probed: nought ticks
+	# of either arm over three matches. A dead mechanic reads as a live one in
+	# every diagnostic, because a run to a point is a run to a point.
+	var point := _point[p.id]
 	# Timing the arrival at a cross: until the ball is up, he holds short of the
 	# spot -- arriving as the ball does, not standing on the six-yard line
 	# waiting for it.
@@ -504,9 +513,16 @@ static func point_for(ctx: SimContext, p: SimPlayer) -> Vector3:
 		# Unless the man wide has the ball and is about to hit it, in which case
 		# the run is already late: measured, the man a cross was aimed at was 8 to
 		# 16 m off it when it came down, and six of those metres were this line.
-		var ease: float = BOX_EASE_CROSS if _cross_coming(ctx, p.team) else BOX_EASE
-		return _point[p.id] - Vector3(d2 * ease, 0.0, 0.0)
-	return _point[p.id]
+		var coming := _cross_coming(ctx, p.team)
+		box_ease[1 if coming else 0] += 1
+		var ease: float = BOX_EASE_CROSS if coming else BOX_EASE
+		point -= Vector3(d2 * ease, 0.0, 0.0)
+	if (kind == BEHIND or kind == BOX) and ctx.ball.intended_target != p.id:
+		var dir := ctx.pitch.attack_dir(p.team)
+		var line: float = SimReferee.believed_offside_line(ctx, p) * dir
+		if p.pos.x * dir > line - ONSIDE_MARGIN:
+			return Vector3((line - ONSIDE_MARGIN) * dir, 0.0, point.z)
+	return point
 
 
 ## The committed drift off his station, or Vector3.ZERO. Added to whatever the
@@ -1294,26 +1310,22 @@ static func _box_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3) 
 ## cross was aimed at was 6 to 16 m off it when it came down**, because the run
 ## and the ball were being decided in different moments.
 ##
-## So the same fact, priced instead of gating. The striker goes when he sees the
-## winger's head come up: with a man wide and deep on the ball the run into the
-## box is worth several times what it is worth on any other phase, and without one
-## it is still available, at what the grass is worth. The lift is on the run, not
-## on the cross, because a cross into an empty box is the fault this pair has.
-const CROSS_ON := 1.0
-
-
-static func _cross_coming(ctx: SimContext, team: int) -> float:
+## So the same fact, kept as timing rather than as worth. Priced -- the run into
+## the box lifted while a man is wide -- it was measured at 6 headed attempts for
+## 23 shots and 13 goals and struck; `docs/THE_FOOTBALL.md`, the knobs. What is
+## left is when the striker goes: he sets off as the winger's head comes up, and
+## on any other phase he holds, because where a man should be standing is not what
+## a value knob answers.
+static func _cross_coming(ctx: SimContext, team: int) -> bool:
 	var carrier := ctx.possession_player
 	if carrier < 0:
-		return 1.0
+		return false
 	var c: SimPlayer = ctx.players[carrier]
 	if c.team != team or c.is_keeper:
-		return 1.0
+		return false
 	if c.pos.x * ctx.pitch.attack_dir(team) <= ctx.pitch.half_length / 3.0:
-		return 1.0
-	if absf(c.pos.z) <= ctx.pitch.half_width * SimDecision.CROSS_WIDE:
-		return 1.0
-	return CROSS_ON
+		return false
+	return absf(c.pos.z) > ctx.pitch.half_width * SimDecision.CROSS_WIDE
 
 
 ## The three points of the box, in the frame of the side attacking it.
@@ -1749,6 +1761,9 @@ static func _clear() -> void:
 	box_target.resize(BOX_TARGETS.size())
 	for i in box_target.size():
 		box_target[i] = 0
+	box_ease.resize(BOX_EASE_NAMES.size())
+	for i in box_ease.size():
+		box_ease[i] = 0
 	_claim_tick = [-1, -1]
 	_claims = [{}, {}]
 	chose_seen.resize(KIND_NAMES.size())

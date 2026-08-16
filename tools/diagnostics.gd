@@ -2068,6 +2068,17 @@ static func _which_idea_he_had() -> void:
 				100.0 * float(SimOffBall.box_target[i]) / float(box_runs)])
 		print("    and which point he went to:  %s  (%d runs)" % [
 			",  ".join(where), box_runs])
+	# And whether the timing on that run is running at all. Zero on both is the
+	# mechanic dead rather than the mechanic quiet.
+	var ease_ticks := 0
+	for c in SimOffBall.box_ease:
+		ease_ticks += c
+	var eased := PackedStringArray()
+	for i in SimOffBall.box_ease.size():
+		eased.append("%s %d" % [SimOffBall.BOX_EASE_NAMES[i], SimOffBall.box_ease[i]])
+	print("    and while the ball was on the grass he was:  %s  (ticks)" % ",  ".join(eased))
+	if ease_ticks == 0 and box_runs > 0:
+		print("      -- runs were made and neither arm of the timing ran")
 
 
 ## And which test refused it, in the order the function applies them.

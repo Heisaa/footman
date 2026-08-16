@@ -251,15 +251,26 @@ were being decided in different moments by two copies of the same three points:
   anybody to the far post: 15% went there, now 19-29%.
 - **The cross is aimed at the man who claimed the point**, from the same
   `box_targets` the runs use, and still only if he can be there inside the flight.
-- **The runner stops easing when a man is wide with his head up.** `BOX_EASE` held
-  him six metres short until the ball left the grass, which is most of why he was
-  never on it; `BOX_EASE_CROSS` is two.
+- **The runner stops easing when a man is wide with his head up.** `BOX_EASE` holds
+  him six metres short of the point until the ball is up; `BOX_EASE_CROSS` is two.
 
 Nearest of ours at the drop went 9.3/11.6/6.2 m to **4.8/6.8/8.2**, and a quarter
 of crosses now have a man within three metres of the ball, which is a quarter and
 not most. **The outcome over 24 seeds went the other way**: shots 294 to 271 and
 headed attempts 41 to 27, inside-the-box share 70% to 60%, goals 103 to 106. The
 mechanism moved and the football did not follow it, which is the honest state.
+
+**That third point was not running, and neither was the thing it modified.** Both
+were found by probe rather than by reading, and both looked healthy from outside.
+`_cross_coming` returned a float on every path — `1.0` for no and `CROSS_ON`, by
+then also `1.0`, for yes — so the trigger read true always. Behind it, `point_for`
+answered the onside question with an early `return`, which every box runner who is
+not the man a ball in flight is for takes, so `BOX_EASE` was never reached at all:
+**nought ticks of either arm over three matches**. The ease and the onside clamp
+compose now, in that order, and `Which idea he had` counts the two arms so a dead
+one says so. So the six metres above were never held and cannot be why he was late;
+the figures in this section were measured with the timing absent, and the run's
+timing has not yet had a match with it present.
 
 What is left of 29 is a set-piece question as much as an open-play one: a large
 share of football's headed attempts come from corners, and corners are 0.02 a team
@@ -369,8 +380,10 @@ its numbers, because the next reader of the proposal will reach for the same thi
   a man is wide with the ball. It is the third time this shape has been measured:
   more men in the box, fewer in the link. Over 24 matches it bought 6 headed
   attempts (27 to 33) and cost 23 shots and 13 goals. The same fact is kept as
-  *timing* — `_cross_coming` still decides how far short the runner holds — because
-  where a man should be standing is not what a value knob answers.
+  *timing* — `_cross_coming` decides how far short the runner holds — because
+  where a man should be standing is not what a value knob answers. The constant is
+  gone; the function it gated returns a `bool`, which is what the two call sites
+  were reading it as while it returned `1.0` on every path.
 
 **Struck on reading the code:** the two "dead pass factors"; three of the "four
 constant knobs"; `territory`; **4**, an observation wanting the owner's seed rather
