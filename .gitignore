@@ -5,6 +5,9 @@
 # Moments marked from the debug overlay: a note about one run, not a source file
 /bookmarks/
 
+# Diagnostic output: what one run measured, void as soon as the next lands.
+/runs/
+
 # Agent worktrees. They live inside the repo and are whole checkouts of it, so a
 # `git add -A` taken while one exists commits a second copy of the project into
 # the first -- 444 files, nested, the last time it happened.
