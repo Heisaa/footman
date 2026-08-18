@@ -17,6 +17,7 @@ extends SceneTree
 ##   perf        timing of a full-fidelity match
 ##   tactics     two contrasting plans compared (the §10 Phase 5 exit criterion)
 ##   replay      every decision around one tick of one seed, in words
+##   control     the pass model's contest against what the engine does with it
 ##   behind      the ball in behind, struck in a geometry set rather than sampled
 ##
 ## Flags worth knowing: --minutes M (counts are normalised per 90, so a short
@@ -69,6 +70,8 @@ func _initialize() -> void:
 			BoxBench.run(flags)
 		"strike":
 			StrikeBench.run(flags)
+		"control":
+			ControlBench.run(flags)
 		_:
 			printerr("unknown command: %s" % command)
 			quit(2)

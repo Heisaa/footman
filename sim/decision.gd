@@ -2131,7 +2131,34 @@ static func _pass_success(ctx: SimContext, player: SimPlayer, from: Vector3, to:
 	# used to take conflated "is that grass contested now" with "who touches
 	# the arriving ball first", and the engine's own resolution rule
 	# (`SimDuel._act`) answers only the second.
-	var space := ctx.value.control_at_pass(ctx, to, player.team, travel, receiver.id, player.id)
+	var space := ctx.value.control_at_pass(
+		ctx, to, player.team, travel, receiver.id, player.id, into_space)
+	# A ball into space has two contests in it and is only as good as the weaker.
+	#
+	# The line above asks whether he wins the race to the grass. It cannot ask
+	# whether he gets away to start running, because it is fought several metres
+	# beyond him -- and the man marking him is not at that point and never will
+	# be. Between the two, nobody priced the marker at all: `_lane_survival` hands
+	# the last `LANE_TAIL` metres to this function as the arrival's business, and
+	# this function is looking somewhere the marker is not.
+	#
+	# Measured, `./run.sh control` block D: a defender standing one metre from a
+	# receiver running onto the ball took it 100 times out of 100, and the model
+	# said 0.52. At two metres 100% and 0.54, at three 98% and 0.56. Crossing the
+	# line at pace rather than standing changed the shape and not the size, so it
+	# is the plain marker that was missing rather than the man on the move.
+	#
+	# So the same contest is asked a second time where he is standing now, and the
+	# ball takes the worse of the two. A ball to feet is unaffected: there the two
+	# points are the same point.
+	#
+	# On the *sharp* clock, whatever kind of ball this is. `AIMED_TAU` is earned by
+	# the receiver being on the spot already, and at this point he is -- it is the
+	# grass under his feet. The race for the space beyond him is the one that is
+	# graded, and it is asked on the line above.
+	if into_space:
+		space = minf(space, ctx.value.control_at_pass(
+			ctx, receiver.pos, player.team, travel, receiver.id, player.id, false))
 	# Whether the receiver is there when it is -- and only for a ball to feet.
 	#
 	# For a ball into space the two lines above and this one are the same question
@@ -2233,6 +2260,42 @@ const IN_TIME_WIDTH_PER_M := 0.05
 ## weighed at a fifth, which is a real charge. Two metres is where the double count
 ## lives.
 const FEET_TAIL := 2.0
+
+
+## The shape of the interception along a lane: how sharp the line between a
+## defender who gets a leg to it and one who does not, and how late he can be and
+## still take it half the time.
+##
+## Read off `./run.sh control`, block B — one defender standing on the line,
+## halfway along a 12 m pass, `l` metres to the side of it. The engine takes the
+## ball 100% at half a metre, 98% at one and a half, 82% at two, 50% at three,
+## 10% at four and a half and never at six. On the old shape — a width of 0.28
+## and no lateness at all — the model called those same seven balls 0.25, 0.33,
+## 0.50, 0.61, 0.77, 0.89, 0.94: too generous by 25 to 48 points everywhere
+## inside three metres, and right only once the defender was too far away to
+## matter. A ball threaded half a metre past a man was priced as a one-in-four
+## risk and was in fact a certainty.
+##
+## All three come off those rows. `LANE_TAU` is the width the transition actually
+## has, and it is less than half what was there. `LANE_LATE` is the centre: a
+## defender level with the ball takes it far more often than half the time,
+## because a leg goes into the lane and the ball has to pass *through* him —
+## arriving three tenths of a second after it is still a fifty-fifty.
+##
+## Fitted, the same seven rows read 0.00, 0.01, 0.05, 0.14, 0.51, 0.89, 0.98
+## against a ball kept 0.00, 0.00, 0.02, 0.18, 0.50, 0.90, 1.00.
+##
+## `AIMED_STEP_IN` in `SimValueField` is the same measurement one factor along,
+## and the two say opposite-looking things for one reason: at the *end* of a pass
+## the receiver is standing on the ball and a defender has to beat him to it,
+## while *along* it there is nobody in the way and a defender only has to reach
+## it. The same bench measures both, and it should be re-read when the defensive
+## pass lands.
+const LANE_TAU := 0.125
+const LANE_LATE := 0.29
+## And what being well placed is worth, as time rather than as odds: the gap
+## in effective arrival between a defender who reads it and one who does not.
+const LANE_POSITION := 0.08
 
 
 ## What the receiver's first touch is worth, as a discount on the ball rather than
@@ -2424,11 +2487,17 @@ static func _lane_survival(ctx: SimContext, player: SimPlayer, from: Vector3, to
 		if gap > 1e-3:
 			meet = point + toward / gap * minf(SimConsts.CONTROL_RANGE, gap)
 		var opp_time := SimValueField.time_to_arrive(o, meet, SimValueField.reaction_of(o))
-		var margin := ball_time - opp_time
+		# Positioning is a head start, not a discount on the chance. Read as a
+		# multiplier on `p_cut` it put a floor under every lane in the match --
+		# `1 - 0.97 * 0.75` at worst -- so a defender standing half a metre off
+		# the line came back at 0.17 survival while the engine took that ball
+		# 100 times out of 100. Read as time it says the same thing about the
+		# man without saying anything about a ball that has no chance.
+		var margin := ball_time - opp_time \
+			+ lerpf(-LANE_POSITION, LANE_POSITION, o.attrs.positioning)
 		if margin <= -0.9:
 			continue
-		var p_cut: float = clampf(1.0 / (1.0 + exp(-(margin) / 0.28)), 0.0, 0.97)
-		p_cut *= lerpf(0.75, 1.0, o.attrs.positioning)
+		var p_cut: float = clampf(1.0 / (1.0 + exp(-(margin + LANE_LATE) / LANE_TAU)), 0.0, 0.995)
 		survival *= 1.0 - p_cut
 	return clampf(survival, 0.0, 1.0)
 

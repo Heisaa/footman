@@ -407,7 +407,22 @@ static func _assign_chasers(ctx: SimContext) -> void:
 			var p := ctx.players[_rank_ids[i]]
 			if p.dist_to(ball_ground) <= tactics.engage_distance():
 				_chase_role[_rank_ids[i]] = CHASE_SUPPORT
-		if carrier >= 0 and ctx.players[carrier].team == team and _chase_role[carrier] == CHASE_NONE:
+		# The man on the ball goes to the ball whatever the ranking said, because
+		# he is chasing his own touch. Not the man who has just passed it: his
+		# touch was played to somebody else, and it is that man's to go and get.
+		#
+		# `possession_player` is derived from the last touch and stays with the
+		# passer while the ball is within three metres of him and uncontested --
+		# most of the flight of a short pass, and almost none of a long one. So
+		# this line used to hand the passer a second CHASE_PRIMARY in a phase
+		# whose cap is one, and he set off after the ball he had just played.
+		# Measured on seed 7: on passes under twelve metres the passer was a
+		# designated chaser for 42% of the flight, and his side had two primary
+		# chasers for 35% of it, against 12% and 11% for a pass of 12 to 25 m.
+		var passed_it_on := ctx.ball.intended_target >= 0 \
+			and ctx.ball.intended_target != carrier
+		if carrier >= 0 and ctx.players[carrier].team == team \
+				and _chase_role[carrier] == CHASE_NONE and not passed_it_on:
 			_chase_role[carrier] = CHASE_PRIMARY
 		if loose:
 			_add_nearby_chaser(ctx, team, receiver, ball_ground)

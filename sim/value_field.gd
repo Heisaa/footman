@@ -17,6 +17,51 @@ const GRID_X := 16
 const GRID_Z := 12
 ## Logistic slope for converting an arrival-time difference into a probability.
 const CONTROL_TAU := 0.42
+
+## The same, for an aimed ball, and the step-in an opponent has to have in hand
+## to take one. Both belong to `control_at_pass` and to nothing else; a neutral
+## race for loose grass keeps `CONTROL_TAU`.
+##
+## A race for a loose ball is genuinely graded — half a second down and you still
+## have a share of it. A ball played to a man standing on the spot is not: either
+## you are in front of it or he takes it, because `SimDuel._act` gives an arriving
+## ball to whoever touches it first and he is already there. Read off
+## `./run.sh control`, which strikes the ball instead of arguing about it: the
+## engine cuts out 92% of balls with a defender a metre off the receiver, 48% at
+## two, 20% at three, 5% at four and **none at all past that**. On the neutral
+## clock the same eight rows came back 0.10, 0.16, 0.23, 0.30, 0.51, 0.70, 0.87,
+## 0.98 — a gentle ramp over the whole twenty metres, smooth where the football
+## is a cliff and steep where it is flat. That is the whole of why `space` had
+## 0.07 of spread between the balls that arrived and the balls that did not,
+## while carrying a mean of 0.60: it was discounting every pass in the match by
+## forty points and telling them apart by nothing.
+##
+## `AIMED_STEP_IN` is the shift and `AIMED_TAU` is the sharpness, and they are one
+## idea: a defender takes an aimed ball by getting *in front of* it and planting,
+## which costs him a fixed time he has to have in hand, and once he has it he
+## takes it nearly always. Drawing level with the flight is arriving second.
+##
+## Fitted to those eight rows and nothing else. `said` against what the engine
+## then did now reads 0.11 / 0.52 / 0.86 / 0.96 / 1.00 against a ball kept 0.08 /
+## 0.52 / 0.80 / 0.95 / 1.00. What is left above four metres is the receiver's own
+## first touch, which `receiver_touch` owns and this term should not answer for.
+##
+## **`AIMED_TAU` is for a ball to feet only.** The winner-take-all clock is
+## earned by one fact and one only — the receiver is standing on the spot, so he
+## touches it first — and a ball played into space has no such man. There the
+## contest is a real race between two runners, which is what `CONTROL_TAU` is,
+## and `control_at_pass` picks between them on `into_space`. Run on the sharp
+## clock, a ball in behind with a defender a metre off the line came back at
+## 0.003: the defender reaches the landing spot with a second to spare, and
+## winner-take-all turns that into a certainty. `AIMED_STEP_IN` applies to both,
+## because getting in front of the ball is what an interception is either way.
+##
+## **All of it is measured against the defence this engine has now.** When the
+## defensive pass lands and defenders step into lanes, the cliff moves out and
+## these move with it. `./run.sh control` is ten seconds and is how.
+const AIMED_STEP_IN := 0.70
+const AIMED_TAU := 0.10
+
 ## Peak expected threat, at roughly the penalty spot.
 const XT_PEAK := 0.38
 
@@ -257,8 +302,8 @@ var _dist := PackedFloat32Array()
 ## a third and a man two seconds behind counts for nothing. Crowding is therefore
 ## local in time as well as in space — bodies standing about at the far post do
 ## not dilute anything.
-func _weigh(t: float, t_best: float) -> float:
-	return exp(-(t - t_best) / CONTROL_TAU)
+func _weigh(t: float, t_best: float, tau: float = CONTROL_TAU) -> float:
+	return exp(-(t - t_best) / tau)
 
 
 ## Probability that `team` wins the ball at `point`.
@@ -308,9 +353,12 @@ func control_at_time(ctx: SimContext, point: Vector3, team: int, ball_time: floa
 ## share the gap works out to is one reaction time through `CONTROL_TAU`,
 ## which is why the charge is the defender's own reaction and not a new
 ## constant.
+## `into_space` says the man it is for is running onto it rather than standing on
+## it, and it decides which clock the contest is settled on. See `AIMED_TAU`.
 func control_at_pass(ctx: SimContext, point: Vector3, team: int, ball_time: float,
-		receiver_id: int, ignore_id: int = -1) -> float:
-	return _control(ctx, point, team, maxf(ball_time, 0.0), ignore_id, receiver_id)
+		receiver_id: int, ignore_id: int = -1, into_space: bool = false) -> float:
+	return _control(ctx, point, team, maxf(ball_time, 0.0), ignore_id, receiver_id,
+		CONTROL_TAU if into_space else AIMED_TAU)
 
 
 ## Scratch arrival times, parallel to `_dist`.
@@ -325,7 +373,7 @@ var _time := PackedFloat32Array()
 ## pays no reaction, and every opponent pays his own reaction again as he
 ## arrives late on the ball. Negative for the neutral race, which is every
 ## caller except the pass model.
-func _control(ctx: SimContext, point: Vector3, team: int, ball_time: float, ignore_id: int, aimed_id: int = -1) -> float:
+func _control(ctx: SimContext, point: Vector3, team: int, ball_time: float, ignore_id: int, aimed_id: int = -1, tau: float = CONTROL_TAU) -> float:
 	var n := ctx.players.size()
 	if _dist.size() != n:
 		_dist.resize(n)
@@ -370,12 +418,16 @@ func _control(ctx: SimContext, point: Vector3, team: int, ball_time: float, igno
 				# it, and flooring him level with the waiting receiver priced
 				# exactly that ball as a coin flip (measured: balls aimed within
 				# 2 m of an opponent went 4% to 10% of attempts while the floor
-				# was in). What he pays is the read: the charge ramps in
-				# over his reaction, so a man who beats the flight by a full
-				# reaction keeps all of his earliness and a man arriving level is
-				# a reaction behind the touch.
-				var r := reaction_of(p)
-				t += clampf(t - ball_time + r, 0.0, r)
+				# was in).
+				#
+				# What he pays is the step-in, and he pays all of it. It used to
+				# be the read alone, ramped over his reaction, and that charged
+				# nothing at all to the man who matters: a defender drawing level
+				# with the flight came out *earlier* than the receiver the ball
+				# was played to, so he won the weighting outright at a distance
+				# where the engine has him taking the ball 0% of the time.
+				# Arriving with the ball is arriving second. See `AIMED_STEP_IN`.
+				t += AIMED_STEP_IN
 			else:
 				t = maxf(t, ball_time)
 		_time[i] = t
@@ -397,7 +449,7 @@ func _control(ctx: SimContext, point: Vector3, team: int, ball_time: float, igno
 	for i in n:
 		if is_inf(_dist[i]):
 			continue
-		var w := _weigh(_time[i], best)
+		var w := _weigh(_time[i], best, tau)
 		if ctx.players[i].team == team:
 			w_own += w
 		else:
