@@ -109,6 +109,16 @@ usage: ./run.sh <command> [args]
                             display (SHOT_AT, SHOT_SPEED, SHOT_PATH)
   poses                     render every animation state side by side, labelled
                             (POSE_U picks where in each arc to freeze)
+  parade [--seed N]         a rank of that seed's players, close up, turning,
+      [--page N] [--still]  each captioned with number, name, height and
+      [--turn DEG]          appearance seed. The squad is the match squad, so a
+      [--face 0-4]          note taken here holds in view3d at the same seed.
+      [--hair N]            Keys: < > page, N / P seed, SPACE turn, 1-5
+      [--shot PATH]         expression, Q quit. --shot renders one frame from a
+                            virtual display and quits, for a look without a
+                            screen; --turn 180 --still shows the backs. --hair
+                            puts cut N and the next three on the rank instead of
+                            the men's own, so five pages walk the library.
   check                     parse-check every script, presentation included
   import                    refresh Godot's script class cache
 
@@ -338,6 +348,17 @@ case "$cmd" in
 		xvfb-run -a "$GODOT" res://presentation/match_3d.tscn --resolution 1920x1080 \
 			-- --poses --pose-u "${POSE_U:-0.55}" --shot 1 --shot-path "$out" "$@"
 		echo "wrote $out"
+		;;
+	parade)
+		# The rank of players, close up and numbered. Same squad a match of that
+		# seed uses. With --shot it renders one frame from a virtual display and
+		# quits, so it can be looked at without a screen; without it, it opens a
+		# window and waits for keys.
+		if printf '%s\n' "$@" | grep -qx -- "--shot"; then
+			exec xvfb-run -a "$GODOT" res://presentation/parade.tscn \
+				--resolution 1920x1080 -- "$@"
+		fi
+		exec "$GODOT" res://presentation/parade.tscn -- "$@"
 		;;
 	check)
 		# Parse-checks every script in the project, presentation included.

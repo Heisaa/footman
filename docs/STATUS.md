@@ -121,6 +121,31 @@ which is Phase 6's exit criterion and only the owner can call it.
   `match_view_3d.QUALITY_LADDER` walks 0.6 v 0.6, 1.0 v 1.0 and 1.0 v 0.6 across a
   session so that it can be watched.
 
+## The figures
+
+A look pass over the players, judged against two references: a Sokpop-style
+five-a-side game, and a rank of toy footballers. `DECISIONS.md` eighth to tenth
+carry the reasoning, including two reversals.
+
+Where it got to. Head 30-35% of height, scaled on two axes so a squad has long
+faces and wide ones; legs 0.50 of height, torso 0.27, thin limbs, small hands,
+rounded shoes, shorts to mid-thigh. Height and build draw from a bell with
+tails, so the giant is built like one. Hair is a shell pushed back off the skull
+plus pieces — curls, quiff, tufts, sideburns, widow's peak, a mass down the
+back. The nose is a bump on the head from a library of six, not a mark on the
+texture. Brows, eyes and mouth are per-player and independent of the five
+expressions, and the brows carry the expression, which is where a Mii gets its
+range. Kit trim — V-neck, cuffs, sock hoops — and a soft vinyl sheen on the
+figure only. No ink outline: §9.7's register governs the writing, not the art.
+
+`./run.sh parade --seed N` is the view they are judged in: four of that seed's
+players at reading distance, turning, captioned with number, name, height and
+appearance seed. `1-5` for the expressions, `--turn 180 --still` for the backs,
+`--shot out.png` for a frame with no display. The same squad `view3d --seed N`
+plays, so a note taken in one holds in the other.
+
+**Not yet judged by the owner.**
+
 ## What every figure here is worth
 
 **Everything is measured at `clock_rate` 10, and nothing is measured anywhere

@@ -84,6 +84,176 @@ afterwards. `PLAN.md` §11.4 is the statement of it. The goals sanity ceiling is
 defensive pass is one line. No tuning band was rewritten and nothing in `sim/`
 changed.
 
+### Eighth: smaller heads, and the register does not touch the art
+
+Made at the owner's direction over two passes. The first pass read §9.7 as an
+instruction about the *look* and put an ink outline, an eighties collar, cuffs, a
+sock turnover, a moustache and comic spectacles on the figure. The owner took all
+of it off again. That correction is the important half of this amendment.
+
+| Section | Was | Now | Why |
+|---|---|---|---|
+| §9.3 | Head roughly 35–40 % of total height | 30–35 % | The owner asked for it smaller. It lengthens the body, which is what carries a stride, and it is still far above a real man's three-and-a-bit, so the drawn expressions stay legible at match distance. |
+| §9.7 | "The register governs presentation, naming, copy and character generation" | The register governs the writing and the feel — naming, copy, the event log, what the game reports — and the generation behind them. **It does not govern the art.** | "Presentation" was read as "the models". The look is §9.3's flat-coloured toy — Sokpop, Mii, Animal Crossing — and a drawn line on it is the register leaking into the art. The comic is in the tone of voice. |
+
+What the pass left in place, none of it touching `sim/`:
+
+- **Generation reaches the tails.** Height was a flat 1.62–1.95; it is now a bell
+  through 1.70–1.88 with a one-in-seven draw into 1.56–2.04, and build follows
+  height so the giant is built like one. A flat draw is how you get eleven
+  similar men.
+- **The head is not a ball.** Two scale axes off the seed, so a squad has long
+  faces and wide ones. Everything hanging off the head — face, hair, beard — is a
+  child of it and stretches with it, which is the Mii trick and free.
+- **Eyes and mouth are per-player.** Seven drawn eye shapes and seven mouths,
+  independent of the five expressions, so the neutral face a man wears for almost
+  the whole match is his own. Twenty-two identical pairs of dots was a clone army
+  with different hair.
+- **Fourteen hair styles** from a cap, a back mass, a fringe and a tuft, built
+  from a hairline rather than a scale — a cap whose lower edge crosses the drawn
+  eyes reads as a blindfold.
+- **The shirt number on the back**, and a sleeve on a short-sleeved shirt, which
+  read as a vest without one.
+
+Two drawing bugs were found by looking at the parade and fixed in passing:
+delight and despair were drawn upside down (arched-down eyes and a frowning
+"grin" on the delighted face, a smile on the despairing one), and the headband
+accessory was a disc across the face rather than a band round the head.
+
+### Ninth: the reference is the toy game and the Mii
+
+Made at the owner's direction, with two reference images: a Sokpop-style
+five-a-side game for the figures, and the Mii "choose a look-alike" grid for the
+faces. The note was that the hair looked like hats and the beards looked bad.
+
+Both were geometry problems with the same cause — a lump sitting on a head reads
+as a lump sitting on a head:
+
+- **Hair is now a sphere slightly larger than the skull, pushed back**, plus an
+  optional mass down the back. Two numbers do all of it: the radius is how much
+  hair there is, the push back is where the hairline lands. The previous version
+  built an ellipsoid from a hairline and sat it on the crown, which is a hat by
+  construction. Fourteen styles, from cropped to a big afro.
+- **Beards are gone**, and `PLAN.md` §9.3 no longer lists them. A sphere on the
+  jaw is a blob at any size and it covers the mouth, which is half the
+  expression. If facial hair comes back it belongs on the drawn face.
+- **The face got the Mii's range**: brows, eyes with whites and pupils as well as
+  plain dots, noses, and more mouths — all per-player and independent of the
+  expression. The **brows carry the expression**: lowered and driven in for
+  effort, raised for delight, outer ends dropped for despair, driven down hard
+  for anger. That is how a Mii gets range out of a face with no rig in it, and it
+  costs a two-pixel line.
+
+Two intermediate versions were wrong in instructive ways and are recorded so
+nobody tries them again: a shell only a few per cent over the skull and pushed
+well back shows as a **rim round the silhouette**, which is a swimming cap; and
+fixing that by giving every style volume produces **eleven afros**. Volume
+belongs to the two styles that want it, and the hairline does the rest.
+
+A second round on the same note, again at the owner's direction:
+
+- **The nose is a bump on the head**, as in the reference art, not a mark on the
+  texture. Six shapes, and a ruddy version of the man's own skin -- pink on a
+  pale face, warm red on a dark one, by an amount that varies per player. A
+  drawn nose at this size is a smudge; a bump catches the light. The colour is
+  derived from the skin rather than drawn from a table, because a pale pink
+  button on a dark face reads as a mistake.
+- **The face texture is drawn at four times the resolution and anti-aliased**
+  from each shape's own distance function. The style tables are unchanged: they
+  are written in a 32-square unit grid and scaled, so the resolution is one
+  constant. It costs about 4.5 ms to generate a face and they are cached, which
+  is a fraction of a frame the first time a player pulls a new expression.
+- **Hair colours are colours hair comes in.** The table carried a teal and a
+  violet, and half a squad looked like a bag of sweets.
+- The head and the hair are built at twice the polygon count of the body. The
+  head is the thing being looked at, and at the new face resolution a
+  twelve-sided sphere was the roughest edge in the frame.
+
+A third round, again the owner's: the nose became an upright **capsule** rather
+than a ball, the eyes went to **solid black shapes** -- whites and pupils were
+tried and are gone, because one dark mark carries further and a bead is a grey
+smudge at match distance -- and the face and head proportions were worked over.
+Heads are 28-33% of height rather than 30-35, and the shape range on both axes
+was narrowed so the extremes are a long face and a wide one rather than an egg
+and a melon.
+
+Then a fourth look, because the capsule could not be seen: it was sunk to 0.95
+of the head radius, so only its front showed and it was a ball again, and three
+of the six rows had a length under twice their radius, which **is** a sphere --
+that is what a capsule collapses to. They now stand fully proud of the skull at
+1.0 and every row clears the ratio. The nose colour was pushed further from the
+skin at the same time, and the drawn features moved a little lower and a little
+wider apart.
+
+The face is now **hung off the eye row** rather than positioned by eye. The owner
+asked for the eyes on the equator of the head, and nudging the quad up and down
+kept missing it, so the builder computes the offset from
+`SimFaceAtlas.EYE_ROW`: the drawn eye row sits a little above the middle of the
+texture, so the texture sits that much below the middle of the skull, and the
+eyes land on the equator exactly. Brows above and nose and mouth below follow
+from it, and the nose lengths were cut to fit the space that leaves.
+
+The spacing of the features is the part that took two goes. Pulling the eyes in
+to a fifth of a head-width apart made every man look pinched, and it is recorded
+here because it looks like the obvious fix for a face that reads as too spread
+out: the answer was the opposite, roughly a quarter to a third of the head
+between the pupils and the eyes drawn large, with the mouth brought up under the
+nose rather than down at the jaw.
+
+### Tenth: the toy-figure reference, and the trim comes back
+
+The owner supplied a rank of six toy footballers and asked for the figure to be
+closer to it. Two things follow, and one of them reverses part of the eighth
+amendment.
+
+**Proportions.** What made ours look top-heavy was never the head — measured
+against the reference the heads are much the same, a little under a third of
+height. It was a fat torso on short legs with boxing-glove hands. So: legs from
+0.46 of height to 0.50, torso from 0.30 to 0.27, shoulders narrower, limbs
+thinner, hands from half again the arm's radius to a tenth over it, arms longer
+so they hang to the bottom of the shorts, and the boot is a rounded shoe rather
+than a box — the last part of the figure that still read as Lego. The shorts now
+stop at mid-thigh with bare leg below, instead of running to the knee, which was
+a pair of trousers.
+
+**The trim comes back.** The eighth amendment took out a collar, cuffs and a
+sock turnover as eighties dressing. The reference has all three — a neckline in
+the second colour, a cuff at the sleeve, hoops near the top of the sock — so
+they are back, and the reasoning is corrected rather than quietly dropped: that
+trim is not period dressing, it is *how a football kit is drawn*, in blocks of
+two colours. What the eighth amendment was right about is unchanged: no ink
+outline, and the register stays out of the art.
+
+A second pass on the same reference took the rest of it, at the owner's
+direction to work hard on likeness:
+
+- **Hair is a shell plus pieces**, which is what the reference actually varies:
+  a cluster of nine or thirteen spheres for curls, a lobe swept up for a quiff,
+  small tufts for a tousled head, tabs at the temples for sideburns, a point at
+  the centre of the hairline for a widow's peak, and a mass down the back. One
+  sphere cannot be shaped into a curly head; nine of them are a curly head.
+- **A V-neck**, two bars laid on the chest and a band round the back. A ring is a
+  crew neck, and every figure in the reference wears a V. The first version
+  leaned the bars inward and the man wore a bow tie.
+- **Moustaches are back** -- two of the six reference figures wear one -- and the
+  **nose is skin-coloured again**, a shade off rather than red. The red came from
+  the other reference; this one has plain noses.
+- **Ears**, two small tabs where the head is widest.
+- **A soft sheen** on the figure only. The reference is moulded vinyl and the
+  highlight is most of what makes it read as an object. Scenery keeps the flat
+  material.
+- Everyone wears socks. `socks_high` used to leave a man bare-legged to the
+  ankle, which is not a thing.
+
+One process note, because it cost two rounds of the owner's time. The face-quad
+position was edited by string replacement three times and matched nothing all
+three times -- a comment had been inserted between the two lines the patch was
+anchored on, and the replace failed silently. The renders still changed, because
+other edits in the same batch did apply, so it looked like it had worked and was
+reported as working. The eyes-on-the-equator change in particular was reported
+done and was not. **Verify a targeted edit landed before reporting it**, and
+prefer rewriting a whole function to patching around a comment.
+
 ## Design calls made during the build
 
 **Waiting is a first-class option: an unpressured man is not rushed** (2026-08-14,

@@ -620,15 +620,49 @@ player the same size on screen wherever play is.
 
 ### 9.3 Characters
 
-- Six hundred to twelve hundred triangles. Head roughly 35–40 % of total height. Stubby limbs,
-  mitten hands, no separate fingers, no neck.
-- **No facial rig.** The face is two dots and a simple mouth on a small texture atlas, swapped
-  wholesale for expression — neutral, effort, delight, despair, anger. Expression swaps deliver an
-  enormous amount of character for almost no cost; use them constantly.
-- Hair, hats and beards are single-piece meshes drawn from a small library.
+- Six hundred to twelve hundred triangles. Head roughly 30–35 % of total height (amended — see
+  `DECISIONS.md`). Stubby limbs, mitten hands, no separate fingers, no neck.
+- **The look is the toy** — Sokpop, Mii, Animal Crossing. Smooth primitives, flat colour, no line
+  work, no texture beyond the face, no period dressing. §9.7's register does not reach the art.
+- **The head is three ellipsoids**: a skull longest top to bottom, a jaw filling out the cheeks and
+  chin, and a crown doming the top. One sphere stretched upright is an egg — pointed at both ends,
+  which a head is at neither.
+- **Variety comes from proportion and face**, not from detail: head size, head shape (the head is
+  scaled on two axes, and the face stretches with it), height, build, skin, hair, and the brows,
+  eyes, mouth and nose a player was born with.
+- **The nose is geometry, not a drawn mark**: a small upright capsule on the front of the head —
+  a nose has a length to it, and a ball is a clown's — from a library of shapes, in a ruddy version
+  of the man's own skin. Pink on a pale face, warm red on a dark one, varying per player.
+- **Eyes are solid black shapes.** No whites, no pupils: one dark mark carries further, and a white
+  with a pupil in it is a grey smudge at match distance. At this size an inked nose is a smudge between the eyes, and a bump
+  catches the light and does the whole job for one sphere.
+- **Hair colours are colours hair comes in** — black, browns, blonds, ginger, grey, white.
+- **Hair is a sphere a tenth or more larger than the skull, pushed back, plus pieces.** Every cut
+  carries volume: hair that merely skims the head is paint on the scalp, and the difference between
+  a full cut and an afro is the curls on top, not the shell. Radius is how much hair there is; the
+  push back is where the hairline lands; and on top of that go curls, a quiff,
+  tufts, sideburns, a widow's peak or a mass down the back. Nothing is perched on the crown — a
+  squashed ellipsoid sitting on top of a head is a hat, and reads as one every time.
+- **A soft sheen on the figure, and only the figure.** The reference is moulded vinyl; the highlight
+  is most of what makes it read as an object rather than a flat shape. Scenery stays dead flat.
+- **Generation reaches the tails.** Height clusters in the middle of a squad list and occasionally
+  draws a giant or a small one, and build follows height.
+- **No facial rig.** The face is drawn on a texture and swapped
+  wholesale for expression — neutral, effort, delight, despair, anger. It is generated at a
+  resolution the close-up view can stand and anti-aliased from the shapes' own distance functions,
+  so a curve is a curve rather than a staircase. Expression swaps deliver an
+  enormous amount of character for almost no cost; use them constantly. The *shape* of the eyes and
+  the mouth is per-player and independent of the expression: the neutral face a man wears for almost
+  the whole match is his own, and the expression is drawn over it. The **brows carry the
+  expression** — lowered and driven in for effort, raised for delight, outer ends dropped for
+  despair — which is the range a Mii gets out of a face with no rig in it.
+- Hair and hats are drawn from a small library of smooth pieces. No beards: a sphere on the jaw is
+  a blob at any size, and it swallows the mouth.
 - **Procedural appearance from a seed**, Mii-style: body type, skin tone, hair mesh and colour, face
   atlas index, accessory. A five-hundred-player database therefore has visual identity essentially
   for free — and memorable-looking players are what make the man-management layer land at all.
+- **Kit trim in the second colour**: a neckline, a cuff at the sleeve, hoops near the top of the
+  sock. Not period dressing — it is how a kit is drawn, in blocks of two colours.
 - Kits are flat two- or three-colour materials driven by a palette resource. Define a master palette
   of sixteen to twenty-four colours so the game stays coherent and can be re-skinned per competition.
 
@@ -694,8 +728,12 @@ That is a specification, not a mood board. What it asks for:
   the unfashionable club, the run of fixtures that has to be survived, the directors' box. Name and
   present it that way.
 
-The boundary, stated once: the register governs presentation, naming, copy and character generation.
-It governs nothing in `sim/`. A proposal that reads "and Hamish's shots should ignore the keeper" is
+The boundary, stated once: the register governs the **writing and the feel** — naming, copy, the
+event log, dialogue, what the game reports and how it reports it — and the character generation
+behind them. It governs nothing in `sim/`, **and it does not govern the art**. The look is §9.3's
+and only §9.3's: the flat-coloured toy. An ink outline, an eighties collar and a pair of comic
+spectacles were built here and taken straight back out, because a drawn line is the register
+leaking into the art. The comic is in the tone of voice, not on the models. A proposal that reads "and Hamish's shots should ignore the keeper" is
 a proposal to break §11 and is refused; a proposal that reads "a shot above some power, scored,
 plays the keeper-carried-into-the-net celebration and the log says so" is the same idea, correctly
 placed.
