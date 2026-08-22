@@ -355,8 +355,13 @@ case "$cmd" in
 		# quits, so it can be looked at without a screen; without it, it opens a
 		# window and waits for keys.
 		if printf '%s\n' "$@" | grep -qx -- "--shot"; then
-			exec xvfb-run -a "$GODOT" res://presentation/parade.tscn \
-				--resolution 1920x1080 -- "$@"
+			# The screen size is the frame size, and `--resolution` is not: the
+			# window fills whatever virtual screen it is given, so asking Godot
+			# for 1920x1080 on xvfb-run's default 1280x1024 screen produced a
+			# 640x480 shot -- four faces about fifty pixels wide, too small to
+			# judge a brow on, which is what this view exists for.
+			exec xvfb-run -a -s "-screen 0 1920x1080x24" \
+				"$GODOT" res://presentation/parade.tscn -- "$@"
 		fi
 		exec "$GODOT" res://presentation/parade.tscn -- "$@"
 		;;

@@ -401,9 +401,14 @@ static func _v_neck(spine: Node3D, shoulder: float, torso_h: float, trim: Materi
 	# a round torso -- braces rather than a collar -- because a straight box
 	# touching a curve touches it in one place only.
 	for side in [-1.0, 1.0]:
+		# Short, and high. At a length of 0.24 starting from 0.72 the V hung a
+		# third of the way down the chest with clear shirt above it, which is not
+		# a neckline at all -- it is a letter V printed on the front of the shirt.
+		# A neck opening starts at the collar and is most of the way shut again
+		# before the chest begins.
 		var bar := _box(
-			Vector3(torso_h * 0.042, torso_h * 0.24, shoulder * 0.34), trim)
-		bar.position = Vector3(side * shoulder * 0.18, torso_h * 0.72, shoulder * 0.55)
+			Vector3(torso_h * 0.042, torso_h * 0.17, shoulder * 0.34), trim)
+		bar.position = Vector3(side * shoulder * 0.16, torso_h * 0.85, shoulder * 0.55)
 		# Pitched back at the top as well as leaned out, because the chest is a
 		# dome and a straight bar on a dome only touches it in the middle. Without
 		# this the top of each bar hangs off the front of the shoulder in the air.

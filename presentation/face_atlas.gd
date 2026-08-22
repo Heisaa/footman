@@ -80,28 +80,28 @@ const EYE_STYLES := [
 ## drops below the outer one, `half` their half-length and `thick` their
 ## half-thickness. Style 0 is a man with no brows to speak of.
 ##
-## These are moulded ridges now, not a drawn line, and the thicknesses are up
-## accordingly: measured off the reference a brow is about a fifteenth of the
-## face deep, which was roughly twice what this table had when it was drawn with
-## a pen. A thin ridge is a scratch on the forehead.
+## **`half` and `thick` are both half-measures**, and getting that wrong is how
+## this table was last broken. Measured off the reference a brow is about 90
+## units long by 28 deep on a 420-unit face -- which in this 32-unit grid is a
+## `half` of 3.4 and a `thick` of 1.05, not 2.1. Reading the 28 as a half-depth
+## doubled every brow and produced a stubby oval about 1.7 times as long as it
+## was deep; the reference brow is a bar, better than three to one. If a brow
+## ever reads as a second pair of eyes, this ratio is why.
+##
+## `lift` is measured to the middle of the brow, so the gap over the eye is
+## `lift - thick - ry` and it wants to be about one unit -- the reference keeps
+## the brow close over the eye, not floating on the forehead. These lifts are the
+## originals plus 0.6, which is what the eyes growing by a quarter cost.
 const BROW_STYLES := [
 	{"lift": 0.0, "tilt": 0.0, "half": 0.0, "thick": 0.0},
-	{"lift": 6.5, "tilt": 0.0, "half": 3.0, "thick": 1.9},
-	{"lift": 6.5, "tilt": 0.0, "half": 3.4, "thick": 2.4},
-	{"lift": 7.1, "tilt": -0.7, "half": 3.2, "thick": 1.9},
-	{"lift": 6.5, "tilt": 0.7, "half": 3.4, "thick": 2.4},
-	{"lift": 7.5, "tilt": -1.4, "half": 3.0, "thick": 1.7},
-	{"lift": 6.1, "tilt": 0.9, "half": 3.0, "thick": 2.7},
-	{"lift": 7.1, "tilt": 0.0, "half": 4.0, "thick": 1.7},
+	{"lift": 5.6, "tilt": 0.0, "half": 3.0, "thick": 1.0},
+	{"lift": 5.6, "tilt": 0.0, "half": 3.4, "thick": 1.5},
+	{"lift": 6.2, "tilt": -0.7, "half": 3.2, "thick": 1.0},
+	{"lift": 5.6, "tilt": 0.7, "half": 3.4, "thick": 1.5},
+	{"lift": 6.6, "tilt": -1.4, "half": 3.0, "thick": 0.9},
+	{"lift": 5.2, "tilt": 0.9, "half": 3.0, "thick": 1.7},
+	{"lift": 6.2, "tilt": 0.0, "half": 4.0, "thick": 0.9},
 ]
-
-## `lift` is measured to the middle of the brow and `thick` reaches down from
-## there, so the two have to be read together: the gap over the eye is
-## `lift - thick - ry`, and it wants to be about one grid unit. The reference
-## keeps a brow close over the eye, not floating on the forehead. Both numbers
-## grew in the same pass -- eyes a quarter bigger, brows twice as deep -- and the
-## lifts here were raised to pay for both at once. Move either column and this is
-## the sum to redo.
 
 ## Mouths, for the face a player wears when nothing is happening. They sit
 ## closer under the nose than they did: the features were spread over the whole
