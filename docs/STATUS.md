@@ -154,13 +154,20 @@ moulded ridges in hair colour rather than ink, posed from the same table the fac
 is drawn against; eyes a quarter larger; fatter and more numerous curls with a
 skirt carried down past the ears; and a paper floor under the parade.
 
-**Not yet judged by the owner, and this is now a large unjudged pile.** Nothing
-in either pass has been looked at. Two things to watch for first, because they
-are the changes most likely to be wrong: whether a leg at 0.26 of height still
-reads as a stride from the match camera, which is exactly what the tenth
-amendment lengthened it to protect, and whether the moulded brows land where the
-drawn ones did — they are placed by arithmetic off the face grid, and that
-arithmetic has never been seen to produce anything.
+The figures have now been looked at in the parade, and a round of fixes came out
+of it that reading the code had not found: the shorts, the torso, the V-neck, the
+moustache and the hair lumps were all placement errors rather than values, and
+`DECISIONS.md` eleventh lists them. The moulded brows do land where the drawn
+ones did.
+
+**Still not judged by the owner**, and two things want his eye rather than mine.
+Whether a leg at 0.26 of height reads as a stride from the match camera — that is
+what the tenth amendment lengthened it to protect, and the parade cannot answer
+it because nobody runs in it. And whether the kit trim should be ink at all: it
+comes from `contrast_for`, which returns black against a light shirt, so a yellow
+kit gets a black collar, black cuffs and black sock hoops. It is correct football
+and it reads as the ink outline the eighth amendment threw out. Every kit in the
+owner's reference is trimmed in white.
 
 **Crease shading has not been measured.** It is a screen-space pass and `view3d`
 carries twenty-two figures. `./run.sh perf --profile` is the question if a frame
