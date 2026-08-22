@@ -313,7 +313,37 @@ What else the reference asked for, none of it touching `sim/`:
   finished. A shade under the background, so the figure has something to stand on
   and the softened contact shadow has somewhere to land.
 
-None of this has been looked at. It compiles; that is all that is known.
+A second round on the same reference, this time with the figures on screen. The
+owner kept the shoulderless torso -- the primitive reference has no shoulder line
+either -- and named the shorts, the faces and the hair as what was wrong.
+
+What looking found, none of which reading the code had:
+
+- **The shorts were an inner tube.** Every version had been a rounded solid, and
+  a rounded solid bulges wider than the hips and finishes in a curved lower edge.
+  A cylinder has a flat hem, and that one edge is most of what makes a garment
+  read as clothing rather than as padding.
+- **The torso was a ball in a shirt.** A capsule 0.37 high and 0.14 across is two
+  domes with almost no straight section between them. A cylinder with a soft cap
+  on top is the reference shirt: straight sides, round only at the shoulder.
+- **The V-neck was buried.** It had been tuned against a capsule, which narrows
+  towards the collar, so a bar set well inside the chest still broke the surface.
+  Against a cylinder of constant radius the same bar never surfaced at all and
+  showed as a small dark "w" mid-chest. Anything laid on the torso is now placed
+  against the torso's own radius.
+- **The moustache showed as two dots.** Centred at 0.88 of a head radius where
+  the skull reaches 0.97, it was inside the head except at its two widest points.
+- **Lumps sitting proud of the hair shell read as buds, not hair.** The tousled
+  cut put four spheres on a crown and looked like a topknot; so did the quiff's
+  grid of twenty. Overlapping spheres still meet in a valley, and a valley on a
+  crown is a bud either side of it. Both are flattened to break the shell rather
+  than sit on it. The afro is the exception and stays lumpy -- the reference perm
+  is lumpy.
+- **Short brows read as a second pair of eyes.** Against eyes a quarter bigger, a
+  bar near 3 half-units is just another dark oval; near 4 it is a brow.
+
+Every one of these is a placement or a primitive, not a value. None would have
+been found by reading, and none needed measuring -- they needed a picture.
 
 ## Design calls made during the build
 

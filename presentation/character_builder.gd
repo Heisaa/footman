@@ -165,19 +165,26 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	# middle. At 0.82 by 0.9 the capsule's height was barely twice its radius, so
 	# it was a sphere in all but name: widest at the belly, tapering back in at the
 	# chest, which is a pear. The widest part of a man is his shoulders.
-	var torso := _capsule(shoulder * 0.76, torso_h, shirt)
-	torso.position = Vector3(0.0, torso_h * 0.5, 0.0)
+	# A cylinder with a soft cap, not a capsule. At this height and width a
+	# capsule is two domes with almost no straight section between them -- a ball
+	# in a shirt. The reference shirt has straight sides and rounds over only at
+	# the shoulder, and the bottom hem is square because the shorts cover it.
+	var torso := _band(shoulder * 0.74, torso_h * 0.90, shirt)
+	torso.position = Vector3(0.0, torso_h * 0.45, 0.0)
 	spine.add_child(torso)
+	var shoulders := _sphere(shoulder * 0.74, shirt, true)
+	shoulders.scale = Vector3(1.0, 0.44, 1.0)
+	shoulders.position = Vector3(0.0, torso_h * 0.90, 0.0)
+	spine.add_child(shoulders)
 	# The shorts, in the kit's second colour, so the kit reads in two blocks.
 	#
-	# A flattened sphere rather than a capsule. `_capsule` floors the height at
-	# twice the radius, so a garment this wide and this short was silently turned
-	# back into a ball -- one hanging a fifth of a leg below the hip, bridging both
-	# thighs, with a curved hem straight across. That is a nappy, and in a white
-	# kit it is unmistakably one.
-	var hips := _sphere(shoulder * 0.62, shorts, true)
-	hips.scale = Vector3(1.0, 0.55, 0.95)
-	hips.position = Vector3(0.0, torso_h * 0.02, 0.0)
+	# A cylinder, so they have straight sides and a hem you can see. Every earlier
+	# version was a rounded solid -- a capsule, then a flattened sphere -- and
+	# both bulged wider than the hips and finished in a curved lower edge. That is
+	# an inner tube, and on a pale kit it is unmistakably a nappy. A garment has a
+	# flat hem; that one edge is most of what makes it read as clothing.
+	var hips := _band(shoulder * 0.66, leg_h * 0.46, shorts)
+	hips.position = Vector3(0.0, -leg_h * 0.06, 0.0)
 	spine.add_child(hips)
 
 	_v_neck(spine, shoulder, torso_h, trim)
@@ -340,9 +347,10 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 
 		# The leg of the shorts hangs lower than the seat does. That is what puts a
 		# notch between the legs; a seat that reaches further down than these fills
-		# the notch in and the shorts are one block again.
-		var short_leg := _capsule(limb * 1.3, leg_h * 0.19, shorts)
-		short_leg.position = Vector3(0.0, -leg_h * 0.07, 0.0)
+		# the notch in and the shorts are one block again. A cylinder for the same
+		# reason the seat is one -- it is the hem that reads.
+		var short_leg := _band(limb * 1.4, leg_h * 0.42, shorts)
+		short_leg.position = Vector3(0.0, -leg_h * 0.21, 0.0)
 		hip.add_child(short_leg)
 
 		var knee := Node3D.new()
@@ -401,22 +409,24 @@ static func _v_neck(spine: Node3D, shoulder: float, torso_h: float, trim: Materi
 	# a round torso -- braces rather than a collar -- because a straight box
 	# touching a curve touches it in one place only.
 	for side in [-1.0, 1.0]:
-		# Short, and high. At a length of 0.24 starting from 0.72 the V hung a
-		# third of the way down the chest with clear shirt above it, which is not
-		# a neckline at all -- it is a letter V printed on the front of the shirt.
-		# A neck opening starts at the collar and is most of the way shut again
-		# before the chest begins.
+		# Set out at the chest's own radius, not inside it. The torso used to be a
+		# capsule, which narrows towards the top, so a bar buried at 0.55 still
+		# broke the surface up near the collar. Against a cylinder of constant
+		# radius the same bar is simply inside the shirt, and all that showed was
+		# the two tips -- a small dark "w" printed mid-chest.
 		var bar := _box(
-			Vector3(torso_h * 0.042, torso_h * 0.17, shoulder * 0.34), trim)
-		bar.position = Vector3(side * shoulder * 0.16, torso_h * 0.85, shoulder * 0.55)
+			Vector3(torso_h * 0.040, torso_h * 0.19, shoulder * 0.30), trim)
+		bar.position = Vector3(side * shoulder * 0.17, torso_h * 0.86, shoulder * 0.70)
 		# Pitched back at the top as well as leaned out, because the chest is a
 		# dome and a straight bar on a dome only touches it in the middle. Without
 		# this the top of each bar hangs off the front of the shoulder in the air.
-		bar.rotation = Vector3(-0.4, 0.0, -side * 0.55)
+		bar.rotation = Vector3(-0.28, 0.0, -side * 0.55)
 		spine.add_child(bar)
-	# Closed round the back of the neck.
-	var back := _band(shoulder * 0.46, torso_h * 0.045, trim)
-	back.position = Vector3(0.0, torso_h * 0.93, 0.0)
+	# Closed round the back of the neck. Just outside the shirt for the same
+	# reason the bars are: at 0.46 of the shoulder this ring was inside a 0.74
+	# cylinder and never appeared at all.
+	var back := _band(shoulder * 0.755, torso_h * 0.035, trim)
+	back.position = Vector3(0.0, torso_h * 0.90, 0.0)
 	spine.add_child(back)
 
 
@@ -428,13 +438,19 @@ static func _v_neck(spine: Node3D, shoulder: float, torso_h: float, trim: Materi
 ## a sphere, which is what hid the shape the first time.
 ##
 ## Each row is [radius, length, height on the face, how far out, z scale].
+## Bigger and rounder than they were. On the reference the nose is one of the
+## three things you see at a glance, a soft rounded bump about an eighth of the
+## head across; ours were half that and drawn long, so they read as a small beak
+## rather than a button. Length still has to clear 2.05 times the radius or
+## `_capsule` floors it into a sphere -- which for the roundest rows here is very
+## nearly what is wanted anyway.
 const NOSE_LIBRARY := [
-	[0.090, 0.26, -0.14, 1.00, 1.05],  # a small straight one
-	[0.100, 0.28, -0.15, 0.99, 0.95],  # broader
-	[0.082, 0.24, -0.13, 1.01, 1.15],  # short and fine
-	[0.105, 0.32, -0.17, 0.99, 1.00],  # a big one
-	[0.080, 0.22, -0.12, 1.01, 1.00],  # a neat short one, high on the face
-	[0.110, 0.30, -0.16, 0.98, 0.95],  # broad
+	[0.118, 0.27, -0.13, 1.00, 1.05],  # a small straight one
+	[0.128, 0.30, -0.14, 0.99, 0.95],  # broader
+	[0.108, 0.24, -0.12, 1.01, 1.15],  # short and fine
+	[0.135, 0.34, -0.16, 0.99, 1.00],  # a big one
+	[0.105, 0.23, -0.11, 1.01, 1.00],  # a neat short one, high on the face
+	[0.138, 0.32, -0.15, 0.98, 0.95],  # broad
 ]
 
 
@@ -572,9 +588,16 @@ static func _moustache(head: Node3D, head_r: float, appearance: SimAppearance) -
 	# Two lobes rather than one bar, so it has a shape rather than a moustache
 	# sticker.
 	for side in [-1.0, 1.0]:
-		var half := _sphere(head_r * 0.17, mat, true)
-		half.position = Vector3(side * head_r * 0.11, -head_r * 0.3, head_r * 0.88)
-		half.scale = Vector3(1.15, 0.5, 0.55)
+		# Wide and shallow, and set close under the nose. Deeper than this it
+		# stops reading as a moustache and starts reading as a mouth -- a dark
+		# curved mass where a mouth belongs is a scowl, whoever is wearing it.
+		# Out at the face, not inside it. The skull at this height reaches about
+		# 0.97 of a radius forward, so a lobe centred at 0.88 with a depth of 0.08
+		# is buried except at its two widest points -- which showed as a pair of
+		# dark dots either side of the mouth, like a smirk drawn on.
+		var half := _sphere(head_r * 0.16, mat, true)
+		half.position = Vector3(side * head_r * 0.13, -head_r * 0.26, head_r * 0.95)
+		half.scale = Vector3(1.35, 0.36, 0.5)
 		head.add_child(half)
 
 
@@ -616,17 +639,13 @@ static func _moustache(head: Node3D, head_r: float, appearance: SimAppearance) -
 ## How flat the shell is, how far up it sits, and how much further back it goes
 ## to pay for the lift. The three move together: flattening alone bares the
 ## crown, lifting alone drags the front hairline down over the brows.
-## The grid of lobes a quiff is filled with, back to front and side to side.
-const QUIFF_ROWS := 4
-const QUIFF_ACROSS := 5
-
 const HAIR_SQUASH := 0.72
 const HAIR_LIFT := 0.24
 ## Raising the shell drags the hairline down the forehead, and this is what pays
 ## for it. It is a tax on every row, so it is the one number to reach for when the
 ## whole squad looks like it is receding: 0.05 put every hairline a tenth of a
 ## radius too high.
-const HAIR_BACK_EXTRA := 0.03
+const HAIR_BACK_EXTRA := 0.0
 
 const HAIR_LIBRARY := [
 	{"r": 0.0},  # bald
@@ -740,22 +759,27 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 		# the same shape but each was its own bump: it is the count that makes a
 		# mass, not the size, and stretching a few lobes wide enough to touch only
 		# turns nine bumps into nine ridges.
-		for row in QUIFF_ROWS:
-			var along := float(row) / float(QUIFF_ROWS - 1)
-			var z := lerpf(-0.50, 0.44, along)
-			var radius := lerpf(0.20, 0.28, along)
-			var top := lerpf(1.16, 1.26, along)
-			var half := lerpf(0.42, 0.36, along)
-			for i in QUIFF_ACROSS:
-				var across := float(i) - float(QUIFF_ACROSS - 1) * 0.5
-				var off := absf(across)
-				var lobe := _sphere(head_r * radius * (1.0 - off * 0.06), mat, true)
-				lobe.position = Vector3(
-					across * head_r * half * 2.0 / float(QUIFF_ACROSS - 1),
-					head_r * (top - radius * 0.9 - off * 0.03),
-					head_r * z)
-				lobe.scale = Vector3(1.1, 0.9, 1.05)
-				root.add_child(lobe)
+		# One wide, flattened mass swept up over the front of the crown, rather
+		# than a grid of lobes.
+		#
+		# The grid was five lobes across by four back, and however much they were
+		# overlapped the top of the head came out scalloped -- five distinct buds
+		# in a row, which reads as a topknot. Overlapping spheres still meet in a
+		# valley, and a valley on a crown is a bud either side of it. The note
+		# that a single lobe is "a ball resting on a head" was written about a
+		# small one placed at the hairline; a wide flat one that starts inside the
+		# shell at the back and rises out of it at the front is a sweep, and the
+		# shell hides where it begins.
+		var sweep := _sphere(head_r * 0.52, mat, true)
+		sweep.position = Vector3(0.0, head_r * 0.74, head_r * 0.16)
+		sweep.scale = Vector3(1.14, 0.62, 1.0)
+		root.add_child(sweep)
+		# The break over the brow: a smaller mass further forward and higher, so
+		# the front edge stands up rather than tapering away to the hairline.
+		var crest := _sphere(head_r * 0.34, mat, true)
+		crest.position = Vector3(0.0, head_r * 0.86, head_r * 0.40)
+		crest.scale = Vector3(1.18, 0.72, 0.9)
+		root.add_child(crest)
 
 	# Swept back instead: a low wide dome over the crown, running to the back of
 	# the head. With the hairline pushed well up the forehead it reads as hair
@@ -766,15 +790,21 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 		slick.scale = Vector3(1.15, 0.75, 1.9)
 		root.add_child(slick)
 
-	# Tufts standing up: the same idea, smaller and scattered. Scattered evenly
-	# from straight ahead, and raised by distance round the ring rather than by
-	# index, for the same reason the curls are.
+	# Tufts: hair that will not lie flat. Wide, shallow and set low enough to
+	# break the shell rather than sit on it.
+	#
+	# At a radius of 0.26 centred at 0.9 these cleared the top of the shell by up
+	# to a tenth of a radius, as four separate spheres on a ring -- which is not a
+	# tousled head, it is four buds on a crown. Flattened and dropped so their
+	# tops run just about level with the shell, the same four lumps read as a
+	# surface that is not smooth, which is all a tuft has to do.
 	var tufts: int = style.get("tufts", 0)
 	for i in tufts:
 		var a := TAU * (float(i) / float(maxi(tufts, 1)))
 		var high := mini(i, tufts - i) % 2
-		_add_lump(root, head_r, 0.26, mat,
-			Vector3(sin(a) * 0.4, 0.9 + 0.08 * float(high), cos(a) * 0.4 - back * 0.5))
+		_add_lump(root, head_r, 0.23, mat,
+			Vector3(sin(a) * 0.42, 0.82 + 0.06 * float(high), cos(a) * 0.42 - back * 0.5),
+			Vector3(1.3, 0.62, 1.3))
 
 	# Sideburns: a tab in front of each ear.
 	if style.get("burns", false):
@@ -805,10 +835,12 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 
 
 static func _add_lump(
-	root: Node3D, head_r: float, radius: float, mat: Material, at: Vector3
+	root: Node3D, head_r: float, radius: float, mat: Material, at: Vector3,
+	shape := Vector3.ONE
 ) -> void:
 	var lump := _sphere(head_r * radius, mat, true)
 	lump.position = at * head_r
+	lump.scale = shape
 	root.add_child(lump)
 
 
@@ -820,11 +852,16 @@ static func _accessory(
 ) -> void:
 	match appearance.accessory:
 		"headband":
-			# Clear above the brows, which sit at about four tenths of a radius,
-			# and only just wider than the head is at that height -- a band cut to
-			# the equator and raised to the forehead is a brim.
-			var band := _band(head_r * 0.92, head_r * 0.11, toy_material(kit[0]))
-			band.position = Vector3(0.0, head_r * 0.6, 0.0)
+			# A band has to be cut to the head at the height it is worn, and the
+			# head is a ball: at six tenths up, the skull is only eight tenths of
+			# a radius across. A band of 0.92 there stands a tenth of a radius off
+			# the skull all the way round and reads as a halo hanging in front of
+			# the forehead, which is what this was doing.
+			# Below the hairline as well as above the brows. Raised to 0.55 it was
+			# inside the hair on every cut that has any, and all that showed was a
+			# sliver of kit colour across the forehead like a scratch.
+			var band := _band(head_r * 0.93, head_r * 0.14, toy_material(kit[0]))
+			band.position = Vector3(0.0, head_r * 0.40, 0.0)
 			head.add_child(band)
 		"cap":
 			var cap := _sphere(head_r * 1.05, toy_material(kit[0]), true)

@@ -92,15 +92,19 @@ const EYE_STYLES := [
 ## `lift - thick - ry` and it wants to be about one unit -- the reference keeps
 ## the brow close over the eye, not floating on the forehead. These lifts are the
 ## originals plus 0.6, which is what the eyes growing by a quarter cost.
+## Longer than they were again, and no thicker. Side by side the styles with a
+## `half` near 4 read as brows and the ones near 3 read as a second pair of eyes:
+## against eyes this big a short bar is just another dark oval on the face. The
+## lifts come down a little with it -- a brow belongs close over the eye.
 const BROW_STYLES := [
 	{"lift": 0.0, "tilt": 0.0, "half": 0.0, "thick": 0.0},
-	{"lift": 5.6, "tilt": 0.0, "half": 3.0, "thick": 1.0},
-	{"lift": 5.6, "tilt": 0.0, "half": 3.4, "thick": 1.5},
-	{"lift": 6.2, "tilt": -0.7, "half": 3.2, "thick": 1.0},
-	{"lift": 5.6, "tilt": 0.7, "half": 3.4, "thick": 1.5},
-	{"lift": 6.6, "tilt": -1.4, "half": 3.0, "thick": 0.9},
-	{"lift": 5.2, "tilt": 0.9, "half": 3.0, "thick": 1.7},
-	{"lift": 6.2, "tilt": 0.0, "half": 4.0, "thick": 0.9},
+	{"lift": 5.3, "tilt": 0.0, "half": 3.6, "thick": 1.0},
+	{"lift": 5.3, "tilt": 0.0, "half": 3.9, "thick": 1.25},
+	{"lift": 5.8, "tilt": -0.7, "half": 3.8, "thick": 1.0},
+	{"lift": 5.3, "tilt": 0.7, "half": 3.9, "thick": 1.25},
+	{"lift": 6.1, "tilt": -1.4, "half": 3.6, "thick": 0.9},
+	{"lift": 5.0, "tilt": 0.9, "half": 3.6, "thick": 1.4},
+	{"lift": 5.8, "tilt": 0.0, "half": 4.2, "thick": 0.9},
 ]
 
 ## Mouths, for the face a player wears when nothing is happening. They sit
