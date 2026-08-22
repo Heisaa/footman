@@ -254,6 +254,67 @@ reported as working. The eyes-on-the-equator change in particular was reported
 done and was not. **Verify a targeted edit landed before reporting it**, and
 prefer rewriting a whole function to patching around a comment.
 
+### Eleventh: the vinyl reference, and the figure gets squat
+
+The owner supplied four more images and asked for the quality and style to move
+towards them. Three are a chunky moulded vinyl footballer, close up; the fourth
+is a rank of four slimmer, more human figures. They agree about the finish and
+disagree about the proportions, and the owner chose the chunky one.
+
+**This reverses part of the tenth amendment**, which lengthened the legs from
+0.46 to 0.50 and kept the head small, on the reasoning that a long body is what
+carries a stride. That reasoning came from a slimmer reference. This one is the
+squat toy, so:
+
+| Was | Now |
+|---|---|
+| legs 0.50 of height | 0.26 |
+| torso 0.27 | 0.37 |
+| bare skull 0.27-0.31 | 0.31-0.35, with hair taking the silhouette past it |
+| shoulder half-width 0.138 | 0.185 |
+
+The three big fractions now come to about the whole height, which is the check to
+make if one of them is moved again. **The open question the tenth amendment was
+right about is whether a leg this short still reads as a stride from the match
+camera**, and only watching answers it.
+
+What else the reference asked for, none of it touching `sim/`:
+
+- **Every crease is dark.** The one change here that is not about the figures'
+  shapes at all, and the largest. `match_view_3d` carried a comment ruling out
+  ambient occlusion along with bloom and reflections, as things that fight the
+  hand-made register; the reference is full of contact shading and it is most of
+  what makes a flat-coloured object read as an object rather than a set of
+  shapes. The comment is corrected rather than quietly dropped. Bloom and
+  reflections stay out. It is a screen-space pass over twenty-two figures and it
+  has a cost nobody has measured yet.
+- **The drawn face is lit.** It was `SHADING_MODE_UNSHADED` on a head that shades
+  from the sun and darkens in its own creases, which is the definition of a
+  sticker: brightest where the cheek turns away, and unmoved when the man walks
+  into shade. It takes the head's material now, sheen included.
+- **The brows are moulded, not drawn.** Thick ridges in the man's hair colour,
+  standing proud of the forehead — the most characterful thing on the reference
+  figure, and the last feature that was still a drawing. `SimFaceAtlas.brow_pose`
+  is now the single table both the geometry and the face are posed from, because
+  two copies of it drifting apart is a squad whose faces disagree with
+  themselves. `texture_for` no longer takes a brow style and its cache key is
+  that much smaller.
+- **The eyes are a quarter bigger.** Measured off the reference an eye is about a
+  seventh of the width of the face; ours were nearer a ninth, which is a man with
+  small eyes rather than a toy with big ones.
+- **The perm is a perm.** Curls went from nine or thirteen small lobes to twelve
+  or sixteen fat ones, and the big curly head grew a skirt — a second ring
+  carried down past the ears to frame the face, with the front left out of it,
+  because a curl over the front of the face is a hand over the eyes rather than a
+  fringe. The mass used to stop above the brow, which is hair sitting on a head.
+- **The parade stands on paper.** The background was already paper, for the
+  reason recorded there — a green field competes with the kit being judged — but
+  the floor under it was still pitch green, which was that argument left half
+  finished. A shade under the background, so the figure has something to stand on
+  and the softened contact shadow has somewhere to land.
+
+None of this has been looked at. It compiles; that is all that is known.
+
 ## Design calls made during the build
 
 **Waiting is a first-class option: an unpressured man is not rushed** (2026-08-14,

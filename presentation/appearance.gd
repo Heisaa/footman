@@ -10,12 +10,13 @@ extends RefCounted
 ## This is presentation. The simulation carries only the integer seed and never
 ## looks at anything in this file.
 
-## Head as a fraction of total height. §9.3 asked for 35-40%; the owner cut it
-## (see `DECISIONS.md`). It lengthens the body, which is what carries a stride,
-## and it is still far above the three-heads-plus-a-bit of a real man, so the
-## face stays legible at match distance.
-const HEAD_FRACTION_MIN := 0.27
-const HEAD_FRACTION_MAX := 0.31
+## Head as a fraction of total height, the bare skull -- hair adds to it, and on
+## a full cut it adds about a tenth. Measured off the owner's vinyl reference,
+## where skull-to-chin is a third of the figure and the hair takes the silhouette
+## past that (`DECISIONS.md`, eleventh). The eighth amendment cut this to 0.27-31
+## from a different reference; this one is the squat toy and puts it back.
+const HEAD_FRACTION_MIN := 0.31
+const HEAD_FRACTION_MAX := 0.35
 ## How far the head departs from a ball: 1.0 is round, and the two axes are drawn
 ## apart so a squad has long faces and wide ones. The face quad hangs off the
 ## head, so it stretches with it -- which is the Mii trick, and free.

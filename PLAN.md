@@ -620,8 +620,14 @@ player the same size on screen wherever play is.
 
 ### 9.3 Characters
 
-- Six hundred to twelve hundred triangles. Head roughly 30–35 % of total height (amended — see
-  `DECISIONS.md`). Stubby limbs, mitten hands, no separate fingers, no neck.
+- Six hundred to twelve hundred triangles. Stubby limbs, mitten hands, no separate fingers, no
+  neck.
+- **The proportions are the squat vinyl toy** (amended twice — see `DECISIONS.md`): a bare skull
+  about a third of total height, a long torso at 0.37, and short legs at 0.26. Hair takes the
+  silhouette past the skull. The three come to roughly the whole height between them, which is the
+  check to make if any one of them moves. This is not a small man and it is not meant to be —
+  lengthening the legs to carry a stride was tried, from a slimmer reference, and it made a figure
+  the owner did not want.
 - **The look is the toy** — Sokpop, Mii, Animal Crossing. Smooth primitives, flat colour, no line
   work, no texture beyond the face, no period dressing. §9.7's register does not reach the art.
 - **The head is three ellipsoids**: a skull longest top to bottom, a jaw filling out the cheeks and
@@ -635,8 +641,9 @@ player the same size on screen wherever play is.
   skin a shade warmer. At this size a drawn nose is a smudge between the eyes; a bump catches the
   light and does the whole job for one sphere. It is not a red nose: the toy reference has plain
   ones, and the red came from the other reference (`DECISIONS.md`, tenth).
-- **Eyes are solid black shapes.** No whites, no pupils: one dark mark carries further, and a white
-  with a pupil in it is a grey smudge at match distance.
+- **Eyes are solid black shapes, and big** — about a seventh of the width of the face, which is the
+  reference and is larger than it sounds. No whites, no pupils: one dark mark carries further, and a
+  white with a pupil in it is a grey smudge at match distance.
 - **Hair colours are colours hair comes in** — black, browns, blonds, ginger, grey, white.
 - **Hair is a sphere a tenth or more larger than the skull, pushed back, plus pieces.** Every cut
   carries volume: hair that merely skims the head is paint on the scalp, and the difference between
@@ -646,6 +653,11 @@ player the same size on screen wherever play is.
   squashed ellipsoid sitting on top of a head is a hat, and reads as one every time.
 - **A soft sheen on the figure, and only the figure.** The reference is moulded vinyl; the highlight
   is most of what makes it read as an object rather than a flat shape. Scenery stays dead flat.
+- **Every crease is dark.** Under the chin, along the hairline, inside the collar, under the sleeve,
+  between the legs. This is the other half of reading as an object and it is worth more than the
+  sheen: flat colour with no contact shading is a set of shapes. It is the one screen-space effect
+  the look wants — no bloom, no reflections — and it is the first thing to switch off if a frame
+  budget ever gets tight.
 - **Generation reaches the tails.** Height clusters in the middle of a squad list and occasionally
   draws a giant or a small one, and build follows height.
 - **No facial rig.** The face is drawn on a texture and swapped
@@ -656,7 +668,10 @@ player the same size on screen wherever play is.
   the mouth is per-player and independent of the expression: the neutral face a man wears for almost
   the whole match is his own, and the expression is drawn over it. The **brows carry the
   expression** — lowered and driven in for effort, raised for delight, outer ends dropped for
-  despair — which is the range a Mii gets out of a face with no rig in it.
+  despair — which is the range a Mii gets out of a face with no rig in it. The brows themselves are
+  **moulded ridges in the man's hair colour, not drawn**: they are the most characterful thing on
+  the reference figure, and an ink line among moulded features is the one part that stays a drawing.
+  They are posed from the same table the face is drawn against, so there is one set of numbers.
 - Hair and hats are drawn from a small library of smooth pieces. No beards: a sphere on the jaw is
   a blob at any size, and it swallows the mouth.
 - **Procedural appearance from a seed**, Mii-style: body type, skin tone, hair mesh and colour, face

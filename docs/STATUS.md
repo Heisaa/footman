@@ -144,7 +144,27 @@ appearance seed. `1-5` for the expressions, `--turn 180 --still` for the backs,
 `--shot out.png` for a frame with no display. The same squad `view3d --seed N`
 plays, so a note taken in one holds in the other.
 
-**Not yet judged by the owner.**
+A third reference — four images of a chunky moulded vinyl footballer — moved it
+again (`DECISIONS.md`, eleventh) and reversed part of the tenth: legs 0.50 of
+height down to 0.26, torso 0.27 up to 0.37, the skull back up to 0.31-0.35, wider
+shoulders. The squat toy rather than a small man. With it: crease shading in
+every view, which is the largest single change and the one with an unmeasured
+cost; the drawn face lit and sheened like the head instead of unshaded; brows as
+moulded ridges in hair colour rather than ink, posed from the same table the face
+is drawn against; eyes a quarter larger; fatter and more numerous curls with a
+skirt carried down past the ears; and a paper floor under the parade.
+
+**Not yet judged by the owner, and this is now a large unjudged pile.** Nothing
+in either pass has been looked at. Two things to watch for first, because they
+are the changes most likely to be wrong: whether a leg at 0.26 of height still
+reads as a stride from the match camera, which is exactly what the tenth
+amendment lengthened it to protect, and whether the moulded brows land where the
+drawn ones did — they are placed by arithmetic off the face grid, and that
+arithmetic has never been seen to produce anything.
+
+**Crease shading has not been measured.** It is a screen-space pass and `view3d`
+carries twenty-two figures. `./run.sh perf --profile` is the question if a frame
+budget matters; `SimCharacterBuilder.add_crease_shading` is the one switch.
 
 ## What every figure here is worth
 

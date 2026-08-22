@@ -550,11 +550,15 @@ func _build_world() -> void:
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = backdrop
-	# Flat ambient, and nothing else: no bloom, no screen-space reflections, no
-	# ambient occlusion. Every one of those fights the hand-made register.
+	# Flat ambient, no bloom and no screen-space reflections -- those do fight the
+	# hand-made register. Crease shading is the exception and this comment used to
+	# rule it out with the rest: the owner's vinyl reference is full of it, and
+	# without it a flat-coloured figure is a set of shapes rather than an object.
+	# `SimCharacterBuilder.add_crease_shading` has the reasoning and the cost.
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(1, 1, 1)
 	env.ambient_light_energy = 0.55
+	SimCharacterBuilder.add_crease_shading(env)
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
 	add_child(world_env)
@@ -564,6 +568,7 @@ func _build_world() -> void:
 	sun.light_energy = 0.9
 	sun.shadow_enabled = true
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
+	SimCharacterBuilder.soften_shadow(sun)
 	add_child(sun)
 
 	_camera = Camera3D.new()
@@ -1318,6 +1323,7 @@ func _build_pose_sheet() -> void:
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(1, 1, 1)
 	env.ambient_light_energy = 0.55
+	SimCharacterBuilder.add_crease_shading(env)
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
 	add_child(world_env)
@@ -1326,6 +1332,7 @@ func _build_pose_sheet() -> void:
 	sun.rotation_degrees = Vector3(-58.0, -35.0, 0.0)
 	sun.light_energy = 0.9
 	sun.shadow_enabled = true
+	SimCharacterBuilder.soften_shadow(sun)
 	add_child(sun)
 
 	var names := SimConsts.Anim.keys()

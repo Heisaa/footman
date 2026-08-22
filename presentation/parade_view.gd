@@ -102,6 +102,7 @@ func _build_world() -> void:
 	# has to be lit honestly: at 1.4 the pale end of the skin ladder clipped to
 	# white and every fair man looked like a ghost.
 	env.ambient_light_energy = 0.5
+	SimCharacterBuilder.add_crease_shading(env)
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
 	add_child(world_env)
@@ -110,14 +111,22 @@ func _build_world() -> void:
 	sun.rotation_degrees = Vector3(-52.0, -30.0, 0.0)
 	sun.light_energy = 0.55
 	sun.shadow_enabled = true
+	SimCharacterBuilder.soften_shadow(sun)
 	add_child(sun)
 
+	# The floor of a product photograph, not a pitch. The background above it was
+	# already paper for the reason in the comment there -- a green field competes
+	# with the kit being judged -- and a green floor under a paper sky was the
+	# other half of that argument left unfinished. A shade under the background so
+	# the figure has something to stand on and the contact shadow has somewhere to
+	# land: on paper exactly the colour of the sky a man floats.
 	var ground := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(40.0, 24.0)
 	plane.orientation = PlaneMesh.FACE_Y
 	ground.mesh = plane
-	ground.material_override = SimCharacterBuilder.flat_material(SimPalette.GRASS)
+	ground.material_override = SimCharacterBuilder.flat_material(
+		SimPalette.PAPER.darkened(0.06))
 	add_child(ground)
 
 	_camera = Camera3D.new()

@@ -27,16 +27,19 @@ extends RefCounted
 ## as the leg being dragged along the ground however good the rest of the cycle
 ## is.
 
-## Proportions as fractions of total height.
+## Proportions as fractions of total height, measured off the owner's vinyl
+## reference rather than argued about (`DECISIONS.md`, eleventh).
 ##
-## Long legs, a short narrow torso and a head that sits straight on it. Measured
-## against the reference the heads are much the same size as ours ever were; what
-## made the figure top-heavy was a fat torso on short legs with boxing-glove
-## hands.
-const LEG_FRACTION := 0.50
-const TORSO_FRACTION := 0.27
+## A big head, a long torso and short legs -- the squat toy, not a small man.
+## The tenth amendment went the other way, from a rank of slimmer toys; this
+## reference is the chunky moulded kind and it wins because the owner supplied
+## it. Head, torso and legs come to roughly the whole height between them, which
+## is the check to make if any of the three is moved.
+const LEG_FRACTION := 0.26
+const TORSO_FRACTION := 0.37
 ## Shoulder half-width, as a fraction of height, before the build multiplier.
-const SHOULDER_FRACTION := 0.138
+## Wider than it was: a head this size on the old narrow chest is a lollipop.
+const SHOULDER_FRACTION := 0.185
 ## Limb thickness. Thin: this is the difference between the reference and a brick.
 const LIMB_RADIUS := 0.048
 ## How far the arms hang off the body, and how far the toes turn out. Both are
@@ -61,11 +64,48 @@ const HEAD_RINGS := 16
 const FACE_QUAD := 1.5
 const FACE_SHELL := 1.02
 const FACE_COLUMNS := 14
+## How deep the moulded brow is, as a share of its drawn half-thickness. It has
+## to stay inside the nose: the nose reaches about 1.09 head-radii and a brow
+## that stands further out than a man's nose is a brow ridge on a hominid.
+const BROW_DEPTH := 0.6
 ## Moulded vinyl, not paper: the reference figures carry a soft highlight and it
 ## is most of what makes them read as objects rather than flat shapes. Scenery
 ## keeps the old dead-flat material.
 const TOY_ROUGHNESS := 0.42
 const TOY_SPECULAR := 0.45
+
+
+## The crease shading that makes a figure read as a moulded object rather than a
+## set of coloured shapes, applied to whatever `Environment` a view has built.
+##
+## This is most of the difference between our figures and the owner's reference.
+## The reference is not lit differently from ours in any interesting way -- it is
+## that every crease is dark: under the chin, along the hairline, inside the V of
+## the collar, under the sleeve, between the legs. Flat colour with no contact
+## shading is a shape; flat colour with it is a thing you could pick up.
+##
+## The radius is in metres and is set for a person: a few centimetres is the size
+## of the creases on a figure, and a metre-wide radius darkens whole limbs
+## instead. `light_affect` is left at zero so the sun never scrubs the crease out
+## again -- on a figure this bright that is exactly where it would.
+##
+## It is a screen-space pass and it is not free. `view3d` carries twenty-two
+## figures; if a frame budget is ever the question, this is the first switch.
+static func add_crease_shading(env: Environment) -> void:
+	env.ssao_enabled = true
+	env.ssao_radius = 0.35
+	env.ssao_intensity = 2.4
+	env.ssao_power = 1.6
+	env.ssao_detail = 0.4
+	env.ssao_light_affect = 0.0
+
+
+## The sun a moulded figure wants: a soft-edged shadow rather than a stencil.
+## Vinyl in a photograph is lit through something broad, and the giveaway is the
+## edge of the shadow it casts, not its brightness.
+static func soften_shadow(sun: DirectionalLight3D) -> void:
+	sun.light_angular_distance = 1.6
+	sun.shadow_blur = 1.4
 
 
 ## Flat, unlit-looking material for scenery: the pitch, the goals, the stands.
@@ -196,11 +236,15 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	root.set_meta("brow_style", appearance.brow_style)
 	root.set_meta("eye_style", appearance.eye_style)
 	root.set_meta("mouth_style", appearance.mouth_style)
+	# The brows are posed from the head's own size long after it is built.
+	root.set_meta("head_r", head_r)
 
 	_jaw(head, head_r, skin)
 	_crown(head, head_r, skin)
 	head.add_child(_nose(appearance, head_r))
 	_ears(head, head_r, skin)
+	_brows(head, head_r, appearance)
+	_pose_brows(root, SimAppearance.Face.NEUTRAL)
 
 	var hair := _hair(appearance, head_r)
 	if hair != null:
@@ -400,6 +444,77 @@ static func _nose(appearance: SimAppearance, head_r: float) -> MeshInstance3D:
 	return nose
 
 
+## Brows, moulded rather than drawn.
+##
+## In the reference these are the most characterful thing on the figure: thick
+## rounded ridges in the man's hair colour, standing proud enough to catch the
+## light along the top. Drawn flat on the face texture they were an ink line on a
+## moulded head -- the one feature that stayed a drawing when everything around
+## it had become an object.
+##
+## They are placed off the same unit grid the face texture is drawn in, so a brow
+## lands exactly where the drawn one did: `SimFaceAtlas.brow_pose` is the single
+## table, and `_pose_brows` turns its four numbers into a position, a roll and a
+## scale. Children of the head, so a long face stretches them with everything
+## else.
+static func _brows(head: Node3D, head_r: float, appearance: SimAppearance) -> void:
+	var node := Node3D.new()
+	node.name = "Brows"
+	head.add_child(node)
+	# A unit sphere in grid units, scaled to length and thickness when posed.
+	var unit := head_r * FACE_QUAD / SimFaceAtlas.GRID
+	var mat := toy_material(appearance.hair_colour)
+	for side in [-1.0, 1.0]:
+		var bar := _sphere(unit, mat, true)
+		bar.name = "Brow" + ("L" if side < 0.0 else "R")
+		node.add_child(bar)
+
+
+## Puts the brows where the moment wants them. Called once at build and again on
+## every expression change, which is what makes the expression read at all.
+static func _pose_brows(root: Node3D, face: int) -> void:
+	var brows := root.find_child("Brows", true, false)
+	if brows == null:
+		return
+	var head_r: float = root.get_meta("head_r", 0.0)
+	if head_r <= 0.0:
+		return
+	var pose := SimFaceAtlas.brow_pose(int(root.get_meta("brow_style", 0)), face)
+	var eye: Dictionary = SimFaceAtlas.EYE_STYLES[posmod(
+		int(root.get_meta("eye_style", 0)), SimFaceAtlas.EYE_STYLES.size())]
+	var half: float = pose["half"]
+	var thick: float = pose["thick"]
+	var unit := head_r * FACE_QUAD / SimFaceAtlas.GRID
+	var radius := head_r * FACE_SHELL
+	# Grid y counts downward from the top of the face and the eye row is the
+	# datum the whole face hangs off, so this is the same arithmetic the face
+	# quad gets, one feature at a time.
+	var y_grid: float = float(eye["y"]) - float(pose["lift"])
+	# `tilt` is the rise at the ends over a run of `half`, which is an angle.
+	var roll: float = atan2(float(pose["tilt"]), maxf(half, 0.001))
+	for child in brows.get_children():
+		var bar := child as MeshInstance3D
+		if bar == null:
+			continue
+		# A man with no brows has none to show until he needs them to shout with.
+		bar.visible = half > 0.0
+		if not bar.visible:
+			continue
+		var side := -1.0 if String(bar.name).ends_with("L") else 1.0
+		var x_grid: float = 16.0 + side * float(eye["gap"])
+		# The face is bent round the vertical axis, so a feature's place on it is
+		# an angle, not an offset.
+		var angle: float = (x_grid / SimFaceAtlas.GRID - 0.5) * (head_r * FACE_QUAD) / radius
+		bar.position = Vector3(
+			sin(angle) * radius,
+			unit * (SimFaceAtlas.EYE_ROW - y_grid),
+			cos(angle) * radius)
+		# Roll in the plane of the face first, then swing round the head. Godot's
+		# default euler order applies Z before Y, which is that order exactly.
+		bar.rotation = Vector3(0.0, angle, side * roll)
+		bar.scale = Vector3(half, thick, thick * BROW_DEPTH)
+
+
 ## A jaw. One sphere is an egg: it tapers to the same point at the bottom as at
 ## the top, and a head does not. This is a second ellipsoid overlapping the lower
 ## half, fuller than the skull down the cheeks and the chin and back inside it
@@ -515,8 +630,10 @@ const HAIR_LIBRARY := [
 	{"r": 1.16, "up": 0.06, "back": 0.22, "peak": true},  # a bowl cut with a point
 	{"r": 1.18, "up": 0.05, "back": 0.22, "burns": true},  # heavier, with sideburns
 	{"r": 1.14, "up": 0.12, "back": 0.20, "quiff": true},  # a quiff
-	{"r": 1.10, "up": 0.08, "back": 0.18, "curls": 9},  # curly
-	{"r": 1.10, "up": 0.10, "back": 0.18, "curls": 13, "curl_r": 0.34},  # a big curly head
+	{"r": 1.10, "up": 0.08, "back": 0.18, "curls": 12},  # curly
+	# The reference perm: a heavy ring of fat lobes carried down past the ears.
+	{"r": 1.10, "up": 0.10, "back": 0.18, "curls": 16, "curl_r": 0.40,
+		"curl_skirt": true},  # a big curly head
 	{"r": 1.14, "up": 0.06, "back": 0.21, "quiff": true, "burns": true},  # swept over
 	{"r": 1.14, "up": 0.06, "back": 0.20, "mass": 1.0},  # collar length
 	{"r": 1.16, "up": 0.05, "back": 0.22, "mass": 1.0, "burns": true},  # long
@@ -560,9 +677,14 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 
 	# Curls: a ring of them round the crown and a couple on top. Nine spheres and
 	# the head is unmistakable, which no amount of shaping one sphere achieves.
+	#
+	# Bigger and more numerous than they were, against the owner's reference: a
+	# perm there is a dozen and a half fat lobes, each about a fifth of the head
+	# across, not a sparse ring of small ones. Small curls at this count read as
+	# gravel on the scalp.
 	var curls: int = style.get("curls", 0)
 	if curls > 0:
-		var curl_r: float = style.get("curl_r", 0.3)
+		var curl_r: float = style.get("curl_r", 0.34)
 		for i in curls:
 			var a := TAU * float(i) / float(curls)
 			# Alternated by distance round the ring rather than by index, so a curl
@@ -575,6 +697,21 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 			_add_lump(root, head_r, curl_r, mat,
 				Vector3(sin(a) * ring, lift, cos(a) * ring - back * 0.6))
 		_add_lump(root, head_r, curl_r * 1.05, mat, Vector3(0.0, 1.05, -back * 0.6))
+
+		# The skirt: a second ring lower down, which is what makes a perm rather
+		# than a curly cap. In the reference the mass comes down past the ears to
+		# about the jaw and frames the face; ours stopped above the brow, so it
+		# was hair sitting on top of a head.
+		#
+		# The front is left out of it -- `cos(a)` positive is towards the face --
+		# because a curl there is not a fringe, it is a hand over the eyes.
+		if style.get("curl_skirt", false):
+			for i in curls:
+				var a2 := TAU * float(i) / float(curls)
+				if cos(a2) > 0.35:
+					continue
+				_add_lump(root, head_r, curl_r * 0.9, mat,
+					Vector3(sin(a2) * 0.88, -0.10, cos(a2) * 0.88 - back * 0.5))
 
 	# A quiff: hair swept up off the front of the hairline. One lobe on top of the
 	# shell is a ball resting on a head and reads as nothing at all. Three across
@@ -705,9 +842,10 @@ static func set_expression(player_root: Node3D, face: int) -> void:
 		return
 	mat.albedo_texture = SimFaceAtlas.texture_for(
 		face,
-		player_root.get_meta("brow_style", 0),
 		player_root.get_meta("eye_style", 0),
 		player_root.get_meta("mouth_style", 0))
+	# The brows are geometry now, so swapping the texture is only half of it.
+	_pose_brows(player_root, face)
 
 
 # --- Primitives -------------------------------------------------------------
@@ -810,12 +948,21 @@ static func _face_shell(head_r: float, appearance: SimAppearance) -> MeshInstanc
 
 	var node := MeshInstance3D.new()
 	node.mesh = mesh
-	var m := flat_material(Color.WHITE)
+	# Lit, and lit exactly like the skull it lies on.
+	#
+	# This was unshaded, which is what a decal is. On a head that shades from the
+	# sun and darkens in its own creases, a face that ignores both is a sticker
+	# stuck to a moulded object -- brightest where the cheek is turning away, and
+	# unmoved when the man walks into shade. The reference has no such patch: the
+	# eyes and the mouth are part of the moulding and go dark with the rest of it.
+	#
+	# `toy_material` rather than `flat_material` for the same reason. The head
+	# carries a sheen; a matte patch across the front of a glossy skull is the
+	# same tell one step quieter.
+	var m := toy_material(Color.WHITE)
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	m.albedo_texture = SimFaceAtlas.texture_for(
-		SimAppearance.Face.NEUTRAL, appearance.brow_style, appearance.eye_style,
-		appearance.mouth_style)
+		SimAppearance.Face.NEUTRAL, appearance.eye_style, appearance.mouth_style)
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	node.material_override = m
 	return node

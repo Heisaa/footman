@@ -59,30 +59,49 @@ const WHITE := Color(1.0, 1.0, 1.0, 1.0)
 ## Spacing is the other half of the table. Eyes a fifth of a head-width apart
 ## huddle in the middle of the face and the man looks pinched; the reference sets
 ## them about a quarter to a third of the head apart and draws them big.
+##
+## **Big** turned out to be bigger than this table had. Measured off the owner's
+## vinyl reference an eye is about a seventh of the width of the face; ours were
+## nearer a ninth, which is a man with small eyes rather than a toy with big
+## ones. Every row is up by about a quarter, and the taller-than-wide rows are
+## kept that way -- the reference eye is an upright oval, not a bead.
 const EYE_STYLES := [
-	{"rx": 2.4, "ry": 2.9, "gap": 6.6, "y": 14.6},
-	{"rx": 2.8, "ry": 2.8, "gap": 6.8, "y": 14.4},
-	{"rx": 2.0, "ry": 2.0, "gap": 6.2, "y": 14.6},
-	{"rx": 2.1, "ry": 2.7, "gap": 7.2, "y": 14.8},
-	{"rx": 3.0, "ry": 2.6, "gap": 7.0, "y": 14.4},
-	{"rx": 2.3, "ry": 3.0, "gap": 6.4, "y": 14.6},
-	{"rx": 2.5, "ry": 2.5, "gap": 7.4, "y": 14.8},
-	{"rx": 1.9, "ry": 2.3, "gap": 6.2, "y": 14.6},
+	{"rx": 3.0, "ry": 3.6, "gap": 6.6, "y": 14.6},
+	{"rx": 3.5, "ry": 3.5, "gap": 6.8, "y": 14.4},
+	{"rx": 2.6, "ry": 2.6, "gap": 6.2, "y": 14.6},
+	{"rx": 2.7, "ry": 3.4, "gap": 7.2, "y": 14.8},
+	{"rx": 3.7, "ry": 3.3, "gap": 7.0, "y": 14.4},
+	{"rx": 2.9, "ry": 3.7, "gap": 6.4, "y": 14.6},
+	{"rx": 3.1, "ry": 3.1, "gap": 7.4, "y": 14.8},
+	{"rx": 2.5, "ry": 2.9, "gap": 6.2, "y": 14.6},
 ]
 
 ## Brows. `lift` is how far above the eye they sit, `tilt` how much the inner end
-## drops below the outer one, `half` their half-length and `thick` the pen. Style
-## 0 is a man with no brows to speak of.
+## drops below the outer one, `half` their half-length and `thick` their
+## half-thickness. Style 0 is a man with no brows to speak of.
+##
+## These are moulded ridges now, not a drawn line, and the thicknesses are up
+## accordingly: measured off the reference a brow is about a fifteenth of the
+## face deep, which was roughly twice what this table had when it was drawn with
+## a pen. A thin ridge is a scratch on the forehead.
 const BROW_STYLES := [
 	{"lift": 0.0, "tilt": 0.0, "half": 0.0, "thick": 0.0},
-	{"lift": 5.0, "tilt": 0.0, "half": 3.0, "thick": 1.0},
-	{"lift": 5.0, "tilt": 0.0, "half": 3.4, "thick": 1.5},
-	{"lift": 5.6, "tilt": -0.7, "half": 3.2, "thick": 1.0},
-	{"lift": 5.0, "tilt": 0.7, "half": 3.4, "thick": 1.5},
-	{"lift": 6.0, "tilt": -1.4, "half": 3.0, "thick": 0.9},
-	{"lift": 4.6, "tilt": 0.9, "half": 3.0, "thick": 1.7},
-	{"lift": 5.6, "tilt": 0.0, "half": 4.0, "thick": 0.9},
+	{"lift": 6.5, "tilt": 0.0, "half": 3.0, "thick": 1.9},
+	{"lift": 6.5, "tilt": 0.0, "half": 3.4, "thick": 2.4},
+	{"lift": 7.1, "tilt": -0.7, "half": 3.2, "thick": 1.9},
+	{"lift": 6.5, "tilt": 0.7, "half": 3.4, "thick": 2.4},
+	{"lift": 7.5, "tilt": -1.4, "half": 3.0, "thick": 1.7},
+	{"lift": 6.1, "tilt": 0.9, "half": 3.0, "thick": 2.7},
+	{"lift": 7.1, "tilt": 0.0, "half": 4.0, "thick": 1.7},
 ]
+
+## `lift` is measured to the middle of the brow and `thick` reaches down from
+## there, so the two have to be read together: the gap over the eye is
+## `lift - thick - ry`, and it wants to be about one grid unit. The reference
+## keeps a brow close over the eye, not floating on the forehead. Both numbers
+## grew in the same pass -- eyes a quarter bigger, brows twice as deep -- and the
+## lifts here were raised to pay for both at once. Move either column and this is
+## the sum to redo.
 
 ## Mouths, for the face a player wears when nothing is happening. They sit
 ## closer under the nose than they did: the features were spread over the whole
@@ -101,14 +120,18 @@ const MOUTH_STYLES := [
 static var _cache := {}
 
 
-## `brow`, `eyes` and `mouth` are the player's own; `face` is the moment.
-static func texture_for(face: int, brow: int = 0, eyes: int = 0, mouth: int = 0) -> Texture2D:
-	var key := ((face * 8 + brow) * 8 + eyes) * 8 + mouth
+## `eyes` and `mouth` are the player's own; `face` is the moment. The brows are
+## not here any more -- they are a moulded ridge on the head, built and posed by
+## `SimCharacterBuilder`, so this texture no longer varies with `brow_style` and
+## the key is that much smaller. `brow_pose` below is still the one place the
+## brow numbers live.
+static func texture_for(face: int, eyes: int = 0, mouth: int = 0) -> Texture2D:
+	var key := (face * 8 + eyes) * 8 + mouth
 	if _cache.has(key):
 		return _cache[key]
 	var image := Image.create(SIZE, SIZE, true, Image.FORMAT_RGBA8)
 	image.fill(Color(0, 0, 0, 0))
-	_draw_face(image, face, brow, eyes, mouth)
+	_draw_face(image, face, eyes, mouth)
 	# Mipmaps, because the same face is a hundred pixels across in the parade and
 	# four in a match, and four pixels of un-mipmapped ink crawls.
 	image.generate_mipmaps()
@@ -117,21 +140,17 @@ static func texture_for(face: int, brow: int = 0, eyes: int = 0, mouth: int = 0)
 	return tex
 
 
-static func _draw_face(
-	image: Image, face: int, brow_style: int, eye_style: int, mouth_style: int
-) -> void:
-	var eye: Dictionary = EYE_STYLES[posmod(eye_style, EYE_STYLES.size())]
+## Where a man's brows sit for a given moment, in unit-grid numbers: `lift` above
+## the eye row, `tilt` how far the inner end drops, `half` the half-length and
+## `thick` the half-thickness.
+##
+## **The brows carry the expression** -- that is the whole Mii trick, and it is
+## why this is a shared function rather than a block inside the drawing code. The
+## brows are moulded now and `SimCharacterBuilder` poses them off these same
+## numbers; two copies of this table drifting apart would be a squad whose faces
+## disagree with themselves.
+static func brow_pose(brow_style: int, face: int) -> Dictionary:
 	var brow: Dictionary = BROW_STYLES[posmod(brow_style, BROW_STYLES.size())]
-	var mouth: Dictionary = MOUTH_STYLES[posmod(mouth_style, MOUTH_STYLES.size())]
-	var gap: float = eye["gap"]
-	var left: float = 16.0 - gap
-	var right: float = 16.0 + gap
-	var y: float = eye["y"]
-	var rx: float = eye["rx"]
-	var ry: float = eye["ry"]
-
-	# The brows carry the expression. Everything else is a smaller adjustment on
-	# top of the man's own face.
 	var lift: float = brow["lift"]
 	var tilt: float = brow["tilt"]
 	match face:
@@ -155,9 +174,18 @@ static func _draw_face(
 		half = 3.0
 		thick = 1.0
 		lift = 5.0 + (lift - float(brow["lift"]))
-	if half > 0.0:
-		_brow(image, left, 1.0, y - lift, half, thick, tilt)
-		_brow(image, right, -1.0, y - lift, half, thick, tilt)
+	return {"lift": lift, "tilt": tilt, "half": half, "thick": thick}
+
+
+static func _draw_face(image: Image, face: int, eye_style: int, mouth_style: int) -> void:
+	var eye: Dictionary = EYE_STYLES[posmod(eye_style, EYE_STYLES.size())]
+	var mouth: Dictionary = MOUTH_STYLES[posmod(mouth_style, MOUTH_STYLES.size())]
+	var gap: float = eye["gap"]
+	var left: float = 16.0 - gap
+	var right: float = 16.0 + gap
+	var y: float = eye["y"]
+	var rx: float = eye["rx"]
+	var ry: float = eye["ry"]
 
 	match face:
 		SimAppearance.Face.EFFORT:
@@ -194,12 +222,6 @@ static func _draw_face(
 
 ## One brow. `inner` is +1 for the left eye and -1 for the right, so a positive
 ## tilt drops the inner ends on both sides and the man scowls.
-static func _brow(
-	image: Image, cx: float, inner: float, y: float, half: float, thick: float, tilt: float
-) -> void:
-	_line(image, cx - inner * half, y - tilt, cx + inner * half, y + tilt, thick)
-
-
 static func _mouth(image: Image, mouth: Dictionary) -> void:
 	var w: float = mouth["w"]
 	var y: float = mouth["y"]
