@@ -631,11 +631,12 @@ player the same size on screen wherever play is.
   scaled on two axes, and the face stretches with it), height, build, skin, hair, and the brows,
   eyes, mouth and nose a player was born with.
 - **The nose is geometry, not a drawn mark**: a small upright capsule on the front of the head —
-  a nose has a length to it, and a ball is a clown's — from a library of shapes, in a ruddy version
-  of the man's own skin. Pink on a pale face, warm red on a dark one, varying per player.
+  a nose has a length to it, and a ball is a clown's — from a library of shapes, in the man's own
+  skin a shade warmer. At this size a drawn nose is a smudge between the eyes; a bump catches the
+  light and does the whole job for one sphere. It is not a red nose: the toy reference has plain
+  ones, and the red came from the other reference (`DECISIONS.md`, tenth).
 - **Eyes are solid black shapes.** No whites, no pupils: one dark mark carries further, and a white
-  with a pupil in it is a grey smudge at match distance. At this size an inked nose is a smudge between the eyes, and a bump
-  catches the light and does the whole job for one sphere.
+  with a pupil in it is a grey smudge at match distance.
 - **Hair colours are colours hair comes in** — black, browns, blonds, ginger, grey, white.
 - **Hair is a sphere a tenth or more larger than the skull, pushed back, plus pieces.** Every cut
   carries volume: hair that merely skims the head is paint on the scalp, and the difference between

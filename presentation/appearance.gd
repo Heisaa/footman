@@ -100,10 +100,10 @@ var nose_style := 0
 ## Two of the six figures in the reference wear a moustache, so a fair number of
 ## a squad should.
 var moustache := false
-## The nose is a warmer, redder version of the man's own skin -- the reference
-## art gives every figure a pink one. Derived rather than drawn from a table so
+## The nose is the man's own skin a shade warmer, not a colour of its own --
+## the toy reference has plain noses. Derived rather than drawn from a table so
 ## it holds up across the skin tones: a pale pink button on a dark face reads as
-## a mistake.
+## a mistake. `_nose_colour` has the amount.
 var nose_colour: Color = SKIN_TONES[0]
 ## Sleeve length, socks pulled up, and so on: tiny variations that make a squad
 ## look like a group of individuals rather than a clone army.
