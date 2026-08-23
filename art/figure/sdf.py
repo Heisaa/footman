@@ -84,10 +84,10 @@ class Ellipsoid(Prim):
     def distance(self, x, y, z):
         px, py, pz = self.local(x, y, z)
         rx, ry, rz = self.radii
-        k = np.sqrt((px / rx) ** 2 + (py / ry) ** 2 + (pz / rz) ** 2)
-        # The usual approximation. Exact only for a sphere, and wrong by a few
-        # per cent on a squashed one -- which moves a fillet, never a silhouette.
-        return ((k - 1.0) * float(min(rx, ry, rz))).astype(np.float32)
+        return _ellipse_distance(
+            (px / rx, py / ry, pz / rz),
+            (px / (rx * rx), py / (ry * ry), pz / (rz * rz)),
+            float(min(rx, ry, rz)))
 
 
 class Capsule(Prim):
@@ -132,7 +132,13 @@ class RoundBox(Prim):
     def __init__(self, centre, half, radius=0.0, rotation=None):
         super().__init__(centre, rotation)
         self.half = np.asarray(half, dtype=np.float64)
-        self.radius = float(radius)
+        # **Clamped, and it has to be.** The distance below subtracts the radius
+        # from each half-extent; ask for a radius larger than the smallest one
+        # and that term goes negative, so the box *inflates* along that axis
+        # instead of rounding. It stays a closed surface, which is why it went
+        # unnoticed -- the jaw was built that way and came out both too big and
+        # oddly square.
+        self.radius = float(min(radius, float(np.min(self.half)) * 0.999))
 
     def reach(self):
         return self.half + self.radius
@@ -150,6 +156,46 @@ class RoundBox(Prim):
         return (outside + inside - self.radius).astype(np.float32)
 
 
+class Barrel(Prim):
+    """An upright cylinder with an **elliptical** cross-section and eased edges.
+
+    The primitive a torso actually wants. A rounded box has flat faces front and
+    back however far its corners are taken in -- ease them enough to lose the
+    flats and the whole upper half becomes a dome instead. At any three-quarter
+    angle those flats read as a slab, which is what "still very boxy" is.
+
+    An oval in plan, straight up the sides, and rounded where the sides meet the
+    ends -- so a plane cut across the bottom still leaves a hem you can see.
+
+    `radii` and `half_height` are the outer dimensions; `round` eases the top and
+    bottom edges and is measured inwards from them.
+    """
+
+    def __init__(self, centre, radii, half_height, round=0.0, rotation=None):
+        super().__init__(centre, rotation)
+        self.radii = np.asarray(radii, dtype=np.float64)
+        self.half_height = float(half_height)
+        self.round = float(min(round, float(np.min(self.radii)),
+                               self.half_height) * 0.999)
+
+    def reach(self):
+        return np.array([self.radii[0], self.radii[1], self.half_height])
+
+    def distance(self, x, y, z):
+        px, py, pz = self.local(x, y, z)
+        a = self.radii[0] - self.round
+        b = self.radii[1] - self.round
+        # Distance to the shrunken ellipse, then the whole thing is inflated
+        # back out by `round`. Approximate off-axis, exact for a circle, and
+        # wrong only by where a fillet sits.
+        flat = _ellipse_distance((px / a, py / b), (px / (a * a), py / (b * b)),
+                                 float(min(a, b)))
+        tall = np.abs(pz) - (self.half_height - self.round)
+        outside = np.sqrt(np.maximum(flat, 0.0) ** 2 + np.maximum(tall, 0.0) ** 2)
+        inside = np.minimum(np.maximum(flat, tall), 0.0)
+        return (outside + inside - self.round).astype(np.float32)
+
+
 class Plane(Prim):
     """A half-space. Cut with one and a garment has a hem you can see."""
 
@@ -164,6 +210,31 @@ class Plane(Prim):
     def distance(self, x, y, z):
         px, py, pz = self.local(x, y, z)
         return (px * self.n[0] + py * self.n[1] + pz * self.n[2]).astype(np.float32)
+
+
+def _ellipse_distance(scaled, gradient, smallest):
+    """Distance to an ellipse or ellipsoid: one Newton step, not a scale factor.
+
+    The obvious approximation is `(k - 1) * min(radii)`, where `k` is the
+    distance in units of the radii. It is exact for a sphere and **badly wrong
+    for anything flat**: on a 2.7-to-1 oval it under-reports the distance along
+    the wide axis by that whole factor.
+
+    That is invisible on a silhouette and ruinous everywhere a fillet is
+    involved, because a fillet radius is a *distance*. A torso barrel built on
+    it rounded its rim two and a half times less across the front than round the
+    side -- so the shoulders stayed square however large the radius was set, and
+    a hard edge ran down each side of the shirt.
+
+    Dividing by the gradient of `k` instead gives very nearly the Euclidean
+    distance, which is what every blend in this file assumes it is being given.
+    """
+    k = np.sqrt(sum(c * c for c in scaled))
+    g = np.sqrt(sum(c * c for c in gradient))
+    # At the dead centre both are zero and the answer is the inradius.
+    safe = np.maximum(g, 1e-9)
+    d = np.where(k > 1e-9, (k - 1.0) * k / safe, -smallest)
+    return d.astype(np.float32)
 
 
 def smin(a, b, k):
@@ -202,6 +273,17 @@ class Solid:
         self.ops.append(("cut", prim, float(k)))
         return self
 
+    def keep(self, prim, k=0.0):
+        """Smooth intersection: throw away everything outside `prim`.
+
+        The one operation that cannot be done inside a bounding box, because it
+        changes the answer *everywhere* -- outside the shape there is nothing
+        left. That is what it is for: clipping a flat insert to a curved surface
+        so it follows the curve instead of standing off it at the edges.
+        """
+        self.ops.append(("keep", prim, float(k)))
+        return self
+
     def bounds(self, pad=0.0):
         los, his = [], []
         for kind, prim, k in self.ops:
@@ -233,9 +315,14 @@ class Solid:
             y = axes[1][sl[1]][None, :, None]
             z = axes[2][sl[2]][None, None, :]
             d = prim.distance(x, y, z)
-            here = grid[sl]
             if kind == "add":
-                grid[sl] = smin(here, d, k)
+                grid[sl] = smin(grid[sl], d, k)
+            elif kind == "cut":
+                grid[sl] = smax(grid[sl], -d, k)
             else:
-                grid[sl] = smax(here, -d, k)
+                # Everything beyond the shape's own box is outside it, so the
+                # grid is refilled rather than edited in place.
+                kept = np.full_like(grid, FAR)
+                kept[sl] = smax(grid[sl], d, k)
+                grid = kept
         return grid, lo, cell

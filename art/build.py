@@ -36,7 +36,7 @@ def parse_args(argv):
     p = argparse.ArgumentParser(prog="render.sh", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--mode", default="figure",
-                   choices=["figure", "rank", "squad", "heads", "parts"])
+                   choices=["figure", "views", "rank", "squad", "heads"])
     p.add_argument("--who", default="moustache", choices=list(cast.PRESETS))
     p.add_argument("--seed", type=int, default=100)
     p.add_argument("--count", type=int, default=6)
@@ -55,10 +55,29 @@ def parse_args(argv):
     return p.parse_args(argv)
 
 
-def stand(look, at, cell, name, cache):
+def stand(look, at, cell, name, cache, turn=0.0):
     root = mould.figure(body.build(look), cell, name, cache)
     root.location = at
+    root.rotation_euler = (0.0, 0.0, turn)
     return root
+
+
+def clone(root, at, turn):
+    """The same figure again at another angle, sharing its mesh data.
+
+    Four angles of one man cost one meshing, not four: only the object wrappers
+    are copied, and `obj.copy()` leaves the mesh shared.
+    """
+    twin = root.copy()
+    bpy.context.collection.objects.link(twin)
+    for child in root.children:
+        part = child.copy()
+        bpy.context.collection.objects.link(part)
+        part.parent = twin
+        part.matrix_parent_inverse = child.matrix_parent_inverse.copy()
+    twin.location = at
+    twin.rotation_euler = (0.0, 0.0, turn)
+    return twin
 
 
 def main():
@@ -72,7 +91,21 @@ def main():
     spacing = 0.86
     lens = 110.0
 
-    if args.mode in ("figure", "parts"):
+    if args.mode == "views":
+        # The same man from four sides in one frame. A figure judged only from
+        # the front hides everything: the first pass had a bored hole for a
+        # crotch and a slab for a back, and neither showed head-on.
+        look = cast.preset(args.who)
+        looks.append(look)
+        angles = (0.0, math.radians(40.0), math.radians(90.0), math.radians(180.0))
+        gap = 0.80
+        span = gap * (len(angles) - 1)
+        first = stand(look, (-span * 0.5, 0.0, 0.0), args.cell, args.who, cache)
+        for i, turn in enumerate(angles[1:], start=1):
+            clone(first, (-span * 0.5 + i * gap, 0.0, 0.0), turn)
+        target = (0.0, 0.0, look.height * 0.50)
+        half_w, half_h = span * 0.5 + look.height * 0.26, look.height * 0.55
+    elif args.mode == "figure":
         look = cast.preset(args.who)
         looks.append(look)
         stand(look, (0.0, 0.0, 0.0), args.cell, args.who, cache)
@@ -85,8 +118,8 @@ def main():
             look = cast.preset(name)
             looks.append(look)
             stand(look, (-span * 0.5 + i * spacing, 0.0, 0.0), args.cell, name, cache)
-        target = (0.0, 0.0, 0.90)
-        half_w, half_h = span * 0.5 + 0.44, 1.06
+        target = (0.0, 0.0, 0.88)
+        half_w, half_h = span * 0.5 + 0.42, 0.99
     elif args.mode == "squad":
         span = spacing * (args.count - 1)
         tallest = 0.0
@@ -141,7 +174,9 @@ def main():
         return
 
     os.makedirs(args.out, exist_ok=True)
-    stem = args.name or (args.who if args.mode == "figure" else f"{args.mode}_{args.seed}")
+    stem = args.name or (args.who if args.mode == "figure"
+                         else f"{args.mode}_{args.who}" if args.mode == "views"
+                         else f"{args.mode}_{args.seed}")
     if args.turntable > 0:
         for frame in range(args.turntable):
             studio.place(cam, target, distance, math.tau * frame / args.turntable, pitch)

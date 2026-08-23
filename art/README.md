@@ -10,6 +10,7 @@ It is not a port of that file. The construction is different on purpose — see
 
 ```sh
 ./art/render.sh --who moustache          # one man, full length
+./art/render.sh --mode views             # the same man from four sides
 ./art/render.sh --mode rank              # the four reference figures
 ./art/render.sh --mode squad --count 6   # seeded players: the clone-army check
 ./art/render.sh --mode heads --count 8   # framed on the faces
@@ -58,14 +59,22 @@ contrast is most of what reads as a football kit.
 | `figure/studio.py` | The room: cyclorama, four soft lights, camera framing, render settings. |
 | `figure/palette.py` | The game's `Color`, and sRGB → linear on the way into a shader socket. |
 | `build.py` | The command line. |
+| `outline.py` | Measures a moulding's plan outline for **creases**, without Blender. A crease is a concavity -- the silhouette stepping inwards as it goes round -- and finding one this way is a second's work against twenty for a render. |
 | `reference/` | The owner's four reference images and what was measured off them. |
 
 ## Things already learned the hard way
 
-- **The head is a rounded box**, so its front is *flat*, at exactly `face_y`. A
-  feature placed at nine tenths of that is a tenth of a head-depth inside the
-  man's face. That is where the brows were, and why they read as two dark
-  specks.
+- **Nothing on the face may be placed at a fixed depth.** The head is two
+  rounded boxes, so its surface is flat over a small panel and curves away from
+  there — and the eyes sit nearly half a head-width out, where it has curved a
+  long way. Placed at a constant `y` they were first buried (two dark specks for
+  brows) and then bulging five centimetres proud (googly eyes). `_front(x, z)`
+  solves the head's own surface and every feature is hung off it, so changing
+  the head shape does not throw the face off it.
+- **`_front` has to know about the jaw as well as the skull.** Solved against
+  the skull alone it is right across the brow and two centimetres too far back
+  at the mouth, because down there it is the jaw that is in front. A moustache
+  placed on it vanished into the chin.
 - **A garment box has to run a full corner-radius past its hem.** Cut at the
   box's own bottom face, the rounding has already drawn the sides in, so the
   hem tapers instead of ending flat — the shirt finished narrower than the
@@ -82,6 +91,26 @@ contrast is most of what reads as a football kit.
   slug on the forehead; far enough back to hug the shell, it lands on the brows
   and the two fuse into one bar. The hairline is the cut, and the cut can simply
   come further down the forehead.
+- **Judge nothing from the front alone.** `--mode views` puts the same man at
+  four angles in one frame. The first pass had a bored hole where the crotch
+  should be and a bare torso breaking out through the back of the shirt, and
+  neither showed head-on.
+- **A crease is a step in *depth*, not in width, nine times out of ten.** The
+  hard line down the side of the shirt was a 44cm-deep torso meeting a 26cm-deep
+  sleeve. Blending harder makes it worse: past a certain radius the smooth union
+  is reading the field far from any surface, where it is only approximate. Give
+  the two the same depth where they meet instead.
+- **A distance field has to be a distance.** `(k - 1) * min(radii)` for an
+  ellipse under-reports the distance along the wide axis by the whole aspect
+  ratio, so a fillet comes out two and a half times smaller there than it was
+  asked for. Every blend in the file assumes it is being handed a real
+  Euclidean distance; one Newton step (`(k - 1) * k / |grad k|`) gives it.
+- **A rounded box's radius must not exceed its smallest half-extent**, or the
+  box inflates along that axis instead of rounding. It stays watertight, which
+  is why it goes unnoticed. `RoundBox` clamps it now.
+- **Whatever is under a garment has to be inside it at every height**, not just
+  at the widest one. The shirt rounds in towards the shoulder; the trunk did
+  not, and its own square rim read as a hard line straight across the chest.
 - **Cut with a plane and mind the sign.** The interior is the side the normal
   points *away* from. Backwards, the shirt is a 13mm sliver at the waist and the
   socks are worn at the knee.
