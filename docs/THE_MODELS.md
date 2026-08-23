@@ -55,13 +55,26 @@ figure is derived from the seed the old way.
 
 **Materials**
 
-Six slots, in this order, on every mesh that takes a game colour:
+Name each material for the slot it takes:
 
-    0 shirt   1 shorts   2 trim   3 skin   4 hair   5 boot
+    shirt   shorts   trim   skin   hair   boot
 
 Colour is set at runtime from the club's kit and the man's skin, so paint them
 any placeholder you like — one model serves both sides and every club in the
-game. A mesh with fewer slots keeps its authored colours for the rest.
+game. A material named anything else keeps the colour it was authored in, which
+is what the eyes want.
+
+**Name, not slot index**, and the index order this section used to ask for
+cannot work. A part is one moulding and one colour, so it carries one material,
+and glTF drops the slots a mesh does not use — every part would arrive in Godot
+with its single surface at index 0 and be painted shirt-coloured. `SLOT_NAMES`
+in `character_model.gd` is the map, and a model that uses none of the names
+still falls back to the old index order.
+
+**Socks have no slot.** `SimCharacterBuilder` draws them in the first kit
+colour, so `art/export.py` gives them the shirt's material, and the separate
+sock colour the art kits carry is lost on the way out. Add a seventh slot if a
+kit ever wants its own.
 
 **Variants**
 
@@ -88,6 +101,45 @@ which is what the toy register wants anyway. A skinned rig is possible but needs
 a poser written against `Skeleton3D` first, and nothing in the view does that
 today. Say so before authoring a skeleton, not after.
 
+**Rest angles go in the mesh, never on a node.** `match_view_3d._rotate`
+assigns `rotation` outright and wipes anything the file put there the instant a
+man moves. The arms hang a few degrees out and the feet turn out because the
+geometry is built that way; every joint is square to the world.
+
+`Face` and `Brows` are the two `art/export.py` does not write yet, and both want
+a change in `body.py` first. The atlas needs a face-shaped surface carrying **no
+face art**, and that head has its eyes and its mouth moulded into it. The brows
+are moulded ridges in the hair colour — which is right, and `face_atlas.gd`
+stopped drawing them for that reason — but they sit inside the `hair` solid at
+the brow, and no bone can tell them from a fringe. Both are missing quietly:
+`SimCharacterModel` skips a node it cannot find.
+
+## A model is not a drop-in until it is shaped like one
+
+glTF import hands back a **wrapper**: the file's own `Player` node arrives as a
+child of a scene root, so a built figure is one level deeper than a procedural
+one. `SimCharacterModel` unwraps it now, and the reason is worth keeping.
+
+`_pose_run` sets the spine's height from `_spine_base`, which looked the spine
+up as a **direct child** of the figure. On a procedural figure that works. On a
+wrapped model it finds nothing and falls back to zero -- and zero is a perfectly
+plausible height for a node to sit at, so nothing errored. Every man in the
+match had his torso planted on his hips and no legs to speak of.
+
+Two things let it through, and both are fixed:
+
+- **The parade could not show it.** Its stand pose caches the same meta first,
+  with a recursive lookup, so the figure it posed was correct while the match's
+  was not. A view that sets up state the other view reads is not an A/B.
+- **The pose sheet could not show it either.** `./run.sh poses` built its
+  seventeen figures straight off `SimCharacterBuilder`, so the one tool that
+  shows every animation state was the one tool that never showed a model. It
+  goes through `SimCharacterModel` now, like the match.
+
+The general rule: **reach for a joint with `_joint`, never `get_node_or_null`.**
+A recursive cached lookup costs nothing after the first frame and does not care
+how deep the figure is.
+
 ## Judging one
 
     ./run.sh parade --seed 7              four men at reading distance, captioned
@@ -103,33 +155,64 @@ is on disk, which is the A/B while a model is being judged.
 and rendered in Blender, judged against the reference photographs. `art/README.md`
 is its own document and this one does not govern how a shape is arrived at.
 
-It governs what comes out. Two things have to change in that pipeline before a
-figure it produces can be a figure the game builds:
+There are two routes out of it, and the second is the one that ships.
 
-**1. Height and build come from the record, not from the seed.**
-`art/figure/cast.py:from_seed` draws its own height — a bell round 1.79 with a
-14% chance of a tail — and its own build. The game does not: `WorldGen` decides
-those, and packs them into the seed with the body type (see above). A render is
-only the man the game will show if `from_seed` reads them back instead of
-drawing them. That is a dozen lines of Python: the same masks, the same tag
-byte, and the existing draw kept for a seed that carries no body. Everything
-else `from_seed` invents — skin, hair, moustache, brows, nose, eye gap — stays
-invented, because the record has no opinion about any of it and the free bits
-are there for exactly that.
+**`./art/model.sh` — built to the count.** `art/toy/` assembles the same man out
+of rings at the density he ships at: about 3,200 triangles drawn, 12,000 in the
+file because every hair cut is in there and one is shown.
 
-**2. What ships is a `.glb`, not a render.** `art/README.md` says nothing here
-ships and that a winning shape is carried back into GDScript by hand. That was
-the only route when the game could draw nothing but primitives. Now
-`SimCharacterModel` will instantiate `presentation/models/body_<type>.glb` the
-moment one exists, so the mesher can export five files instead of a person
-re-deriving five silhouettes in another language. What an export has to carry is
-the whole of this document: the axes, the 1.78 m reference, the six material
-slots left unpainted, the hair and accessory variants, and above all the node
-names — because a single fused mesh, however good it looks in a render, cannot
-be animated by anything in the view today.
+    ./art/model.sh --body standard              one of the five
+    ./art/model.sh --seed 41 --shot /tmp/a.png  one player, and a look at him
+    ./art/model.sh --hair 7 --shot /tmp/a.png   which cut the render shows
 
-Neither is urgent while the shape is still being judged. Both are what "finished"
-means.
+**`./art/export.sh` — the distance-field figure, cut up and thinned.** Kept
+because it is the only route that ships the *moulded* surface, fillets and all,
+and because it is the A/B. It writes the same filenames, so whichever ran last
+is what the game loads.
+
+**Why the second one lost.** Everything wrong with it was decimation, and none
+of it got better with a bigger budget:
+
+- Hems chewed off. A flat circular edge round a smooth tube is the cheapest
+  thing for collapse to take, and what it leaves is a skirt with a torn bottom.
+- Trims fighting the garments under them. A sock hoop stands 2.8 mm off the
+  sock; move both surfaces further than that and they cross.
+- Seams tearing. Inside the overlap that keeps a bent joint from opening, both
+  parts hold the same stretch of the same surface, and thinned they interleave.
+  This one was still visible at 72,000 triangles and gone at 730,000.
+
+Built to the count, all three stop being problems rather than getting smaller. A
+hem is a ring of vertices. A hoop is **two bands of the sock's own surface**
+wearing the trim material, so there is no second surface to come adrift. And a
+seam is authored: the shorts leg runs up inside the seat and the seat is closed
+off inside the leg, two surfaces that never touch.
+
+**What `art/toy/` answers that the other never did:** a `Face` patch carrying
+the atlas, so eyes, mouth and expression are per player; `Brows` for the game to
+pose; and all eighteen hair cuts in the file. A squad stopped being a clone
+army the day those landed.
+
+**Still open in it:**
+
+- **Nothing, on the brows.** They stand proud and they pose. Getting there took
+  two numbers rather than one, and the reason is worth keeping: `_pose_brows`
+  lays the bars on a **sphere** of `head_r * FACE_SHELL`, and this head is a
+  rounded box -- flatter across the face than any sphere through the same
+  points. Fit the sphere large enough to clear the skull and the brows climb,
+  because the lift is an angle and an angle on a bigger sphere is more
+  millimetres; they end up in the hairline. So `FACE_RADIUS` is fitted for
+  **height** and `BROW_STAND` pushes the whole shell forward for **clearance**.
+  `tools/_brow_probe.gd` prints where a bar actually lands.
+
+  A man with `brow_style` 0 still has none at rest, which is the design: a
+  strong expression lends him a plain pair.
+
+- **No moustache, no accessories, no shirt number.** `Accessory0` and
+  `Accessory1` are in the contract and not in the file.
+- **Five bodies, one shape.** Only `build` separates them -- wider trunk,
+  thicker limbs -- and per the owner that is what a giant is: tall, which the
+  game does by scaling, and bigger, which that does.
+
 
 ## Still open
 

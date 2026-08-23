@@ -5,21 +5,33 @@ instead of a Godot launch. It is not a port of
 `presentation/character_builder.gd` — the construction is different on purpose,
 see *Why a distance field* below.
 
-**Where a winning shape goes now.** This used to end with a shape being carried
-back into the GDScript by hand, because the game could draw nothing but
-primitives. It can take a model: `SimCharacterModel` instantiates
-`presentation/models/body_<type>.glb` for each of five body types the moment one
-exists, and falls back to the primitives for the rest. **`docs/THE_MODELS.md` is
-the contract** — the five bodies, the axes and the 1.78 m reference, six unpainted
-material slots, hair and accessory variants, and the node names the animation
-poses. Read it before deciding what an export looks like; the node names in
-particular decide whether the figure is rigid parts or a skinned rig, and only
-one of those animates today.
+**Two ways out, and `./art/model.sh` is the one that ships.** `art/toy/` builds
+the same man out of rings at the density he ships at -- about 3,200 triangles --
+so nothing is thinned and no hem, trim or seam is ever rewritten by a decimator.
+`docs/THE_MODELS.md` has the argument and what is still open in it.
 
-The same document lists the one change this pipeline needs on the way in:
-`cast.py:from_seed` draws its own height and build, and the game packs both into
-the seed instead, so a render is only the man the game will show once it reads
-them back.
+The distance-field route below is kept as the A/B: it is the only one that
+ships the moulded surface itself.
+
+**`./art/export.sh` writes
+`presentation/models/body_<type>.glb` and the game instantiates it; this used to
+end with a shape being carried back into GDScript by hand, because the game
+could draw nothing but primitives. **`docs/THE_MODELS.md` is the contract** —
+the five bodies, the axes and the 1.78 m reference, the material names, hair and
+accessory variants, and the node names the animation poses. It also lists what
+the export does not answer yet: the triangle budget, one hair and one face per
+body, and five bodies that are still one body.
+
+```sh
+./art/export.sh --body standard              one of the five
+./art/export.sh --body giant --tris 6000     a tighter triangle budget
+./art/export.sh --seed 41 --shot /tmp/a.png  one player, and a look at him first
+```
+
+Godot has to import a new `.glb` before `ResourceLoader.exists` can see it:
+`godot --headless --import --path .` once, then `./run.sh parade --seed 7`.
+`SimCharacterModel.models_enabled = false` draws everybody procedurally whatever
+is on disk, which is the A/B.
 
 ```sh
 ./art/render.sh --who moustache          # one man, full length
@@ -67,7 +79,14 @@ contrast is most of what reads as a football kit.
 | `figure/sdf.py` | Distance-field primitives, the smooth union, and `Solid`. `k` is a fillet radius in metres and is the one number worth playing with. |
 | `figure/surfacenets.py` | Field → quad mesh. Sixty lines, and quads, which is what the smoothing afterwards wants. |
 | `figure/body.py` | **The figure.** Every proportion, read off the references. Start here. |
-| `figure/cast.py` | The four reference figures as presets, and one integer → one player. |
+| `figure/cast.py` | The four reference figures as presets, and one integer → one player. `unpack_body` reads the body the record packed into the seed; the draw is kept for a seed that carries none. |
+| `figure/rig.py` | **The skeleton.** The sixteen joints the game poses by name, where their pivots are, and which moulding is allowed to land on which. Both routes use it. |
+| `toy/mesh.py` | Rings, superellipse sections and the one primitive nearly everything is made of. Pure Python -- a shape can be measured without Blender. |
+| `toy/figure.py` | **The low-poly figure.** Same proportions as `figure/body.py`, assembled instead of moulded. |
+| `toy/hair.py` | The eighteen cuts, one mesh each, in `HAIR_LIBRARY` order. |
+| `model.py` | The `.glb` that ships: joints, named materials, hair variants, the face patch and the brows. |
+| `figure/split.py` | Cuts a moulding a second way, by joint. A Voronoi of bones, with measured clip boxes and an overlap so a bend cannot open a gap. |
+| `export.py` | The `.glb`: joints, materials named for their slot, a triangle budget, and `--shot` to look at what is about to be written. |
 | `figure/mould.py` | Solid → Blender object: mesh, normals, smoothing, vinyl material. |
 | `figure/studio.py` | The room: cyclorama, four soft lights, camera framing, render settings. |
 | `figure/palette.py` | The game's `Color`, and sRGB → linear on the way into a shader socket. |
@@ -190,6 +209,38 @@ contrast is most of what reads as a football kit.
 - **Whatever is under a garment has to be inside it at every height**, not just
   at the widest one. The shirt rounds in towards the shoulder; the trunk did
   not, and its own square rim read as a hard line straight across the chest.
+- **A collapse ratio is a request, not a result — measure.** `export.py`
+  printed the triangle count it had *asked* for and wrote a thirteen-megabyte
+  file of 677,000 triangles while claiming 8,000. Worse, a whole afternoon of
+  "look how much better the hems are now" was comparing a decimated figure
+  against an undecimated one. The count now comes off the evaluated depsgraph.
+- **Blender's decimate vertex group is where collapse is *allowed*, not where
+  it is forbidden.** A group holding only the hems, uninverted, protects
+  everything that is not a hem. And inverted it is still no use here: the
+  protection is binary rather than graded, so the hem loops at full resolution
+  are a 22,000-triangle floor the budget cannot go under, and the factor
+  saturates — 1.0 and 3.0 give the same mesh.
+- **Nearest bone alone puts the waistband up the sleeve.** Splitting the
+  mouldings by joint is a Voronoi of bones, and the arm hangs beside the hip:
+  the top corner of the shorts is genuinely nearer the upper arm than it is to
+  the spine. Same at the collar, where the shirt's shoulder capsules reach past
+  the chin before the collar hole is cut out of them and the skull claims them.
+  A table saying which part of a man each garment covers is one line each and
+  fixes both — and it cannot leave a hole, because the Voronoi is then computed
+  over fewer bones rather than over less space.
+- **An overlap holds the same surface twice.** Two parts that meet on one
+  surface crack open the moment the joint between them bends, so they share a
+  shell of solid instead — and inside that shell both of them carry the same
+  stretch of the same skin. At full resolution the two copies sit on top of each
+  other and nothing shows; thinned to a triangle budget they cross, and the arms
+  come out clawed. The seam is a *smooth* intersection for that reason, drawing
+  each part in a little further the further out from the trunk it hangs, so at
+  every seam one surface is plainly the one in front.
+- **A hoop is not a ring.** The sock hoops look like thin bands and are capsules
+  as fat as the sock itself, buried in it with only their equator showing. Cut
+  one out of the sock to stop the two surfaces fighting and the sock is hollowed
+  from the knee down and the buried capsule becomes the leg. What shows is not
+  the shape.
 - **Cut with a plane and mind the sign.** The interior is the side the normal
   points *away* from. Backwards, the shirt is a 13mm sliver at the waist and the
   socks are worn at the knee.
