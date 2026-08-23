@@ -363,6 +363,39 @@ Three things together, none of them a profile tweak:
   Ours ran the shirt to the hip and left the shorts a sliver, which made the whole
   trunk one tube from the collar down. This was the largest of the three.
 
+**Then the parade was turned round, and half the trim was floating in the air.**
+Everything above had been judged head-on, which is the one angle that hides a
+part standing off a curved surface. `--turn 45 --still` and `--turn 90 --still`
+are now the views to check before believing any of it.
+
+The common fault, four times over: **a part placed at a fixed depth on a curved
+body**. That is right on the centre line and wrong everywhere else.
+
+- **The drawn face was a vertical cylinder segment on a spherical head.** A strip
+  1.5 radii tall held at a constant 1.02, where the skull at the chin has drawn
+  in to 0.66 -- a third of a radius of daylight at the top and bottom edges. It
+  is a spherical patch now, bent both ways. The old note said a vertical bend
+  would have to clear the jaw; it does not, because the jaw is inside 0.95 at
+  every height the face covers. The eye row is put on the equator by shifting the
+  pitch the patch is drawn through, **not** by sliding the node down afterwards --
+  translating a curved patch down its own axis is the same bug again.
+- **The brows were placed by the same cylindrical arithmetic** and stood off the
+  forehead for it. A place on a face is two angles, not an angle and a drop.
+- **The V-neck was a batten strapped to the chest.** Set at a fixed depth it stood
+  a quarter of the trunk's depth proud at the shoulder. It is placed on the
+  trunk's ellipse at its own x now, turned to the ellipse's normal -- which is
+  `(x/a², z/b²)`, not `(x, z)` -- and it is short, thin and sunk, because a
+  straight bar rolled into a V lifts its own ends off a curved surface however it
+  is aimed.
+- **The arms hung in front of the chest.** The shoulder pivot was at 0.64 of the
+  shoulder half-width, inside the trunk's own 0.80 radius, so from the side the
+  whole arm floated over the shirt. Out at 0.80 it hangs beside the body with its
+  top buried in the shoulder.
+
+The shorts stopped being a skirt in the same pass, and the fix was not their
+width: the leg tubes have to hang well below the seat. A seat that reaches as far
+down as they do fills the notch in and the garment is a skirt again at any width.
+
 The trunk was widened with them, from 0.185 of height at the shoulder to 0.215.
 The reference shirt is about 0.15 half-width and ours was 0.124, and a narrow
 trunk is why the shorts kept having to be narrower still to avoid reading as a

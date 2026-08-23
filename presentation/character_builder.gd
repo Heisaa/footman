@@ -70,6 +70,8 @@ const HEAD_RINGS := 16
 const FACE_QUAD := 1.5
 const FACE_SHELL := 1.02
 const FACE_COLUMNS := 14
+## The face is bent both ways now, so it needs rows as well as columns.
+const FACE_ROWS := 14
 ## How deep the moulded brow is, as a share of its drawn half-thickness. It has
 ## to stay inside the nose: the nose reaches about 1.09 head-radii and a brow
 ## that stands further out than a man's nose is a brow ridge on a hominid.
@@ -214,8 +216,8 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	# Up under the shirt hem and down to about the crotch, which is where the
 	# reference puts them. They used to hang below the hip with the shirt over the
 	# top of the lot.
-	var hips := _taper(shoulder * 0.64, shoulder * 0.70, leg_h * 0.54, shorts)
-	hips.position = Vector3(0.0, leg_h * 0.22, 0.0)
+	var hips := _taper(shoulder * 0.60, shoulder * 0.64, leg_h * 0.44, shorts)
+	hips.position = Vector3(0.0, leg_h * 0.26, 0.0)
 	hips.scale = Vector3(1.0, 1.0, 0.90)
 	spine.add_child(hips)
 
@@ -264,11 +266,9 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	# rather than placed by hand: the drawn eye row is a little above the middle
 	# of the texture, so the texture sits that much below the middle of the
 	# skull. Brows above, nose and mouth below, all follow from it.
+	# No offset: the patch is drawn with the eye row already on the equator.
+	# Sliding a curved patch down its own axis is what would lift it off the head.
 	var face := _face_shell(head_r, appearance)
-	var eye_drop: float = (16.0 - SimFaceAtlas.EYE_ROW) / SimFaceAtlas.GRID * head_r * FACE_QUAD
-	# Only down the head. The bend is round the vertical axis, so sliding the
-	# strip down it keeps every part of it the same distance out.
-	face.position = Vector3(0.0, -eye_drop, 0.0)
 	face.name = "Face"
 	head.add_child(face)
 	# The expression swaps at run time and has to keep the man's own face under
@@ -310,7 +310,11 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		var tag: String = "L" if side < 0.0 else "R"
 		var sh := Node3D.new()
 		sh.name = "Shoulder" + tag
-		sh.position = Vector3(side * shoulder * 0.64, torso_h * 0.86, 0.0)
+		# Out at the edge of the shirt, not inside it. At 0.64 the pivot sat well
+		# within the trunk's own 0.80 radius, so from the side the whole arm hung
+		# in front of the chest with daylight above it instead of beside the body
+		# with its top buried in the shoulder.
+		sh.position = Vector3(side * shoulder * 0.80, torso_h * 0.86, 0.0)
 		spine.add_child(sh)
 
 		var upper_mat := shirt if appearance.sleeves_long else skin
@@ -342,7 +346,7 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		# The trim at the end of the sleeve, long or short. On a long sleeve it
 		# sits short of the elbow, where the arm is still full width.
 		var cuff_at: float = upper_len * (0.85 if appearance.sleeves_long else 0.46)
-		var cuff := _band(limb * (1.14 if appearance.sleeves_long else 1.22), torso_h * 0.035, trim)
+		var cuff := _band(limb * (1.10 if appearance.sleeves_long else 1.15), torso_h * 0.030, trim)
 		cuff.position = Vector3(
 			side * sin(ARM_FLARE) * cuff_at, -cos(ARM_FLARE) * cuff_at, 0.0)
 		cuff.rotation = Vector3(0.0, 0.0, side * ARM_FLARE)
@@ -382,8 +386,10 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		# notch between the legs; a seat that reaches further down than these fills
 		# the notch in and the shorts are one block again. A cylinder for the same
 		# reason the seat is one -- it is the hem that reads.
-		var short_leg := _taper(limb * 1.20, limb * 1.14, leg_h * 0.30, shorts)
-		short_leg.position = Vector3(0.0, -leg_h * 0.02, 0.0)
+		# Hanging well below the seat, which is what a notch is. A seat that
+		# reaches as far down as these fills it in and the shorts are a skirt.
+		var short_leg := _taper(limb * 1.16, limb * 1.10, leg_h * 0.34, shorts)
+		short_leg.position = Vector3(0.0, -leg_h * 0.06, 0.0)
 		hip.add_child(short_leg)
 
 		var knee := Node3D.new()
@@ -441,20 +447,31 @@ static func _v_neck(spine: Node3D, shoulder: float, torso_h: float, trim: Materi
 	# it stands proud. Laid on the surface they were two tabs hovering in front of
 	# a round torso -- braces rather than a collar -- because a straight box
 	# touching a curve touches it in one place only.
+	# The chest is an ellipse in plan, so each bar is placed on that ellipse at
+	# its own x and turned to face along the surface normal there.
+	#
+	# Both earlier versions put the bar at a fixed depth and a fixed angle, which
+	# is right at the centre line and wrong everywhere else. Set shallow it
+	# vanished inside the shirt; set deep enough to show, it stood a quarter of
+	# the trunk's depth proud at the shoulder -- a black tab floating in the air
+	# beside the man, which is what it was doing from any angle but head-on.
+	var chest_a := shoulder * 0.79
+	var chest_b := chest_a * TRUNK_DEPTH
 	for side in [-1.0, 1.0]:
-		# Set out at the chest's own radius, not inside it. The torso used to be a
-		# capsule, which narrows towards the top, so a bar buried at 0.55 still
-		# broke the surface up near the collar. Against a cylinder of constant
-		# radius the same bar is simply inside the shirt, and all that showed was
-		# the two tips -- a small dark "w" printed mid-chest.
+		var bar_x: float = side * shoulder * 0.13
+		var bar_z: float = chest_b * sqrt(maxf(1.0 - pow(bar_x / chest_a, 2.0), 0.0))
+		# Thin, short, and sunk most of the way in: it is trim lying on a shirt,
+		# not a batten strapped to one. A long bar cannot lie on a curved chest
+		# however it is aimed -- rolling it into the V lifts its ends off the
+		# surface, and the longer it is the further they lift. Keeping it short
+		# and setting it below the surface means only the part that should show
+		# ever does.
 		var bar := _box(
-			Vector3(torso_h * 0.040, torso_h * 0.19, shoulder * 0.30), trim)
-		bar.position = Vector3(
-			side * shoulder * 0.17, torso_h * 0.86, shoulder * 0.79 * TRUNK_DEPTH)
-		# Pitched back at the top as well as leaned out, because the chest is a
-		# dome and a straight bar on a dome only touches it in the middle. Without
-		# this the top of each bar hangs off the front of the shoulder in the air.
-		bar.rotation = Vector3(-0.28, 0.0, -side * 0.55)
+			Vector3(torso_h * 0.038, torso_h * 0.14, shoulder * 0.06), trim)
+		bar.position = Vector3(bar_x, torso_h * 0.86, bar_z - shoulder * 0.012)
+		# The outward normal of an ellipse is (x/a^2, z/b^2), not (x, z).
+		var out := atan2(bar_x / (chest_a * chest_a), bar_z / (chest_b * chest_b))
+		bar.rotation = Vector3(0.0, out, -side * 0.46)
 		spine.add_child(bar)
 	# Closed round the back of the neck. Just outside the shirt for the same
 	# reason the bars are: at 0.46 of the shoulder this ring was inside a 0.74
@@ -540,7 +557,6 @@ static func _pose_brows(root: Node3D, face: int) -> void:
 		int(root.get_meta("eye_style", 0)), SimFaceAtlas.EYE_STYLES.size())]
 	var half: float = pose["half"]
 	var thick: float = pose["thick"]
-	var unit := head_r * FACE_QUAD / SimFaceAtlas.GRID
 	var radius := head_r * FACE_SHELL
 	# Grid y counts downward from the top of the face and the eye row is the
 	# datum the whole face hangs off, so this is the same arithmetic the face
@@ -548,6 +564,7 @@ static func _pose_brows(root: Node3D, face: int) -> void:
 	var y_grid: float = float(eye["y"]) - float(pose["lift"])
 	# `tilt` is the rise at the ends over a run of `half`, which is an angle.
 	var roll: float = atan2(float(pose["tilt"]), maxf(half, 0.001))
+	var size := head_r * FACE_QUAD
 	for child in brows.get_children():
 		var bar := child as MeshInstance3D
 		if bar == null:
@@ -558,16 +575,18 @@ static func _pose_brows(root: Node3D, face: int) -> void:
 			continue
 		var side := -1.0 if String(bar.name).ends_with("L") else 1.0
 		var x_grid: float = 16.0 + side * float(eye["gap"])
-		# The face is bent round the vertical axis, so a feature's place on it is
-		# an angle, not an offset.
-		var angle: float = (x_grid / SimFaceAtlas.GRID - 0.5) * (head_r * FACE_QUAD) / radius
+		# A place on the face is two angles, not an offset and an angle. Setting
+		# the height as a straight drop is what lifted the brows off the skull:
+		# the head draws in as it rises, and a brow held at the full radius a
+		# third of the way up sits out in front of the forehead.
+		var yaw: float = (x_grid / SimFaceAtlas.GRID - 0.5) * size / radius
+		var pitch: float = (SimFaceAtlas.EYE_ROW - y_grid) / SimFaceAtlas.GRID * size / radius
 		bar.position = Vector3(
-			sin(angle) * radius,
-			unit * (SimFaceAtlas.EYE_ROW - y_grid),
-			cos(angle) * radius)
-		# Roll in the plane of the face first, then swing round the head. Godot's
-		# default euler order applies Z before Y, which is that order exactly.
-		bar.rotation = Vector3(0.0, angle, side * roll)
+			sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)) * radius
+		# Roll in the plane of the face, then pitch up the head, then swing round
+		# it. Godot's default euler order applies Z, then X, then Y -- which is
+		# that order exactly, and lands the bar flat on the surface.
+		bar.rotation = Vector3(-pitch, yaw, side * roll)
 		bar.scale = Vector3(half, thick, thick * BROW_DEPTH)
 
 
@@ -1003,42 +1022,56 @@ static func _box(size: Vector3, material: Material) -> MeshInstance3D:
 	return node
 
 
-## The drawn face, bent round the skull instead of laid flat against it.
+## The drawn face, bent round the skull in both axes.
 ##
 ## A flat plate is right head-on and wrong from anywhere else. At three-quarters
 ## -- which is the angle the match camera actually holds -- the features slide
-## towards the near edge of the plate and the far brow drifts off the cheek. One
-## strip of triangles bent round the vertical axis fixes it.
+## towards the near edge of the plate and the far brow drifts off the cheek.
 ##
-## Bent one way only. The head yaws far more than it nods, and a vertical bend
-## would have to clear the jaw, which stands proud exactly where the mouth is.
+## **It used to be bent round the vertical axis only**, on the reasoning that the
+## head yaws far more than it nods and that a vertical bend would have to clear
+## the jaw. The first half was true and the second was not: at a constant radius
+## of 1.02 the patch clears the jaw everywhere, because the jaw is inside 0.95 at
+## every height the face covers. What the single bend actually did was stand the
+## top and bottom edges of the face off a round head -- a strip 1.5 radii tall
+## held at 1.02 all the way down, where the skull at the chin has drawn in to
+## 0.66. That is a third of a radius of daylight, and from any angle but straight
+## on it read as a plate held in front of the face.
 ##
-## The strip sits a little outside the skull, so nothing underneath can poke
-## through the face, and it is drawn on both sides because the back of it is
-## inside the head where nobody can see it.
+## The eye row is put on the equator by shifting the *pitch* the patch is drawn
+## through, not by sliding the node down afterwards: a curved patch translated
+## down its own axis stops touching the sphere, which is the same bug again.
+##
+## It sits a little outside the skull so nothing underneath can poke through, and
+## it is drawn on both sides because the back of it is inside the head.
 static func _face_shell(head_r: float, appearance: SimAppearance) -> MeshInstance3D:
 	var size := head_r * FACE_QUAD
 	var radius := head_r * FACE_SHELL
-	var half := size * 0.5
 	var verts := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var normals := PackedVector3Array()
 	var indices := PackedInt32Array()
-	for i in FACE_COLUMNS + 1:
-		var u := float(i) / float(FACE_COLUMNS)
-		# Arc length, not chord: the eyes stay as far apart on the curve as they
-		# were on the flat plate.
-		var angle: float = (u - 0.5) * size / radius
-		var at := Vector3(sin(angle), 0.0, cos(angle))
-		verts.push_back(at * radius + Vector3(0.0, half, 0.0))
-		verts.push_back(at * radius - Vector3(0.0, half, 0.0))
-		uvs.push_back(Vector2(u, 0.0))
-		uvs.push_back(Vector2(u, 1.0))
-		normals.push_back(at)
-		normals.push_back(at)
-	for i in FACE_COLUMNS:
-		var a := i * 2
-		indices.append_array([a, a + 1, a + 2, a + 2, a + 1, a + 3])
+	var v_eye := SimFaceAtlas.EYE_ROW / SimFaceAtlas.GRID
+	for j in FACE_ROWS + 1:
+		var v := float(j) / float(FACE_ROWS)
+		# Arc length, not chord, on both axes, so the features keep the spacing
+		# they were drawn with. The eye row lands at pitch zero -- the equator.
+		var pitch: float = (v_eye - v) * size / radius
+		for i in FACE_COLUMNS + 1:
+			var u := float(i) / float(FACE_COLUMNS)
+			var yaw: float = (u - 0.5) * size / radius
+			var at := Vector3(
+				sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch))
+			verts.push_back(at * radius)
+			uvs.push_back(Vector2(u, v))
+			normals.push_back(at)
+	var stride := FACE_COLUMNS + 1
+	for j in FACE_ROWS:
+		for i in FACE_COLUMNS:
+			var a := j * stride + i
+			indices.append_array([
+				a, a + stride, a + 1,
+				a + 1, a + stride, a + stride + 1])
 
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
