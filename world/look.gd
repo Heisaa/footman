@@ -1,6 +1,6 @@
 class_name WorldLook
 extends RefCounted
-## How a man's body gets from the record to the figure on screen (PLAN.md §9.3).
+## How a man's body gets from the record to the figure on screen (PLAN.md §9.1).
 ##
 ## The problem this solves: `appearance_seed` is the **only** thing about a
 ## player's looks that travels into the match. `SimPlayer` carries no height and

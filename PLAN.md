@@ -567,7 +567,7 @@ Also record a positional trace at 5 Hz for heat maps and average-position overla
 
 ## 8. Data model
 
-**Player:** identity (id, name, age, nationality); an appearance seed (§9.3); attributes; two or
+**Player:** identity (id, name, age, nationality); an appearance seed (§9.1); attributes; two or
 three personality traits; condition, sharpness, morale and trust in the manager; contract; and a
 separate record of *known* attributes as an estimate-plus-confidence pair per attribute.
 
@@ -584,25 +584,50 @@ hired staff, perks, and the season index within the run.
 
 ## 9. Art direction
 
-Reference: **Sokpop** games, plus Nintendo Mii and Animal Crossing villager proportions. Silly,
-cute, chunky, hand-made. The visual target is *a toy football set*, not a broadcast.
+**Inspiration and feel, not specification.** Sokpop games, Nintendo Mii and Animal Crossing
+villagers, and a toy football set rather than a broadcast: silly, cute, chunky, hand-made. That is
+the register to aim at and the company to keep. It is **not** a description of what to build —
+nothing about proportion, colour, shading or finish follows from it, and where a name here and a
+reference image disagree, the image wins. §9.1 is where the look actually lives.
 
-Those three settle the *shapes*. What the figures are *like* comes from somewhere else — the British
-football comics of §1, `Hot-Shot Hamish` and `Mighty Mouse` — and §9.7 states it, because a toy
-football set can be charming and characterless at the same time and this one must not be.
+What the figures are *like* comes from somewhere else again — the British football comics of §1,
+`Hot-Shot Hamish` and `Mighty Mouse`. §9.7 states that one, because a toy football set can be
+charming and characterless at the same time and this one must not be; and §9.7 is equally clear
+that it governs the writing and never the models.
 
-### 9.1 Rendering
+### 9.1 The look is the reference images, not this document
 
-- Forward+ renderer, but **unlit or two-band toon shading**. No physically-based materials —
-  roughness at maximum, metallic at zero.
-- **No textures on geometry** except small face atlases and painted pitch lines. Colour comes from
-  vertex colour or flat per-material albedo.
-- No normal maps, no ambient occlusion, no bloom, no screen-space reflections. A single soft
-  directional light plus flat ambient.
-- Optional very subtle vertex wobble on world geometry for the hand-made feel — keep it under half a
-  percent of scale or it reads as a bug.
-- Background: a single saturated flat colour or simple gradient, varying by stadium and competition.
-  The warm salmon of the reference images is exactly the register — bold and non-naturalistic.
+**There are no written rules here for proportion, colour, shading, finish or
+detail, and that is deliberate.** There were, for a long time: four rounds of
+them, each amending the last, all in `DECISIONS.md`. Every one was written down
+*after* the owner had looked at a picture and said what was wrong with the
+figure beside it. The picture was doing the work and the prose was a lagging
+copy of it — and a stale copy is worse than none, because it argues back. By the
+end §9.1 forbade the sheen and the contact shading the project had already
+decided it wanted, and §9.3 specified a triangle count off by a factor of three.
+
+So the specification is `art/reference/`, and the method is to look:
+
+- `art/reference/README.md` — what each image is, and what was measured off it.
+- `./art/render.sh --mode rank` — our figures beside each other, at the finish
+  the references are photographed at.
+- `./run.sh parade --seed 7` — the figures the game actually draws, close up,
+  and `[` `]` to see them move.
+- `art/measure_reference.py` and `art/silhouette.py` — the reference's
+  silhouette and ours, in the same units, printed against each other.
+
+**The look is expected to change more than once, and nothing here should have to
+be amended when it does.** Add a reference image; the figure follows it.
+
+`DECISIONS.md`'s art amendments stay as a **record of what was tried and what
+looking found** — the moustache that read as two dots, the shorts that were an
+inner tube, the hair that sat on the head like a hat. Read them for the lessons,
+not as law. None of them binds a new direction.
+
+What is *not* art direction does still hold, and is stated where it belongs:
+**the sim is authoritative** and **legibility over realism** in §9.5; large hit
+targets and no dense tables in §9.6; and the boundary in §9.7 — the comic
+register governs the writing and the feel, and does not govern the art.
 
 ### 9.2 Camera
 
@@ -618,100 +643,35 @@ middle of the pitch (35°) because a panning camera has a different angle on eve
 look at, and the field of view is solved each frame to hold a fixed frame width, which keeps a
 player the same size on screen wherever play is.
 
-### 9.3 Characters
-
-- Six hundred to twelve hundred triangles. Stubby limbs, mitten hands, no separate fingers, no
-  neck.
-- **The proportions are the squat vinyl toy** (amended twice — see `DECISIONS.md`): a bare skull
-  about a third of total height, a long torso at 0.37, and short legs at 0.26. Hair takes the
-  silhouette past the skull. The three come to roughly the whole height between them, which is the
-  check to make if any one of them moves. This is not a small man and it is not meant to be —
-  lengthening the legs to carry a stride was tried, from a slimmer reference, and it made a figure
-  the owner did not want.
-- **The look is the toy** — Sokpop, Mii, Animal Crossing. Smooth primitives, flat colour, no line
-  work, no texture beyond the face, no period dressing. §9.7's register does not reach the art.
-- **The head is three ellipsoids**: a skull longest top to bottom, a jaw filling out the cheeks and
-  chin, and a crown doming the top. One sphere stretched upright is an egg — pointed at both ends,
-  which a head is at neither.
-- **Variety comes from proportion and face**, not from detail: head size, head shape (the head is
-  scaled on two axes, and the face stretches with it), height, build, skin, hair, and the brows,
-  eyes, mouth and nose a player was born with.
-- **The nose is geometry, not a drawn mark**: a small upright capsule on the front of the head —
-  a nose has a length to it, and a ball is a clown's — from a library of shapes, in the man's own
-  skin a shade warmer. At this size a drawn nose is a smudge between the eyes; a bump catches the
-  light and does the whole job for one sphere. It is not a red nose: the toy reference has plain
-  ones, and the red came from the other reference (`DECISIONS.md`, tenth).
-- **Eyes are solid black shapes, and big** — about a seventh of the width of the face, which is the
-  reference and is larger than it sounds. No whites, no pupils: one dark mark carries further, and a
-  white with a pupil in it is a grey smudge at match distance.
-- **Hair colours are colours hair comes in** — black, browns, blonds, ginger, grey, white.
-- **Hair is a sphere a tenth or more larger than the skull, pushed back, plus pieces.** Every cut
-  carries volume: hair that merely skims the head is paint on the scalp, and the difference between
-  a full cut and an afro is the curls on top, not the shell. Radius is how much hair there is; the
-  push back is where the hairline lands; and on top of that go curls, a quiff,
-  tufts, sideburns, a widow's peak or a mass down the back. Nothing is perched on the crown — a
-  squashed ellipsoid sitting on top of a head is a hat, and reads as one every time.
-- **A soft sheen on the figure, and only the figure.** The reference is moulded vinyl; the highlight
-  is most of what makes it read as an object rather than a flat shape. Scenery stays dead flat.
-- **Every crease is dark.** Under the chin, along the hairline, inside the collar, under the sleeve,
-  between the legs. This is the other half of reading as an object and it is worth more than the
-  sheen: flat colour with no contact shading is a set of shapes. It is the one screen-space effect
-  the look wants — no bloom, no reflections — and it is the first thing to switch off if a frame
-  budget ever gets tight.
-- **Generation reaches the tails.** Height clusters in the middle of a squad list and occasionally
-  draws a giant or a small one, and build follows height.
-- **No facial rig.** The face is drawn on a texture and swapped
-  wholesale for expression — neutral, effort, delight, despair, anger. It is generated at a
-  resolution the close-up view can stand and anti-aliased from the shapes' own distance functions,
-  so a curve is a curve rather than a staircase. Expression swaps deliver an
-  enormous amount of character for almost no cost; use them constantly. The *shape* of the eyes and
-  the mouth is per-player and independent of the expression: the neutral face a man wears for almost
-  the whole match is his own, and the expression is drawn over it. The **brows carry the
-  expression** — lowered and driven in for effort, raised for delight, outer ends dropped for
-  despair — which is the range a Mii gets out of a face with no rig in it. The brows themselves are
-  **moulded ridges in the man's hair colour, not drawn**: they are the most characterful thing on
-  the reference figure, and an ink line among moulded features is the one part that stays a drawing.
-  They are posed from the same table the face is drawn against, so there is one set of numbers.
-- Hair and hats are drawn from a small library of smooth pieces. No beards: a sphere on the jaw is
-  a blob at any size, and it swallows the mouth.
-- **Procedural appearance from a seed**, Mii-style: body type, skin tone, hair mesh and colour, face
-  atlas index, accessory. A five-hundred-player database therefore has visual identity essentially
-  for free — and memorable-looking players are what make the man-management layer land at all.
-- **Kit trim in the second colour**: a neckline, a cuff at the sleeve, hoops near the top of the
-  sock. Not period dressing — it is how a kit is drawn, in blocks of two colours.
-- Kits are flat two- or three-colour materials driven by a palette resource. Define a master palette
-  of sixteen to twenty-four colours so the game stays coherent and can be re-skinned per competition.
-
-### 9.4 Ball, pitch and crowd
-
-The ball is a plain white sphere with a handful of dark pentagon dots, or plain white, with a slight
-squash on hard contact. The pitch is a flat plane with painted lines and mowing stripes as flat
-colour bands. Goals are thick rounded tubes in a bright accent colour — they should read as pool
-noodles, not steel.
-
-The crowd is instanced low-poly heads bobbing on a sine wave with per-instance phase offsets,
-coloured from the home palette. Cheap, and the collective motion sells the stadium.
-
 ### 9.5 Animation
 
-- Heavy squash and stretch on kicks, landings, dives and falls.
-- Minimum clip set: idle, jog, run, sprint, sharp turn, light kick, hard kick, header, slide, fall,
-  get up, celebrate, dejected, exhausted, keeper dive left and right, keeper catch.
-- **No root motion.** Animation is driven by simulated velocity; the sim is always authoritative.
-- **Play it smoothly, at the display's frame rate.** An earlier build quantised every pose to ten
-  frames a second for a stop-motion register; the owner asked for smooth motion instead (see
-  `DECISIONS.md`). The locomotion cycle in particular has to lift the knee and the foot clear of the
-  grass — a leg that swings through straight reads as being dragged along the ground however good
-  the rest of the figure is.
-- Legibility over realism. Players should visibly fall over, throw their arms up, sit down when
-  exhausted, and trudge when morale is low. Big, readable body language is how the player reads the
-  match without reading numbers.
+Two rules, and they are not about the look. How a pose is *shaped* is §9.1's
+question — the references and the eye.
+
+- **No root motion; the sim is always authoritative.** Animation is driven by
+  simulated velocity and never the other way about. A pose may not move a player,
+  change where he is, or contradict what the simulation says he did.
+- **Legibility over realism.** Players should visibly fall over, throw their arms
+  up, sit down when exhausted, and trudge when morale is low. Big, readable body
+  language is how the player reads the match without reading numbers.
+
+`SimConsts.Anim` is the list of states and it is the authority — every one of
+them is published by the sim and posed by the view, so the code says which exist
+and a copy here would only go stale.
 
 ### 9.6 Interface
 
-Chunky, thick-outlined, hand-drawn numerals and panels, as in the reference scoreboard. Bright
-saturated primaries, large hit targets. Avoid dense tables anywhere — if a screen is starting to
-look like a spreadsheet, it is wrong for this game.
+**Drawn in the same look as the figures, whatever that look currently is.** §9.1's references govern
+the interface too: a panel that would sit oddly beside the men on the pitch is wrong however good it
+looks on its own. There is no separate style guide for it and nothing here to amend when the figures
+change.
+
+Two things that are not style, and do hold:
+
+- **Large hit targets.**
+- **No dense tables anywhere.** If a screen is starting to look like a spreadsheet it is wrong for
+  this game. That is a statement about what the game *is* — a match watched and a squad managed by
+  eye — not about how it is drawn.
 
 ### 9.7 Tone and register — the football comic
 
@@ -723,7 +683,7 @@ pitches, floodlit midweek nights, hoardings, terraces, a manager in a sheepskin 
 
 That is a specification, not a mood board. What it asks for:
 
-- **Archetypes, not averages.** Generation (§9.3, §8) should be allowed to reach the tails — a giant,
+- **Archetypes, not averages.** Generation (§8) should be allowed to reach the tails — a giant,
   a tiny one, an ancient one, one who is superb at exactly one thing and hopeless at the rest. A
   squad of eleven competent similar men is off-register even when every number in it is plausible.
   The interesting men are the ones a player can describe in four words.
@@ -733,7 +693,7 @@ That is a specification, not a mood board. What it asks for:
   tells you it was funny.
 - **Big moments are physical, and they are the animation's job.** The keeper carried backwards over
   the line, both men into the hoardings, the header won by a man a foot taller than anyone near him.
-  §9.5's squash and stretch and the expression atlas of §9.3 are how these land. **They are dressing
+  §9.5's legibility rule and the expression atlas are how these land. **They are dressing
   on a normally simulated event** — a goal is a goal the engine produced; the comic is in how it is
   shown and described, never in the physics. §11's sanity ranges are untouched by any of this.
 - **Nicknames are identity.** "Hot-Shot", "Mighty" — an epithet from the trait-and-attribute
@@ -746,8 +706,8 @@ That is a specification, not a mood board. What it asks for:
 
 The boundary, stated once: the register governs the **writing and the feel** — naming, copy, the
 event log, dialogue, what the game reports and how it reports it — and the character generation
-behind them. It governs nothing in `sim/`, **and it does not govern the art**. The look is §9.3's
-and only §9.3's: the flat-coloured toy. An ink outline, an eighties collar and a pair of comic
+behind them. It governs nothing in `sim/`, **and it does not govern the art**. The look is the
+reference images' and only theirs (§9.1). An ink outline, an eighties collar and a pair of comic
 spectacles were built here and taken straight back out, because a drawn line is the register
 leaking into the art. The comic is in the tone of voice, not on the models. A proposal that reads "and Hamish's shots should ignore the keeper" is
 a proposal to break §11 and is refused; a proposal that reads "a shot above some power, scored,

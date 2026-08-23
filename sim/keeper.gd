@@ -72,7 +72,7 @@ static func _holding(ctx: SimContext, k: SimPlayer) -> bool:
 const HOLD_HEIGHT := 1.15
 ## And how far in front of him, along his facing. The hold point used to be his
 ## own centre line, which is inside the torso: the chest capsule is about 0.22 m
-## from the axis at §9.3's proportions and the ball is 0.11 m across, so a ball
+## from the axis at the figure's proportions and the ball is 0.11 m across, so a ball
 ## "in his hands" was buried in his sternum with nothing of it showing. This is
 ## the two of them added -- the ball resting against the front of the chest,
 ## which is where the `KEEPER_HOLD` hands cup it.

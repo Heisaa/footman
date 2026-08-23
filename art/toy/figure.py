@@ -14,11 +14,12 @@ cost us to learn:
   the seat and the seat's underside is closed off inside the leg: two surfaces
   that never touch, rather than one surface held by both parts.
 
-The head is the one thing worth reading twice. `PLAN.md` §9.3 wants the face
-drawn on a texture and swapped for expression, and the brows and the nose
-moulded -- so the skull carries no features at all, a `Face` patch laid on the
-front carries the atlas, and `Brows` is two bars the game poses. That is where
-the variety comes from: one head, five hundred faces.
+The head is the one thing worth reading twice. The face is drawn on a texture
+and swapped for expression, and the brows and the nose are moulded -- so the
+skull carries no features at all, a `Face` patch laid on the front carries the
+atlas, and `Brows` is two bars the game poses. That is where the variety comes
+from: one head, five hundred faces. It is a shape arrived at by looking, not a
+rule: `PLAN.md` §9.1 has no numbers in it and the references are the spec.
 """
 
 import math

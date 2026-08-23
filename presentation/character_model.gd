@@ -1,7 +1,7 @@
 class_name SimCharacterModel
 extends RefCounted
 ## Where a figure comes from: a built model if there is one for his body, and
-## the procedural figure if there is not (PLAN.md §9.3).
+## the procedural figure if there is not (PLAN.md §9.1).
 ##
 ## This is the seam between the identity layer and the art. `WorldGen` writes a
 ## man's body type, height and build into the low bits of his `appearance_seed`

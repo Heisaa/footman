@@ -2552,7 +2552,7 @@ func _pose_fall(node: Node3D, index: int, u: float) -> void:
 ## as "throw-in" from forty metres away, before they have registered that the
 ## ball is at the touchline.
 ##
-## Same lesson as the celebration (§9.3's proportions): arms are about as long as
+## Same lesson as the celebration: arms are about as long as
 ## the head is wide, so straight up is inside the head's silhouette and reads as
 ## nothing. The wind-up leans them back past vertical and the release carries
 ## them through to horizontal, which puts the hands outside the head at both ends

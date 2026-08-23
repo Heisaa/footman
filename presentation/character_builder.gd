@@ -1,6 +1,6 @@
 class_name SimCharacterBuilder
 extends RefCounted
-## Builds a player (PLAN.md §9.3), from the owner's reference: a rank of moulded
+## Builds a player (PLAN.md §9.1), from the owner's reference: a rank of moulded
 ## toy footballers.
 ##
 ## **The look is the toy, and only the toy** -- smooth primitives, flat colour,

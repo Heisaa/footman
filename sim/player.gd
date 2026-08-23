@@ -64,7 +64,7 @@ var player_name := ""
 var role := SimRole.CM
 var attrs := SimAttributes.new()
 var is_keeper := false
-## Seed for the procedural appearance (PLAN.md §9.3). The simulation never reads
+## Seed for the procedural appearance (PLAN.md §9.1). The simulation never reads
 ## it; it travels with the player so presentation can rebuild the same face.
 var appearance_seed := 0
 

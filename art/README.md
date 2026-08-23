@@ -64,6 +64,13 @@ face: an eye socket is a sphere taken **out** of the head with a small fillet,
 which leaves the soft rim moulded vinyl has. Nothing on the face is drawn — the
 brows are ridges, the nose is a bump, the mouth is a groove.
 
+## Everything below is read off the pictures, not laid down
+
+`PLAN.md` §9.1 has no rules about the look in it any more: the reference images
+are the specification and they are expected to change. What follows is what was
+read off the four in `reference/` and what building against them taught -- a
+record, useful until a new picture says otherwise, and not law.
+
 ## The one idea to keep hold of
 
 **A solid is one moulding and one colour.** Inside a solid everything fuses with

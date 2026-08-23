@@ -1,6 +1,6 @@
 class_name SimAppearance
 extends RefCounted
-## Procedural player appearance from a seed (PLAN.md §9.3).
+## Procedural player appearance from a seed (PLAN.md §9.1).
 ##
 ## Mii-style: body type, skin tone, hair mesh and colour, face atlas index,
 ## accessory. A five-hundred-player database therefore has visual identity
@@ -40,7 +40,7 @@ const HEIGHT_TYPICAL_MAX := 1.88
 ## is off-register even when every number in it is plausible.
 const TAIL_CHANCE := 0.14
 
-## Expressions are swapped wholesale rather than rigged. §9.3: two dots and a
+## Expressions are swapped wholesale rather than rigged: two dots and a
 ## simple mouth, swapped for the emotion. They deliver an enormous amount of
 ## character for almost no cost, so they are used constantly.
 enum Face { NEUTRAL, EFFORT, DELIGHT, DESPAIR, ANGER }

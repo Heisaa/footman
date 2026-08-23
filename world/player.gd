@@ -38,7 +38,7 @@ var age := 24
 ## currently a giant in his attributes, not in his height.
 var height := 1.78
 var build := 0.5
-## Seed for the procedural appearance (PLAN.md §9.3). Travels to `SimPlayer` so
+## Seed for the procedural appearance (PLAN.md §9.1). Travels to `SimPlayer` so
 ## presentation rebuilds the same face every time.
 var appearance_seed := 0
 

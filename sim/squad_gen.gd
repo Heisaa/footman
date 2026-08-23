@@ -84,6 +84,6 @@ static func club_name(rng: SimRng) -> String:
 
 
 static func random_kit_colour(rng: SimRng) -> Color:
-	# Drawn from the master palette so the game stays coherent (PLAN.md §9.3).
+	# Drawn from the master palette so the game stays coherent (PLAN.md §9.1).
 	var palette := SimPalette.KIT_COLOURS
 	return palette[rng.range_int(0, palette.size() - 1)]

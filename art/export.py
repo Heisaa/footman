@@ -177,7 +177,7 @@ def _pivot_of(joints, name):
 ##
 ## A uniform ratio spends the budget by **area**, and area is not what the eye
 ## goes to. The eyes are two small ellipsoids and the first thing anybody looks
-## at -- §9.3 calls them the one dark mark that carries at distance -- and at a
+## at -- one dark mark is what carries at distance -- and at a
 ## flat ratio they come out as faceted pentagons with a spike on the bottom. The
 ## hair is the opposite: the biggest single part on the figure, a bag of soft
 ## lobes, and nothing about it is worse for being coarse.
@@ -211,8 +211,11 @@ MIN_TRIS = 64
 def decimate(objects, target):
     """Thins the whole figure towards a triangle budget.
 
-    `PLAN.md` §9.3 asks for six hundred to twelve hundred triangles and the
-    mesher hands over the better part of a million, so something has to do this.
+    The mesher hands over the better part of a million triangles, so something
+    has to do this. There is no budget written down any more -- `PLAN.md` §9.1
+    took the numbers out and pointed at the reference images -- so `--tris` is
+    set by looking, and about twenty thousand was where this route stopped
+    looking chewed.
 
     **The count is measured, never predicted.** A collapse ratio is a request,
     not a result: hold the hard edges and the modifier keeps far more than the

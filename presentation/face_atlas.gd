@@ -1,6 +1,6 @@
 class_name SimFaceAtlas
 extends RefCounted
-## The faces, generated rather than authored (PLAN.md §9.3).
+## The faces, generated rather than authored (PLAN.md §9.1).
 ##
 ## A drawn face on a small texture, swapped wholesale for expression. There is no
 ## facial rig and there never will be: a rig would cost far more than it could

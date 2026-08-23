@@ -514,3 +514,48 @@ plainly: the compressed match converts about a quarter of its shots and puts fou
 fifths on target, against football's tenth and third. **Anything measured at the
 default clock is a measurement of the format**; `--clock-rate 1` is the honest way
 to ask what the football is doing.
+
+### Twelfth: the art rules come out, and the references are the specification
+
+The owner asked for every direct rule about the look to be removed from
+`PLAN.md` §9, leaving only the two in §9.5 that are not about the look — the sim
+is authoritative, and legibility over realism — and §9.7's boundary. The reason
+given: the art will change more than once during development, and a written rule
+is a thing that has to be argued with each time.
+
+The evidence was already in this file. Four amendments above this one are art
+amendments, and every one of them was written down *after* the owner had looked
+at a picture and said what was wrong with the figure beside it. The picture was
+doing the work. The prose was a lagging copy, and a stale copy is worse than
+none, because it argues back:
+
+- §9.1 still said "unlit or two-band toon shading, no physically-based
+  materials, roughness at maximum" long after the tenth amendment had asked for
+  a soft sheen and the code had one.
+- §9.1 still said "no ambient occlusion" after the eleventh amendment had
+  reversed it in as many words — and the reversal was recorded and never built,
+  so the document forbade the thing the project wanted and the code did neither.
+- §9.3 specified six hundred to twelve hundred triangles against a built figure
+  of three thousand.
+- §9.3 described the head as three ellipsoids, which stopped being true when the
+  figure was rebuilt out of rings.
+
+So §9.1 is now one page saying where to look: `art/reference/`, the rank render,
+the parade, and the two silhouette measuring tools. §9.3 and §9.4 are gone.
+§9.2 (camera) stays as written: it is a system -- three panning positions, the
+elevation and the frame width solved each frame -- and not a statement about the
+look. §9.6 (interface) was generalised rather than deleted, at the owner's
+direction: it now says the interface is drawn in whatever look the figures
+currently have, and keeps only the two lines in it that were never style -- large
+hit targets, and no screen allowed to become a spreadsheet.
+
+The §9 preamble stays too, relabelled. Sokpop, the Mii and Animal Crossing are
+**inspiration and feel, and the company to keep**, not a description of what to
+build; where a name there and a reference image disagree, the image wins.
+
+**What this does not change.** The amendments above stay, as a record of what was
+tried and what looking found — the moustache that read as two dots, the shorts
+that were an inner tube, the hair that sat on the head like a hat. They are
+lessons, not law, and none of them binds a new direction. §9.7's boundary stands
+untouched: the comic register governs the writing and the feel and does not
+govern the art.

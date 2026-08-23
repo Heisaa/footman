@@ -1,6 +1,6 @@
 class_name SimPalette
 extends RefCounted
-## The master palette (PLAN.md §9.3).
+## The master palette (PLAN.md §9.1).
 ##
 ## Twenty colours, bold and non-naturalistic, shared by kits, pitch, interface
 ## and backgrounds so the game reads as one object and can be re-skinned per
