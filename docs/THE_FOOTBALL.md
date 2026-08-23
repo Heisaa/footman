@@ -164,6 +164,11 @@ When one is built its row above changes and its entry here goes.
 | **29** | What is left of the box: a corner the attacking side attacks | `SimSetPiece`, `SimOffBall` |
 | **30** | Positional play in midfield, and the offside count that comes with it | `SimMovement.shape_position`, `SimOffBall` |
 | **33** | The runner ahead of the ball is never generated as an option | `SimOffBall`, `SimDecision._add_passes` |
+| **34** | Nothing in the sim reads the score or the clock | `SimTactics`, `SimContext` |
+| **35** | Every footballer is two-footed | `SimAttributes`, `SimTouch`, `SimDecision` |
+| **36** | The ball bends and nobody means it: curl is error, never intent | `SimTouch`, `SimDecision._curl_for` |
+| **37** | The match has one tempo and football has two | `SimDecision.scan_gain`, `SimTactics` |
+| **38** | Attributes make a player better, never different | `SimDecision`, `SimAttributes` |
 
 **3 surfaced when shots started reaching the target.** About a third are second
 attempts within four seconds of the last: parry, rebound, strike again. Real
@@ -340,6 +345,104 @@ ahead of the ball are not running forward, *and* the ones who are do not reach t
 candidate list. Both are `SimOffBall` and `_add_passes`, neither is a value knob,
 and this is the fourth time this project has been caught pricing an option that
 was never generated.
+
+**34 is the cheapest football on this page, and it was found by grep.** `ctx.score`
+is written by `SimMatch` when a goal goes in, copied into the snapshot and the
+telemetry, and **read by nothing that decides anything**. Neither is the clock:
+`SimTactics` contains no reference to the minute. So a side three down with five
+left plays exactly the football it played at kick-off — same directness, same line,
+same width, same ration of men beyond the ball — and the last ten minutes of a
+match look like the first ten. That is the one shape every viewer knows by heart,
+and its absence is not a missing mechanic: every dial a chasing side would move
+already exists (`directness`, `line_height`, `counter`, `retention_bias`, the
+`QUOTA` rations). What is missing is the *reader* — one function from goal
+difference and minutes remaining onto the dials the plans already set, with the
+protecting side's mirror of it. It is an attacking item and belongs to this pass:
+a side chasing a goal pushes bodies past the ball, and the game stretches.
+
+Two cautions, both from this file's own history. It has to be **the shape of the
+match, not a scale factor on scoring** — the thing a viewer sees is more men in
+the box and a longer ball, not a better shot. And it will make the goals
+correlated within a match, which every per-match measurement here assumes away;
+`chains --against` compares across seeds and is the honest instrument.
+
+**35 is that nobody has a foot.** There is no `preferred_foot` anywhere in `sim/`,
+so a strike is the same strike in every direction from every man. What is absent on
+screen: nobody shifts the ball onto his right, nobody is shown onto his weaker
+side and takes the bad option, no winger cuts in, and a full-back overlaps for
+reasons that have nothing to do with which foot he crosses with. It is the
+cheapest source of *asymmetry* in the engine, and asymmetry is most of what makes
+a real side look like eleven people rather than one repeated player.
+
+The mechanic is a term, not a layer: a foot per player, and an angle penalty
+charged through `aim_sigma` — the same route the facing penalty already takes, so
+the decision layer pays for it and a man **chooses** the option he can strike
+(`DECISIONS.md`, the facing penalty). Then `safe_direction` and `_add_dribbles`
+prefer the side he can play off, and `CROSS_FROM` reads it. It will cost goals,
+because it makes half of every player's options worse; per `PLAN.md` §11.1.1 that
+is the price and not a regression.
+
+**36 was written as "no ball ever bends" and that was wrong, which is the useful
+half.** `SimBall` carries a full three-axis spin and a Magnus term that is
+`spin.cross(vel)`, so a yawing ball already curves; `SimTouch` puts yaw on the
+driven ball, on the lofted one and on the cross. **The physics is free and built.
+What is missing is that no curl in open play is ever *aimed*.**
+
+Every one of them is zero-mean noise scaled by technique — `PASS_CURL_SIGMA` on
+the driven ball, `SimDecision._curl_for` on the cross, `gauss_clamped(0.0, 2.2)`
+on the third — so the better a player's technique the *harder* he bends it in a
+direction nobody chose. Half of every cross in this engine curls away from the
+keeper and the other half curls into his hands, and the coin is `ctx.rng`. The one
+place it is signed is a corner (`SimSetPiece`, line 697: `-signf(taker.pos.z)`),
+which is the whole idea already written down in one expression, applied to the act
+that happens 0.02 times a match.
+
+So the proposal is a sign, not a physics layer. A cross bends away from the goal
+the keeper is defending; a shot from an angle bends back across him; a ball round
+a man bends the side he is not on. Keep the existing magnitude and its technique
+scaling as the error, and give the mean an intention. It has a decision half too,
+and that is where it stops being cosmetic: **a ball that curls away from the
+keeper is worth more than the same ball curling into him**, and `_pass_success`
+and `expected_goals` currently price both as the same strike, because in
+expectation over the coin they are.
+
+What an eye gets: the whipped cross, the finish bent round the far post, and the
+first thing in this engine that makes technique visible rather than merely
+accurate.
+
+**37 is the fresh idea 28 has been waiting for, and it does not need 28's question
+answered.** The open question at the end of this order asks whether the man on the
+ball is too quick (1.1 s a touch against football's two to three) or the match too
+short to hold enough of them, and says the two pull opposite ways: slowing the
+carrier makes the pass total worse. **Contrast is the way through that costs
+nothing on the mean.** Football is not played at one tempo — it is twenty seconds
+of the ball going sideways at the back, then three passes in two seconds — and this
+engine has one rate for both. Raise the variance and leave the mean where it is:
+the same number of passes a match, and a match that has phases in it.
+
+The state is a possession's own phase — settle, probe, attack — with hysteresis
+so it does not flicker, driven by pressure on the ball and where play is rather
+than by a timer, and moving `scan_gain`, pass-length appetite and the errand
+rations together. **The thing that makes it football rather than a knob is the
+acceleration being caused**: the phase turns over when a man is free between the
+lines, which is the moment 30 built the link players for.
+
+**38 is that the engine has a quality axis and no style axis.** The softmax
+temperature reads `decisions`, so a better player plays closer to the best option
+and a worse one further from it — but every player is aiming at the *same* best
+option. Two equally good midfielders play differently in football: one takes the
+ball into contact and tries the pass through, the other has it and gives it. Here
+they are the same man with different error bars.
+
+The mechanic is a per-player bias on the terms that are already separated and
+already named — `retention_bias` against the forward ball, the through ball's own
+weight, the carry against the release — drawn once at squad generation and stable
+for a career, because the point of it is that the same man is recognisable across
+matches. It also answers half of the `STATUS.md` note that squad quality reads in
+ball control and not at all in chance creation: **a better side that is only more
+accurate looks like the same side**, and this is what a viewer would be reading
+instead. It is worth nothing until 33 and 30 give a midfielder a forward option to
+be characteristically brave about, so it is last of the five.
 
 ## Order
 
@@ -561,6 +664,14 @@ not a finding; it is the list working.
 - The ball almost never goes behind for a corner (**5**).
 - A free kick on the edge of the box is possible but rare; the cynical foul is
   absent.
+- **The last ten minutes look like the first ten**, whatever the score (**34**).
+  A side two down keeps its shape, its width and its patience to the whistle.
+- Everyone strikes it equally well off either side, and nobody is ever shown onto
+  a foot he cannot use (**35**).
+- A cross bends *into* the keeper as often as away from him (**36**).
+- The ball is circulated at one speed from the first minute to the last: there is
+  no settled passage and therefore no moment it quickens (**37**).
+- The better side is more accurate and plays the same football (**38**).
 - A carrier runs straight into a defender and loses it — shielding and the cut
   both exist, so this is the softmax declining them, a tuning fact rather than an
   absence.
