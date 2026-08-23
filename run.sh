@@ -52,6 +52,11 @@ usage: ./run.sh <command> [args]
                             said, against what the engine did with the same ball.
                             One geometry, every ball played, so no selection is
                             in it. Simulates: ~10 s at the default 40 trials
+  scenario [--only NAME]    the named situations, each set rather than waited
+      [--trials N]          for, run forward a few seconds and scored by how it
+      [--quality Q]         ended. A table of shares, and the same situations are
+                            watchable with `view3d --scenario NAME`. ~2 s each
+                            at the default 40 trials
   strike [--seed N]         where a struck ball actually lands, against where
                             execution_accuracy told the decision layer it would.
                             The two share one error model or they do not. Instant
@@ -70,6 +75,7 @@ usage: ./run.sh <command> [args]
       [--home Q] [--away Q]
       [--debug] [--layers 1,3] [--bookmark S]
       [--from-bookmark seed7-t34210]
+      [--scenario NAME]
                             --debug turns on the overlay: what the man on the
                             ball chose and what he turned down, a ticker, and
                             seven annotation layers on keys 1-7. It drops the
@@ -104,6 +110,12 @@ usage: ./run.sh <command> [args]
                             --clock-rate R runs the match clock R times faster
                             than real time, so a full 90 takes 90/R minutes
                             --pitch-scale F shrinks the pitch, 11 a side kept
+                            --scenario NAME watches one set situation instead of
+                            a match: it starts in the moment, plays out, and
+                            repeats on the next seed so the same thing can be
+                            watched many times. The names are the rows of
+                            `./run.sh scenario`, which counts the identical
+                            situations
   demo                      the six-a-side comparison, compressed the same way
   shot                      render one match frame to a PNG, from a virtual
                             display (SHOT_AT, SHOT_SPEED, SHOT_PATH)
@@ -380,7 +392,7 @@ case "$cmd" in
 		done
 		parallel_tactics "$per_arm" "$workers" ${rest+"${rest[@]}"}
 		;;
-	match|diagnose|chains|batch|perf|determinism|aggregate|compare|replay|behind|box|strike|control)
+	match|diagnose|chains|batch|perf|determinism|aggregate|compare|replay|behind|box|strike|control|scenario)
 	               exec "$GODOT" --headless --script res://tools/headless_main.gd -- "$cmd" "$@" ;;
 	""|-h|--help)  usage ;;
 	*)             echo "unknown command: $cmd" >&2; usage; exit 2 ;;

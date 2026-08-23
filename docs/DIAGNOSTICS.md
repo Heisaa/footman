@@ -224,6 +224,50 @@ whole of the selection above it.
   to three times an hour, so it cannot be measured from matches at all. It runs at
   the compressed clock deliberately: `shot_appetite` is part of what decides this.
 
+## The scenarios — set the situation, run it forward, watch it too
+
+`./run.sh scenario` and `./run.sh view3d --scenario NAME`. The benches above set a
+geometry and ask the decision layer what it would *choose*, without ever ticking
+the clock. A scenario sets the same kind of geometry and then **plays it**, for a
+few seconds, and says how it ended.
+
+**It exists because the two slow loops are the same loop.** A match is a slow,
+noisy way to ask about a moment that happens four times in it, and watching for
+that moment is worse — nine minutes for a handful of glimpses. A scenario is the
+moment, twenty times, in seconds.
+
+**The two halves are one definition** (`SimScenario`, in `sim/` for exactly this
+reason). `./run.sh scenario` runs it many times and prints shares;
+`view3d --scenario NAME` puts the identical starting position on screen, plays it
+out, and repeats it on the next seed so the same thing can be watched over and
+over. **So the numbers and the eye are looking at the same football and can
+disagree usefully** — which is the whole point, and is not true of any other pair
+of instruments here.
+
+- **The six outcome columns are one vocabulary for every scenario**, deliberately:
+  `goal saved off blocked lost none`, shares that sum to 100. A per-scenario
+  outcome set would be a new table to learn each time. `goal + saved` is the shot
+  that was worth taking, `off` is the finish, `blocked` belongs to the defence,
+  `lost` is the situation ending before a shot, and `none` is the clock running
+  out with the ball still ours — on a five-second one-on-one, a man who never went
+  for goal.
+- **A share near a half carries about `50/sqrt(n)` points of standard error**, so
+  8 points at the default 40 trials. The header prints it. **A row that moved by
+  less than that has not moved**, and `--trials` is the answer before believing a
+  small one.
+- **The variants are different questions, not samples of one.** A keeper set on
+  his line and a keeper committed to closing are opposite problems; splitting them
+  is what lets a change say *which* it moved.
+- **Each trial is a different seed, so the squads differ.** The situation is fixed
+  and the players in it are not: a scenario is a property of the rules, not of one
+  striker.
+- **It runs at the standard compressed clock**, for `./run.sh box`'s reason —
+  `shot_appetite` is part of what decides a shot, and a bench that turned it off
+  would describe a match nobody watches.
+- **Watching one defaults to half speed.** A one-on-one is decided inside a
+  second; at the rate a match is watched the situation is over before the eye
+  arrives.
+
 ## The live overlay
 
 `./run.sh view3d --debug`, or **`F1` in any running match** — built the first time

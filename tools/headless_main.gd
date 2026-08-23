@@ -72,6 +72,8 @@ func _initialize() -> void:
 			StrikeBench.run(flags)
 		"control":
 			ControlBench.run(flags)
+		"scenario":
+			ScenarioBench.run(flags)
 		_:
 			printerr("unknown command: %s" % command)
 			quit(2)
