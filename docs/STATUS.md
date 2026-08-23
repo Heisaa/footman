@@ -23,7 +23,15 @@ and cutting rarely. A hand-drawn scoreboard over it. Animation runs at the
 display's frame rate. **Not yet judged against "watchable and charming at 1x"**,
 which is Phase 6's exit criterion and only the owner can call it.
 
-**7-10 not started.**
+**7-8 not started.**
+
+**9 has its data layer.** `world/` holds the §8 record — player, club, season —
+with period-British name generation, derived epithets, traits carrying their
+intended sim effect, and a belief table the screens read instead of the truth.
+No season is played and nothing in `sim/` reads it; `docs/THE_PEOPLE.md` says
+what is there and what is still loose. `./run.sh world` prints a club.
+
+**10 not started.**
 
 ## The current work
 

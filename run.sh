@@ -61,6 +61,11 @@ usage: ./run.sh <command> [args]
                             per trial, by touch kind: the only way to tell an act
                             that is never generated from one that is chosen and
                             fails. --trace N prints trial N's event log in order
+  world [--seed N]          print a generated club: the squad with names, ages,
+      [--reputation Q]      wages and traits, who the tails are, and a scout
+      [--clubs N]           report on the first few. --clubs N prints a division
+      [--reports N]         and its first week of fixtures instead. No match
+                            runs; it is instant
   strike [--seed N]         where a struck ball actually lands, against where
                             execution_accuracy told the decision layer it would.
                             The two share one error model or they do not. Instant
@@ -425,7 +430,7 @@ case "$cmd" in
 		done
 		parallel_tactics "$per_arm" "$workers" ${rest+"${rest[@]}"}
 		;;
-	match|diagnose|chains|batch|perf|determinism|aggregate|compare|replay|behind|box|strike|control|scenario)
+	match|diagnose|chains|batch|perf|determinism|aggregate|compare|replay|behind|box|strike|control|scenario|world)
 	               exec "$GODOT" --headless --script res://tools/headless_main.gd -- "$cmd" "$@" ;;
 	""|-h|--help)  usage ;;
 	*)             echo "unknown command: $cmd" >&2; usage; exit 2 ;;

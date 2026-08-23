@@ -74,6 +74,8 @@ func _initialize() -> void:
 			ControlBench.run(flags)
 		"scenario":
 			ScenarioBench.run(flags)
+		"world":
+			WorldBench.run(flags)
 		_:
 			printerr("unknown command: %s" % command)
 			quit(2)

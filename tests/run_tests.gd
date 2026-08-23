@@ -33,6 +33,7 @@ const CASES := [
 	"res://tests/test_golden.gd",
 	"res://tests/test_tactics.gd",
 	"res://tests/test_patterns.gd",
+	"res://tests/test_world.gd",
 ]
 
 
