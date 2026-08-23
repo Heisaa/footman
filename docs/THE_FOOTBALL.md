@@ -290,12 +290,33 @@ arrives; standing on the spot he is already past it when the ball comes down,
 which is the run this was authored as. Thin -- three matches offer ten crosses --
 so it settles which of the two ships and nothing about what either is worth.
 
-The release is the part that does not work. It fired on 2, 4 and 31 ticks of a
-match against 392, 702 and 508 held, because `_cross_coming` asks where the
-carrier is standing this tick while the run was committed seconds earlier. The man
-therefore holds his six metres nearly always, including as the ball is struck. A
-trigger on a cross being *likely* is a mechanic rather than a knob, and it is what
-is left of the timing.
+The release fired on 2, 4 and 31 ticks of a match against 392, 702 and 508 held,
+because `_cross_coming` asked where the carrier is standing this tick while the
+run was committed seconds earlier. The man therefore held his six metres nearly
+always, including as the ball was struck.
+
+**Two faults in the trigger, both fixed, and neither was the reason it never
+fires in a match.** It read `ctx.possession_player`, which is -1 the moment an
+opponent is within 2.2 m of the ball — a full-back closing the man about to
+cross is the situation, not the absence of one — so it now reads the ball's own
+last toucher while the ball is still within reach of him. And the answer was
+recomputed from nothing every tick, so it is latched for `CROSS_COMING_HOLD`,
+which is what carries it through the strike. Measured over ten match-minutes,
+the ticks where a man of ours is wide on the ball: seed 1 **41 to 97**, seed 3
+**26 to 31**. In `cross-right`, where the winger starts on the ball and
+uncontested, the release fires **722 to 1312** ticks of 1774 and the row does
+not move, which is right — the old test already worked in that geometry.
+
+**What is left is that the run and the cross are never live at the same moment.**
+Over three seeds, of 609, 195 and 346 ticks with a box run live and the ball on
+the grass, **not one** had a man of ours wide on the ball, by either test. Probed
+the other way round — at the 97 ticks of seed 1 where somebody was wide on the
+ball — the run is refused nowhere: it is *on the list*, once, every one of those
+ticks, and no man's intent is `box`. The off-ball layer only re-assigns intent
+when a man on the ball is deciding (739 men considered in a match, the box run
+listed for 1.1% of them and won 6 times), and the wide moment is a second long
+and usually falls between two of those. So the timing has an honest trigger and
+no population, and what is missing is still the run: **29** and **33**.
 
 What is left of 29 is a set-piece question as much as an open-play one: a large
 share of football's headed attempts come from corners, and corners are 0.02 a team
@@ -311,6 +332,463 @@ reliable: `fk-wide` crosses **1.0** a trial, produces **no shot in any of 25
 trials**, and drops 6.4 m from the nearest of ours. The delivery is not the
 problem in any of the three rows, which is what **29** has said since it was
 written; now the run that is missing has a distance attached.
+
+**The cross family is now seven rows, 2026-08-23** (owner: *crossings from
+different positions, especially closer to the extended goal line; in some
+scenarios more attacking players close to the box*). Three depths on the right
+flank at one width -- `cross-early` 24 m, `cross-right` 30, `cross-deep` 49 --
+the byline pair, and `cross-loaded`, which is `cross-right` with three of ours
+already running at the box and nothing else changed. First numbers, n=40:
+
+```
+                     goal  saved    off  block   lost   none | shot s shot m box s  cross drop m | touch
+  cross-early          0%     2%     2%     2%    82%    10% |   4.64   18.0  0.93   0.90    5.1 |   6.2
+  cross-right          5%     2%     5%     0%    82%     5% |   2.78   13.7  1.26   0.95    4.4 |   5.9
+  cross-left          12%     5%     5%     0%    72%     5% |   3.22   14.7  1.32   0.82    6.4 |   6.3
+  cross-loaded         2%    10%     2%     5%    75%     5% |   2.68   10.3  1.57   1.00    4.2 |   2.9
+  cross-byline         8%     5%    20%    10%    52%     5% |   2.01   12.5  2.35   0.07    0.4 |   3.1
+  cross-deep           0%    18%    10%     2%    70%     0% |   2.83   13.2  1.93   0.97    5.1 |   3.9
+  cross-pullback       2%     5%     0%     0%    92%     0% |   2.09    5.2  1.60   0.25   11.3 |   2.6
+```
+
+**The pair is the finding, and it is 29's own question answered.** Three men
+running at the box moves the shot from **13.7 m to 10.3**, the seconds spent in
+the area from 1.26 to 1.57 and the attempts on goal from 7% of trials to 12% --
+and moves the ball's arrival, which is the number this proposal is named for,
+**4.4 m to 4.2**. The delivery comes down four metres from the nearest of ours
+whether or not anybody is attacking it. So the run being absent is not what the
+drop distance was measuring, and the aim of the ball is now the open half of 29.
+
+**Depth pays and the finish does not.** `cross-deep`, three and a half metres
+from the goal line, is the most dangerous ball in the family -- 28% of trials
+end in an attempt at goal against `cross-right`'s 7% -- and it produced **no
+goals in 40**. `cross-early`, hit from the edge of the final third, is the least:
+one attempt in 40, from 18 m, 82% lost.
+
+**And the cut-back is barely played.** `cross-pullback` puts the ball on the goal
+line with two men arriving at the edge of the area, where `SimDecision._add_pullback`
+can fire and does, 0.25 a trial; the rest is 1.4 dribbles and 0.6 through balls a
+trial. When it is played the shot comes from **5.2 m**, which is what the act is
+for. 92% of trials end `lost`.
+
+**Where the cross is aimed and how it bends, 2026-08-23** (owner, watching
+`cross-right` and `cross-loaded`: *a lot of the crosses are aimed too much
+towards the goal so it reads like a weak shot; add some spin and some curve so
+the ball travels more parallel to the goal line*). Three faults, and the third
+was why nobody had found the second.
+
+**The ball was aimed into the goal frame.** `SimOffBall.box_targets` put the near
+and far points on the posts -- 3.7 m either side of the middle, five and eight
+metres off the line -- so a cross nobody met came down in the goal mouth in front
+of the keeper, who is standing there by trade. That is a weak shot with a
+different name on it. The points are outside the frame now, at fractions of the
+six-yard box so they scale with the pitch: across the near corner of it, and
+hanging past the far post. The run uses the same three points, so both halves
+moved together.
+
+**The ball was barely spinning.** `CROSS_CURL` was 3.4 rad/s, half a turn a
+second, where a footballer whips one at five to ten. Measured on the flight, the
+bow -- the furthest the ball departs from the straight line between the strike
+and where it lands -- was **0.28 m over twenty-five metres**, which is a straight
+ball with a number on it.
+
+**And it could not be raised, which is the finding.** `SimBallistics.solve_lofted`
+takes the spin and iterates on two things: how far the ball got and how long it
+took, both measured *along the line to the target*. Nothing looked sideways. So
+sidespin pushed the ball off its aim and nothing pulled it back: 1.5 m off at
+3.4 rad/s, and **six metres off** at a real one. Every bend the engine could put
+on a ball was a bend away from where it was aimed, which is why there was almost
+none. The launch now carries a yaw, iterated like the other two corrections
+(`docs/INVARIANTS.md`).
+
+With that in hand, `CROSS_CURL` is 40 rad/s and the same cross **bows 1.3 to
+1.8 m and still lands where it was aimed** -- 0.65 m of residual error against
+4.7 before. Measured on the rows, n=40:
+
+```
+					 goal  saved    off  block   lost   none | shot s shot m box s  cross drop m | touch
+  cross-right          2%     8%     5%     0%    75%    10% |   3.03   14.6  1.41   0.78    4.6 |   6.0
+  cross-loaded         8%    12%    15%     2%    58%     5% |   2.08   13.6  1.69   1.00    3.0 |   2.8
+  cross-deep           8%     8%    10%     2%    72%     0% |   2.55   13.0  1.79   0.97    4.5 |   3.8
+  cross-byline        12%    10%    25%     5%    45%     2% |   2.26   13.1  2.56   0.00      - |   3.4
+```
+
+**`cross-loaded` is where it shows**, because it is the row with men in the box:
+the ball comes down **4.2 m to 3.0 m** from the nearest of ours, attempts at goal
+12% of trials to **20%**, goals 2% to **8%**, and `lost` 75% to 58%. `cross-deep`
+goes from no goals in 40 to 8%. `cross-byline` now plays no cross at all -- from
+the goal line the aim points are behind him and the cut-back is the act, which is
+what that row is for.
+
+**Four seeds of ten match-minutes each say the match is unmoved**, 1 shot across
+the four before and 1 after: at this length a match produces about half a shot a
+side, so nothing here can be read from one. The scenario rows are the measurement
+and the screen is the judge.
+
+**How fast the ball is struck, 2026-08-23** (owner: *it still looks easy for the
+goalkeeper to pick the ball from the air -- we almost need to increase the speed
+of the ball. And it is a more general problem: slow short passes that are easy to
+intercept, and the receiver has to turn and run back to the ball and lose
+momentum*). Two numbers, one for each half of it, and both were slow.
+
+**The short pass.** `SimDecision.arrival_pace` is the only place a ground pass's
+speed is decided, and its floor was 2.0 m/s: a ten-metre ball arrived at 4.3 m/s
+after **1.57 s** on the grass, a five-metre one at 3.2 m/s after a second. A
+second and a half is time for anybody to step in front of it, and a ball that
+slow behind a man is a ball he walks back for. The slope is what the previous
+change to this curve was about -- a long ball outrunning the men -- so the slope
+stayed and the floor went to 4.2. Ten metres now arrives at 6.7 m/s after
+**1.18 s**, five metres at 5.6 after 0.73.
+
+**The cross.** It was asking for `lofted_flight`, which is the clipped ball's
+flight, and a twenty-five metre cross therefore hung for **1.73 s** and came down
+through heading height at 11.8 m/s. That is a floated ball and the goalkeeper has
+a second and a half to leave his line and take it. `SimTouch.cross_flight` is the
+whipped one: 1.25 s over the same distance, off the boot at 24.9 m/s and through
+heading height at **17.2 m/s**.
+
+**Measured on the thing the owner named**, 40 trials, who got to the cross first:
+
+```
+				 keeper first     ours first   theirs first   in the air
+  cross-right      9% ->  0%     14% -> 22%    77% -> 78%    1.83 -> 2.17 s
+  cross-loaded    16% ->  3%     45% -> 49%    39% -> 49%    1.91 -> 1.58 s
+  cross-deep       0% ->  0%     26% -> 27%    74% -> 73%    1.96 -> 1.58 s
+```
+
+**What it cost, and it is the honest cost of a whipped ball.** A flatter, faster
+cross overhit by the same fraction of its weight sails much further before it
+drops back through heading height. `./run.sh strike` says the same strike now
+rolls 8.1, 9.5 and 12.2 m long at 20, 30 and 40 m where it rolled 5.7, 6.3 and
+7.6 -- so `CROSS_RANGE_SPREAD` went 2.3 to 3.2, because the model and the ball
+have to share one number or the decision layer is pricing a ball nobody hits.
+Told the truth, the softmax plays fewer of them: `cross-right` 0.75 crosses a
+trial to 0.53. The ball also lands further from the nearest of ours -- `drop m`
+3.2 to 5.1 on `cross-loaded` -- and **`cross-deep` moved the wrong way**, 5% goals
+and 78% lost to 0% and 92%, which at n=40 is one to two standard errors and wants
+watching before anything is done about it.
+
+**What it bought, on the rows the pass change is aimed at**, n=40 each. The
+`before` arm is the last commit rather than the tick before this change, so the
+two cross rows in it carry the curl and the whipped flight as well; the four pass
+rows are the pace alone, which is nothing else in those two files touches a ball
+on the floor:
+
+```
+					before                          after
+  build-up      lost 82%, kept 18%             lost 65%, kept 35%
+  pocket        lost 85%, no goals             lost 48%, 10% goals, 10% saved
+  through-ball  lost 60%, no shot              lost 42%, a shot at 12 m
+  switch        lost 65%, 2% goals             lost 58%, 5% goals
+  cross-right   7% at goal, lost 82%           17% at goal, lost 68%
+  cross-loaded  26% at goal, 8% goals          22% at goal, 12% goals
+```
+
+`build-up` and `pocket` are the two rows this was diagnosed from and they are the
+two that moved most: the ball is now hard enough to hit that a defence stepping
+into the lane does not simply arrive first. **Three seeds of ten match-minutes
+say the match's pass completion is unmoved** -- 100 of 133 before, 91 of 117
+after -- which is what a change to how hard the ball is struck should do to a
+number that is about where it is struck.
+
+**The cross has two flights and the ball picks its own, 2026-08-23** (owner:
+*add back some higher crossing, it's nice with the variation. The main issue is
+that the crosses are hit without a good goal -- they should be aimed at where
+team mates are going to end up, or areas where they dominate by just being more
+players*).
+
+**One flight was the fault, not the speed.** `cross_flight` whipped every ball,
+so a cross was struck to arrive before the man it was for could get there and the
+choice of point was made at a flight nobody's legs had been consulted about.
+`SimTouch.cross_hang` is the other end of it -- 1.95 s over twenty-five metres
+against the whipped 1.25 -- and it is a higher ball by construction, because the
+solver has to keep it up over the same ground.
+
+**Both balls are scored at every point and the better one is played.** The man
+who is coming decides which is even available: a ball he cannot reach is not
+offered, and the hung one is offered only when it buys him the time. Fitting the
+flight to him and stopping there was the first version, and it hangs the ball
+into an empty six-yard box -- the only man who can get there is two seconds away
+and nothing had asked what the goalkeeper does in the meantime. He is a body in
+`control_at_time` like every other, so asked, it answers.
+
+**Nothing counts heads, and that is the point.** `control_at_time`'s crowd term
+already prices numbers in the area -- a hung ball puts everyone who can reach the
+spot on level terms, so what decides it is how many of each side are standing
+there. It could never say so while the flight was fixed. The owner's two asks are
+one mechanic: the ball is aimed where our man will be, and where we have the
+bodies wins the hung ball while the man already there wins the whipped one.
+
+**The mix is a fact about the situation rather than a setting.** In a box being
+attacked (`cross-loaded`) it is **50% hung, mean flight 1.68 s**; in the rows
+whose box starts empty, 95-100% hung at about 2.0 s, because there is nobody to
+whip it to. That second number is `docs/THE_FOOTBALL.md` 29 again and not a fact
+about the flight.
+
+**Measured, n=40** -- against the whipped-only ball of an hour earlier:
+
+```
+                 whipped only                 both flights
+  cross-right    lost 68%, drop 7.1 m         lost 75%, drop 3.9 m
+  cross-loaded   lost 52%, drop 5.1 m         lost 52%, drop 4.0 m
+  cross-deep     lost 92%, drop 9.0 m         lost 62%, drop 4.1 m
+  cross-pullback 0.25 crosses a trial         0.57, shot from 9.7 m
+```
+
+**`cross-deep` is the row that was broken and is now the best of them**: 33% of
+trials end in an attempt at goal, `lost` 92% to 62%, and the ball comes down 4.1 m
+from the nearest of ours rather than nine.
+
+**And the cost is the goalkeeper, which is the trade the variation asks for.**
+First to the ball after a cross, over 40 trials: in the loaded box the keeper
+takes **3% to 13%**, and it comes out of the *defenders*' share, 49% to 39%,
+while ours holds at about half. On `cross-deep` he goes 0% to 3% and ours goes
+27% to **46%**. On `cross-right`, whose box is empty, he takes 15% -- a hung ball
+into a six-yard box with nobody in it is the keeper's, and the engine is right
+about that. **What is not modelled is that he claims with his hands above
+everybody's heads**: he is weighed as an outfielder who happens to be standing
+there, which understates him on exactly the ball that is now being played. That
+belongs to the defensive pass.
+
+**Can they finish a cross at all? 88% of the time, 2026-08-23** (owner: *the
+crossing looks much better, but the defenders seem to get to the ball most of the
+time -- which is realistic, though it is still before the defensive pass. I would
+like to see a cross scenario without opponents, to see that they can score on one
+header or touch from a crossing*).
+
+`cross-open` is that row and it is the only one on the page with nobody defending
+-- no back line, no goalkeeper, three of ours attacking the box, the ball already
+in the air. n=40: **88% goals**, 5% saved, 8% off, and nothing else. The ball
+comes down **1.4 m** from the nearest of ours at 1.68 s, they play **1.5 headers
+a trial**, and the finish is struck from a mean of 11.2 m. **The heading and the
+first touch can convert a cross**, and what the other rows are measuring is the
+defending.
+
+**Two things about the row were measured before they were chosen.** Given the
+ball at his feet in an unopposed box the engine walks it in rather than crossing
+-- 0.05 crosses a trial, 2.4 dribbles, a goal in 55% -- which is a correct
+decision and answers nothing, so the ball starts struck. And a struck ball left
+on the crosser's boot never leaves the flank: `SimDuel.resolve_contacts` hands a
+ball inside his reach straight back to him, and every trial had it taken down
+again three metres from where it was hit. It starts a quarter of a second into
+its flight, which is where a follow-through leaves a man.
+
+**It also found an instrument bug, and this one was in every row.** The trial's
+verdict read the *first* shot of the situation and asked whether that shot was a
+goal. On `cross-open` the trace is a header saved off the line at 1.68 s and a
+second header put in at 1.75 -- scored `saved`, in a scenario with no goalkeeper
+in it. A goal is a goal whichever shot scored it, and `SimScenario` now says so.
+The affected rows are the ones where a rebound goes in: `cross-open` 38% goals to
+88%, and one to two points elsewhere.
+
+**The header at goal was leaving the forehead too slowly, 2026-08-23** (owner:
+*the speed of the header is too slow, it is going to be too easy to save the ball
+after a header*). Measured on `cross-open`, 61 attempts at goal left the head at a
+mean **12.8 m/s** -- from eleven metres that is nearly nine tenths of a second for
+a goalkeeper, which is a save every time. A struck shot in this engine leaves at
+16 to 27 m/s (`SimConsts.SHOT_SPEED_MIN`), and a header is slower than a shot
+rather than half of one.
+
+`SimTouch.header`'s band went **5-13 to 8-18 m/s**, and the pace bonus with it --
+`HEADER_PACE_BONUS_MAX` 4.5 to 6.0 off a coefficient of 0.35, because a cross now
+arrives through heading height at 17 m/s where the old cap was fitted to a ball
+arriving at 11.8. Measured after: **17.6 m/s**.
+
+**Only the header at goal changed.** The clearing header, the nod to a teammate
+and the knock-down are the same act with less of a man's neck in them, which is
+what `power_scale` has always been for: `SimAerial.NOT_AT_GOAL_POWER` is 0.72, the
+old band over the new one, and `KNOCK_POWER` came 0.45 to 0.32 to hold the
+knock-down where **42** measured it. Left alone, the clearing header carried a
+mean of 29 m against `tests/test_distances`' football band of 4 to 26 -- which is
+the test doing its job, and it now exercises the act's own power rather than the
+primitive flat out. It gained the other half of the question too: **a header at
+goal must leave the head above 13 m/s**, a floor that is structural rather than
+tuned -- below it a keeper on his line saves everything.
+
+`cross-open` 88% goals to **92%**, off target 8% to 2%. `cross-deep` 5% to 8%.
+`cross-loaded` unmoved.
+
+**Where a cross actually comes down, 2026-08-23** (owner: *let's improve
+`cross-loaded`, it should score more often -- the crosses are almost always hit
+too far or far forward, close to the goal, so the attacking players do not really
+have a chance*). The row is 15% goals at n=100 and it did not move; what moved is
+the ball, and what the measuring found is worth more than the change.
+
+**The owner's read was right and the cause was the elevation error.** Traced,
+trial after trial the ball either dropped nine metres short of its aim or sailed
+nine metres past it onto the goal line -- `./run.sh strike` had the number all
+along: a cross's range scatter rolled **8.1 m at 20 m**. Halving the weight error
+moved it to 6.9 and no further, because it is not the weight: a five-degree error
+in the angle a flat ball leaves at is worth more range than a tenth of its speed.
+`_perturb` has carried an elevation scale since it was written -- *flat balls are
+far less sensitive to it than lofted ones* -- and the cross is the flattest ball
+the engine strikes. `SimTouch.CROSS_ELEVATION_SCALE` is 0.5, on the argument that
+a winger's fifty crosses a day are the one strike whose whole difficulty is this.
+
+Measured: the rolled range scatter **8.1 to 6.75 m** at 20 m, 9.5 to 7.3 at 30,
+12.2 to 8.6 at 40, and the bias with it (-1.2 to -1.0, -1.3 to -0.6, -2.4 to
+-0.7). `CROSS_RANGE_SPREAD` 3.2 to 2.6 and `CROSS_HANG_SPREAD` 2.3 to 1.9 so the
+model still says what the ball does. On the row: the ball comes down **4.0 m to
+3.5 m** from the nearest of ours.
+
+**And the ball is now dropped on the man rather than on the point he is running
+at** (`_meet_point`). Measured before it: the ball came down 7.3 m from the man it
+was for and, 90% of the time, *in front of him* -- two metres nearer the goal,
+which is two metres on the side the defenders are already standing.
+
+**None of it made the row score more, and the reason is two measured facts.**
+**Twenty-eight of thirty-eight crosses are met in the air** before they land, and
+the defence takes 39-49% of those: eleven of them are in that box against three of
+ours, which is the row's whole point and the owner's own reading of it. And **the
+ball goes to the penalty spot every single time** -- the mean aim was 11.0 m from
+the goal line on every cross in 40 trials -- so the header that follows is struck
+from 12.6 m, which is a distance no header scores from. Ranking the three points
+by the header they would give instead of by the value map was built and reverted
+with its numbers (`SimDecision._add_crosses`): the ball goes nearer the goal and
+into worse company, `lost` 49% to 60%. **What the near post is worth is a
+value-map question, 8b**, and not one to settle from a cross.
+
+**8b's other half is built, 2026-08-23: the map is no longer single-step.**
+
+The old expected-threat map was one hand-made function of distance and angle to
+goal, baked into the grid. That function says what a *shot* from a patch of grass
+is worth, and the engine was using it as the value of the grass. Football does not
+work that way: a wide position in the final third is worth something because of
+the ball that comes next, and to a single-step map it is simply a poor shooting
+position. That is why the flanks and the middle third read flat, and it is what
+**8b** has named since the ball in behind took the other half of it.
+
+The value of a cell is now the value of what happens from it, which is the
+textbook definition of the thing:
+
+```
+v(c) = shot(c) * goal(c)  +  (1 - shot(c)) * SUM over c' of  move(c -> c') v(c')
+```
+
+iterated until it stops moving. `shot(c)` is how often a possession there becomes
+an attempt, `goal(c)` what the attempt is worth, and the move kernel is where the
+ball goes when it is not a shot -- forward-weighted, short more often than long,
+and losing the ball more often the further it travels. **Nothing in it knows about
+players**: the grid stays a pure lookup on a 5 Hz cadence, which is rule 1 of
+`SimValueField`, and the context correction stays where it was (`line_broken`).
+It is baked once per match, about a tenth of the work one tick of pitch control
+does.
+
+**What the map says now**, against the old one at the same points, both
+normalised to `XT_PEAK`:
+
+```
+					  old      new
+  six-yard middle    0.378    0.299
+  near post          0.212    0.166
+  penalty spot       0.191    0.126
+  far post           0.142    0.099
+  edge of box        0.091    0.067
+  wide, final third  0.0088   0.0222
+  halfway, middle    0.0018   0.0083
+```
+
+The box is worth a quarter less and **the grass that leads to it is worth two and
+a half to nearly five times more**, which is the whole change in two rows. It also
+separates the three points a cross is aimed at: the near post was 11% better than
+the penalty spot and is now 32% better.
+
+**Measured in matches, and it is the sparseness that moved.** Eight seeds of ten
+match-minutes, the same eight before and after: **1 shot against 11**. Passing
+volume and completion are unchanged -- 354 attempts at 81% against 375 at 80% --
+and the mean pass is 11.4 m against 12.1. The engine is not passing more, it is
+passing to somewhere.
+
+**On the set situations, at n=100**, it is mixed and worth writing down:
+`cross-deep` goals 6% to **13%**; `cross-loaded` on goal 30% to 34%; `cross-right`
+plays almost no crosses at all, 0.60 a trial to **0.16**, because with an empty
+box in front of him and wide grass now worth something the winger keeps it --
+defensible in that row and worth watching in a match. Against them, `build-up`
+keeps the ball 35% of trials against 26%, and `pocket` scores 4% against 10%:
+the map values progression more, so playing out from the back takes more risk.
+**Neither is a reason to gate the mechanic** (`CLAUDE.md`), and both are rows to
+re-read once the defensive pass exists.
+
+**A commitment was a blindfold, 2026-08-23, and it is built.** The scenario work
+found this twice in one day and named it wrongly both times -- as the cadence of
+the off-ball layer, which is fine, and as the release trigger having no
+population, which is a symptom.
+
+**What it actually was.** `SimOffBall._assign` skipped any man who already had a
+live intent, so an offer could not be reconsidered until its own window ran out --
+and a drift into space holds for **4.5 seconds**. Measured over ten match-minutes:
+at the 104 ticks where a man of ours was wide on the ball with a cross on, the run
+into the box was offered to **nobody at all**, and `_box_point` was reached five
+times in that whole window because eight of ten men were mid-drift. The run into
+the box is offered four to six times a *match* for the same reason, and wins
+almost every time it is offered -- the value layer has never disagreed that
+attacking the box is the right idea, it was simply never asked at the moment the
+question came up.
+
+**A drift can be abandoned and a run cannot.** `SPACE` is a few metres off a
+station he is still holding; the two things worth giving it up for are the two
+runs that are about a moment rather than a position, so `BOX` and `BEHIND` are the
+only kinds allowed to take it over. Anything else -- including another drift --
+would let a man restart his own window every fifth of a second and every tally
+counted from `_since` would read one run as twenty. The abandoned offer is retired
+through the same bookkeeping a lapsed one is (`_retire`, split out of `_expire`
+for exactly this) minus the rest it has not earned: he is not stopping, he is
+going somewhere better.
+
+**Measured, ten match-minutes, two seeds.** Runs into the box offered per match
+**4 to 6** and **6 to 7**, of which **5 and 4 were a man changing his mind** --
+about half of every box run in a match is now one. `diagnose` carries the count
+(`offers given up for a run instead`) because the mechanic has exactly one
+population and a zero would mean it is dead. The cost is that a drifting man is
+scored again on every pass: men considered went 739 to 1394 in ten match-minutes,
+and the run is 4.8 s against 4.4.
+
+**The set-piece rows barely moved**, which is right -- `cross-loaded` and the rest
+place their runners by hand, so the mechanic has nothing to do there. At n=100:
+`cross-loaded` on goal 34% to 24%, `cross-right` 24% to 25%, `cross-deep` 24% to
+21%, all within a standard error or two of each other and of the noise.
+
+**The switch, 2026-08-23: the row was measuring its own placement, and then the
+ball was measuring the wrong model.**
+
+**The placement first.** `switch` held the ball on the left touchline and put the
+free man on the right one, **54 m** away, against `MAX_LOFTED_PASS` of 45. So the
+ball the row is named for was never a candidate: the first decision of every trial
+was twelve carries and a hold, with no pass to anybody on the list at all. The
+fourth scenario to do this, and the fourth time the answer was that a value knob
+cannot create an option that was never generated. Both men are 20 m off the middle
+now -- 14 m from their own touchlines, where a winger holding width stands -- and
+the ball is 42 m from him.
+
+**Then the ceiling went up, 45 to 55** (owner). Football's own long ball is longer
+than the old limit: a touchline-to-touchline switch is fifty-odd metres and a
+goalkeeper's kick is more. `SimTouch.strike_range` still caps every ball by the
+man striking it, so this is a ceiling on the act and not a promise about anybody's
+leg. Measured in a match, it did not open a floodgate: 3 to 7 lofted balls per ten
+match-minutes at a mean of 24 m, and passing volume and completion unchanged.
+
+**And the bench found two mismatches at once, both of which were making the long
+ball look worse than it is.** `./run.sh strike`, six rows:
+
+- **The range error in the air does not grow with the length of the ball.** The
+  lofted pass rolls **6.1, 8.5 and 9.0 m** long at 20, 30 and 40 m, where a
+  straight line through the first puts 12 at forty -- drag limits how far an
+  overhit long ball actually goes. `AIR_RANGE_KNEE` is that saturation, one knee
+  for both air axes with a scale each, and it was charging a 42 m switch a quarter
+  more scatter than the ball has.
+- **And the sideways claim was stale.** `AIR_MODEL_AIM_BASE` was 0.085 on the
+  reasoning that a ball in the air lands further out than the yaw at the boot
+  implies, measured at 4.19 said against 4.52 rolled. `solve_lofted` now corrects
+  the launch heading for the spin on the ball (this morning's cross work), so that
+  spread is gone: the same row reads 5.05 said against **3.83** rolled. 0.066 is
+  the quarter it was overstating.
+
+Together they take the switch's `succ` from **0.12 to 0.19-0.26** as the man
+settles over it. **And it still takes 0-2% of the softmax**, because `bias 0.10`
+-- `LOFTED_BIAS` times the length penalty -- is a tenth of its value before
+anything else is asked. The row reads 88% `lost` and 3.0 dribbles a trial: he
+carries into contact instead. **That is 27**, whose own named mechanic was built,
+measured and reverted, and it now has a second row asking for it.
 
 **30 is the owner's, 2026-08-15.** Keep structure and width, and make the midfield
 a real link between the defence and the strikers. One midfielder dropping to meet
@@ -635,12 +1113,22 @@ The trace now goes forward and outside — 27 to 32 in x, 24 to 21 in z — with
 is **80%**, barely moved, because what he now reaches the byline to do is put in
 a cross, and **29** is what happens to it.
 
-**One measurement hazard, found while doing this.** `SimDuel` logs
-`SimTelemetry.Touch.BLOCK` for *any* loose ball won without control that did not
-come from a contest, so a defender jogging onto a ball nobody struck at him is
-recorded as having blocked it. `race` reads "block" where the football is "he got
-there first". Anything counting blocks — including `--acts` — is counting those
-too.
+**One measurement hazard, found while doing this, and it is fixed.** `SimDuel`
+logged `SimTelemetry.Touch.BLOCK` for *any* loose ball won without control that
+did not come from a contest, so a defender jogging onto a ball nobody struck at
+him was recorded as having blocked it. `race` read "block" where the football is
+"he got there first", and anything counting blocks — including `--acts` — was
+counting those too.
+
+**What the touch is called is now decided by why he could not take it.** The
+test was already there and its two arms are different football: the ball
+arriving faster than his first touch can handle is a block, a man getting in the
+way of a strike; his own closing speed or the pressure on him is a poke, a loose
+ball hooked away by whoever got there first. `SimTelemetry.Touch.POKE` is the
+second, and `is_defensive_kind` is asked wherever a list of "not the carrier's
+own touch" is needed — there are three of them now and every consumer needs all
+three. Ten match-minutes of seed 1: 3 pokes against 1 block, where before it was
+4 blocks.
 
 **46 is where the shot gets taken from** (owner, 2026-08-23, watching the
 one-on-one): *the shooting range is a bit too far away. Long shots should be an
@@ -982,8 +1470,10 @@ line, which is **5**.
    not moved all day at 11.7% to 11.8% and is generation — one seed now reads 16%,
    which is one seed. See `CROSS_FROM`.
 3. **24 and 27**, both now wanting a fresh idea rather than their named one.
-4. **8b's other half** — the map itself is still single-step; only the ball in
-   behind is corrected, and the lofted ball measured worse for it.
+4. ~~**8b's other half**~~ — built 2026-08-23: the map is multi-step now. What is
+   left of it is that the correction for who is standing where (`line_broken`) is
+   still applied to the through ball alone, and the lofted ball measured worse
+   for it.
 5. **Pattern success rates at n=20.** The instrument exists (`and was the ball it
    asks for ever on the list`); what is missing is a batch that aggregates patterns,
    which `chains` does not. At n=1 the switch has read 0% and 25% in one day.

@@ -348,7 +348,19 @@ static func _act(ctx: SimContext, player: SimPlayer, from_contest: bool) -> void
 		})
 		_resolve_pass_outcome(ctx, player, false)
 		if not can_control and not aerial:
-			SimTouch.poke(ctx, player, SimTelemetry.Touch.TACKLE if from_contest else SimTelemetry.Touch.BLOCK)
+			# What the touch is called is decided by *why* he could not take it.
+			# The ball beating him -- struck harder than his first touch can
+			# handle -- is a block, which is a man getting in the way of a strike.
+			# Everything else here is him beating everyone else to a loose ball
+			# and hooking it away at a stretch, which is not. Called a block, a
+			# defender jogging onto a ball nobody hit at him was counted as one by
+			# every instrument that counts blocks -- `race` read "block" where the
+			# football was "he got there first" (`docs/THE_FOOTBALL.md` 45).
+			var kind := SimTelemetry.Touch.TACKLE
+			if not from_contest:
+				kind = SimTelemetry.Touch.BLOCK if ball.vel.length() >= ceiling \
+					else SimTelemetry.Touch.POKE
+			SimTouch.poke(ctx, player, kind)
 			return
 	elif was_theirs and ball.last_touch_player != player.id:
 		# A teammate has picked it up. That completes the pass whether or not

@@ -551,8 +551,15 @@ static func curl_for(ctx: SimContext, player: SimPlayer, dir: Vector3, mean: flo
 ## less because it is hit harder and travels less far; the lofted pass least,
 ## because a ball clipped over a line into space is not trying to curve round
 ## anything.
-const CROSS_CURL := 3.4
-const CROSS_CURL_SIGMA := 1.6
+## **The cross was barely spinning and it is the reason nothing bent.** 3.4 rad/s
+## is half a turn a second, where a footballer whips one at five to ten, and the
+## flight bowed **0.28 m** over twenty-five metres -- a straight ball with a
+## number on it. It was not raised before because the solver could not put it
+## back: sidespin pushed the ball off its target and nothing corrected for it
+## (`SimBallistics.solve_lofted`, now fixed). Measured with that in hand, the same
+## cross bows **1.3 to 1.8 m** and still lands where it was aimed.
+const CROSS_CURL := 40.0
+const CROSS_CURL_SIGMA := 9.0
 const SHOT_CURL := 1.9
 const SHOT_CURL_SIGMA := 1.3
 const LOFT_CURL := 1.2
@@ -654,15 +661,45 @@ static func weight_sigma(player: SimPlayer, skill: float) -> float:
 ## spread of its own range. `AIR_MODEL_AIM_BASE` is that, and the bench is what
 ## keeps it honest. If it were pulled down to `AIR_AIM_BASE` for tidiness the one
 ## axis that works would stop working.
+##
+## **And it came down anyway, 2026-08-23, because the ball changed under it.**
+## `SimBallistics.solve_lofted` now corrects the launch heading for the spin on
+## the ball, so the sideways spread a curled ball used to inherit is gone: the
+## same bench rows that read 4.19 said against 4.52 rolled now read 5.05 against
+## **3.83**, and the model was overstating by about a quarter at every distance on
+## both air kinds. 0.085 to 0.066 is that quarter. The lesson is the one in the
+## sentence above -- the bench is what keeps it honest -- and it caught this the
+## first time it was asked.
 const GROUND_AIM_BASE := 0.055
 const AIR_AIM_BASE := 0.07
-const AIR_MODEL_AIM_BASE := 0.085
+const AIR_MODEL_AIM_BASE := 0.066
 
 ## How much harder a ball in the air is to weight than one on the floor, and how
 ## much of the aim error goes into the launch angle rather than across it. Both
 ## were literals inside the two strikes; they are read by the model now, so they
 ## cannot drift from it.
 const LOFT_WEIGHT_SCALE := 1.15
+## And how much of the elevation error a cross carries, against the same man's
+## lofted pass.
+##
+## **Because the range error it turns into is enormous.** Measured on
+## `cross-loaded`, a ten per cent error in the weight of the strike came out as
+## **nine metres** of range: trial after trial the ball either dropped nine metres
+## short of the aim or sailed nine past it onto the goalkeeper, which is what the
+## owner watched -- *the crosses are almost always hit too far or far forward,
+## close to the goal, so the attacking players do not really have a chance*
+## (2026-08-23). The amplification is physical and stays: a fast, flat ball
+## overhit by a tenth crosses heading height a long way later.
+##
+## What is not physical is charging a winger a generic lofted ball's error on the
+## one strike he hits fifty times a day at the same three targets. **And it is
+## the elevation and not the weight**: halving the weight error moved the rolled
+## range scatter 8.1 m to 6.9 and no further, because a five-degree error in the
+## angle a flat ball leaves at is worth more range than a tenth of its speed.
+## `_perturb` has carried the scale for exactly this since it was written --
+## "flat balls are far less sensitive to it than lofted ones" -- and the cross is
+## the flattest ball the engine strikes.
+const CROSS_ELEVATION_SCALE := 0.5
 const ELEVATION_SHARE := 0.75
 
 
@@ -675,6 +712,49 @@ const ELEVATION_SHARE := 0.75
 ## knee where launch speed runs away sits at about 0.2 + 0.045 d.
 static func lofted_flight(distance: float) -> float:
 	return clampf(0.35 + distance * 0.055, 0.8, 2.4)
+
+
+## And the flight a *cross* is asked for, which is a shorter one.
+##
+## A cross is whipped and a lofted pass is clipped: they are the same primitive
+## and they are not the same ball. Asked for the lofted flight, a twenty-five
+## metre cross hung for **1.73 s** and came down through heading height at 11.8
+## m/s, which is a floated ball -- long enough for the goalkeeper to leave his
+## line and take it, which is what the owner watched (2026-08-23). Football's is
+## about 1.2 s over that distance and it arrives before he gets there.
+##
+## The floor is the same statement `lofted_flight`'s is: below it the only way to
+## cover the ground is to strike the ball harder than a person can. Measured
+## against the integrator at the arrival height a cross is solved for, a 25 m ball
+## at 1.25 s leaves the boot at 24 m/s and a 40 m one at 1.7 s at 31 -- a
+## full-blooded strike and no more, which is what this ball is.
+static func cross_flight(distance: float) -> float:
+	return clampf(0.30 + distance * 0.038, 0.7, 1.7)
+
+
+## And the other end of it: the ball hung up rather than whipped in.
+##
+## A cross has two flights and the engine had one. The whipped one above beats
+## the goalkeeper to the spot; this one buys a man time to get there, and it is
+## the ball that goes over a defender's head onto somebody arriving at the far
+## post. Which of them is struck is not a taste -- `SimDecision._add_crosses`
+## fits the flight to how long the man it is for actually needs, so the ball is
+## aimed at where he is going to be in time as well as in space (owner,
+## 2026-08-23: *they should be aimed at where team mates are going to end up*).
+##
+## Higher, because the solver has to keep it in the air longer over the same
+## ground. That is where the high cross went and where it comes back from.
+static func cross_hang(distance: float) -> float:
+	return clampf(0.45 + distance * 0.060, 1.0, 2.5)
+
+
+## Where a cross of this length sits between the two: 1 whipped, 0 hung.
+static func cross_whip_share(distance: float, flight: float) -> float:
+	var whipped := cross_flight(distance)
+	var hung := cross_hang(distance)
+	if hung - whipped < 1e-3:
+		return 1.0
+	return clampf((hung - flight) / (hung - whipped), 0.0, 1.0)
 
 
 ## What share of a lofted pass's distance the ball covers *after* touchdown.
@@ -741,16 +821,33 @@ const CROSS_ARRIVE := 1.9
 ## live in that number and no closed form survived its own check. The bench is the
 ## authority, and re-running it is what says whether this is still true after
 ## anything in `_perturb` moves.
-static func long_sigma(player: SimPlayer, skill: float, distance: float, axis: int) -> float:
+static func long_sigma(player: SimPlayer, skill: float, distance: float, axis: int,
+		whip := 1.0) -> float:
 	# Twice the weight error on the floor, because the ball stops where its speed
 	# runs out and that goes as the square of the strike.
 	var scale := 2.0
+	# And in the air it does not grow with the length of the ball the way a
+	# straight line says. Measured on `./run.sh strike`, the lofted pass rolls
+	# **6.1, 8.5 and 9.0 m** long at 20, 30 and 40 m, where a line through the
+	# first of those puts 12 at forty: drag limits how far an overhit long ball
+	# actually travels, and the model was charging a 42 m switch a quarter more
+	# scatter than the ball has. It then told the decision layer the ball lands
+	# inside its tolerance 39% of the time while the ball managed 52%, which is
+	# the difference between a switch being on the list and being on it at zero.
+	#
+	# One knee for both air axes and a scale each, fitted to the six bench rows.
+	var reach := distance / (1.0 + distance / AIR_RANGE_KNEE) if axis != LONG_GROUND else distance
 	match axis:
 		LONG_AIR:
 			scale = AIR_RANGE_SPREAD
 		LONG_AIR_CROSS:
-			scale = CROSS_RANGE_SPREAD
-	return scale * weight_sigma(player, skill) * distance
+			# And a cross is charged by how flat it is. The whipped ball's spread
+			# is the one the bench measured after `cross_flight` landed; a hung
+			# one is the ball that was there before it and scatters like the
+			# lofted pass it flies like. Flat by default, so every caller that
+			# does not know the flight asks about the ball the bench rolls.
+			scale = lerpf(CROSS_HANG_SPREAD, CROSS_RANGE_SPREAD, clampf(whip, 0.0, 1.0))
+	return scale * weight_sigma(player, skill) * reach
 
 
 ## How many times his weight error a ball in the air finishes off its mark by.
@@ -776,8 +873,22 @@ static func long_sigma(player: SimPlayer, skill: float, distance: float, axis: i
 ## at 4.4 the decision layer was told a thirty-metre cross lands inside its
 ## tolerance 36% of the time when the ball manages 69%, so it turned down crosses
 ## it could hit. `docs/THE_FOOTBALL.md` 29.
-const AIR_RANGE_SPREAD := 2.5
-const CROSS_RANGE_SPREAD := 2.3
+## Where the air's range error stops growing with the length of the ball, in
+## metres. See `long_sigma`: the three scales below are all measured against it,
+## so moving it means re-reading the bench.
+const AIR_RANGE_KNEE := 30.0
+const AIR_RANGE_SPREAD := 4.8
+## **And the cross's own went 2.3 to 3.2 when the ball was whipped rather than
+## floated** (`cross_flight`, 2026-08-23). A flatter, faster ball overhit by the
+## same fraction of its weight sails much further before it drops back through
+## heading height, and the bench says so: at 20, 30 and 40 m the same strike
+## rolled 8.1, 9.5 and 12.2 m against a model still claiming 4.7, 7.0 and 9.3.
+## The two models have to share one number or the decision layer is pricing a
+## ball nobody hits -- which is the whole reason `./run.sh strike` exists.
+const CROSS_RANGE_SPREAD := 4.7
+## And what the same ball hung up rather than whipped scatters by, which is what
+## the cross measured before it was given a flight of its own.
+const CROSS_HANG_SPREAD := 3.4
 
 
 
@@ -788,13 +899,13 @@ const CROSS_RANGE_SPREAD := 2.3
 ## forty-metre ball because the target square looks good, having no idea the
 ## player cannot hit it. Sharing `aim_sigma` means tuning the error model
 ## automatically retunes what the engine is willing to attempt.
-static func execution_accuracy(ctx: SimContext, player: SimPlayer, skill: float, distance: float, base_sigma: float, tolerance: float, dir: Vector3 = Vector3.ZERO, long_axis: int = LONG_NONE) -> float:
+static func execution_accuracy(ctx: SimContext, player: SimPlayer, skill: float, distance: float, base_sigma: float, tolerance: float, dir: Vector3 = Vector3.ZERO, long_axis: int = LONG_NONE, whip := 1.0) -> float:
 	var sigma := aim_sigma(ctx, player, skill, distance, base_sigma, dir)
 	var lateral := _within(tolerance, sigma * distance)
 	if long_axis == LONG_NONE:
 		return lateral
 	return lateral * _within(tolerance,
-		long_sigma(player, skill, distance, long_axis))
+		long_sigma(player, skill, distance, long_axis, whip))
 
 
 ## Whether a ball misses by being the wrong length, and by which law.
@@ -1110,11 +1221,13 @@ static func lofted_pass(ctx: SimContext, player: SimPlayer, target: Vector3, fli
 	if first_time:
 		sigma *= lerpf(FIRST_TIME_EASY, FIRST_TIME_HARD, redirect_share(ctx.ball.vel, line))
 		ft_played += 1
-	vel = _perturb(ctx, vel, sigma, weight_sigma(player, skill) * LOFT_WEIGHT_SCALE, 1.0)
+	var elevation := CROSS_ELEVATION_SCALE if kind == SimTelemetry.Touch.CROSS else 1.0
+	vel = _perturb(ctx, vel, sigma, weight_sigma(player, skill) * LOFT_WEIGHT_SCALE, elevation)
 	vel.y = maxf(vel.y, 1.0)
 
 	apply(ctx, player, kind, vel, spin, target_id, {"dist": distance, "ft": first_time})
-	_log_pass_attempt(ctx, player, kind, aim, target_id, expected_value, distance, vel.length())
+	_log_pass_attempt(ctx, player, kind, aim, target_id, expected_value, distance,
+		vel.length(), flight_time)
 
 
 ## How long a chip hangs, by distance. Long enough to get over a keeper off his
@@ -1552,7 +1665,7 @@ static func clearance(ctx: SimContext, player: SimPlayer) -> void:
 ## not a physical one: the strike is the same, and `_log_shot` puts it on the
 ## books so a headed goal is a shot like any other.
 ## Most extra launch speed the incoming ball's pace can add to a header, m/s.
-const HEADER_PACE_BONUS_MAX := 4.5
+const HEADER_PACE_BONUS_MAX := 6.0
 
 
 ## `power_scale` is how much of his neck goes into it, and it is the only way
@@ -1570,8 +1683,20 @@ static func header(ctx: SimContext, player: SimPlayer, dir: Vector3, aim_up: flo
 	# dropping cross, it does not return a driven goal kick with interest.
 	# Uncapped, a 25 m/s ball came off the forehead at 21 and carried forty
 	# metres -- the owner watched it, and `test_distances` now has the band.
-	var power: float = lerpf(5.0, 13.0, player.attrs.heading) \
-		+ minf(incoming * 0.32, HEADER_PACE_BONUS_MAX)
+	# **The band went 5-13 to 8-18, 2026-08-23** (owner: *the speed of the header
+	# is too slow, it is going to be too easy to save the ball after one*).
+	# Measured on `cross-open`, 61 headers at goal left the forehead at a mean
+	# **12.8 m/s** -- from eleven metres that is nearly nine tenths of a second
+	# for a goalkeeper, which is a save every time. A foot shot in this engine
+	# leaves at 16 to 27 (`SimConsts.SHOT_SPEED_MIN`), and a header is slower than
+	# a shot rather than half of one.
+	#
+	# The pace bonus went up with it. A cross now arrives through heading height
+	# at 17 m/s where it used to arrive at 11.8 (`cross_flight`), and the cap was
+	# fitted to the slower ball: it was throwing away most of what a man meeting a
+	# whipped cross has to work with.
+	var power: float = lerpf(8.0, 18.0, player.attrs.heading) \
+		+ minf(incoming * 0.35, HEADER_PACE_BONUS_MAX)
 	power *= lerpf(0.8, 1.1, player.attrs.jumping) * player.fatigue_factor() * power_scale
 	var vel := d * (power * cos(aim_up)) + Vector3(0.0, power * sin(aim_up), 0.0)
 	var sigma := aim_sigma(ctx, player, player.attrs.heading, 10.0, 0.13)
@@ -1604,7 +1729,7 @@ static func poke(ctx: SimContext, player: SimPlayer, kind: int = SimTelemetry.To
 	apply(ctx, player, kind, vel, Vector3.ZERO)
 
 
-static func _log_pass_attempt(ctx: SimContext, player: SimPlayer, kind: int, target: Vector3, target_id: int, expected_value: float, distance: float, struck: float) -> void:
+static func _log_pass_attempt(ctx: SimContext, player: SimPlayer, kind: int, target: Vector3, target_id: int, expected_value: float, distance: float, struck: float, flight := 0.0) -> void:
 	player.passes_attempted += 1
 	# Offside is judged at the instant of the impulse, so the referee is told
 	# here rather than watching for it.
@@ -1675,6 +1800,10 @@ static func _log_pass_attempt(ctx: SimContext, player: SimPlayer, kind: int, tar
 		# `dist` is passer to aim point, which is the same for a ball rolled into
 		# a man's path and one blasted through it.
 		"struck": struck,
+		# How long it was asked to be in the air, for the one ball whose flight is
+		# not a function of its length: a cross is whipped or hung, and an
+		# instrument that assumes the first cannot see the second.
+		"flight": flight,
 		"lead": lead,
 		"rmax": rmax,
 	})

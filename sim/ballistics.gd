@@ -159,14 +159,33 @@ func solve_lofted(from: Vector3, to: Vector3, flight_time: float, env: SimEnv, s
 	# responds to launch speed faster than linearly, an overshoot comes back as a
 	# bigger undershoot, and the iteration rings. It was returning 88 m/s launches
 	# for a 45 m pass. Raising the exponent to 1.0 will bring that straight back.
+	# And how far the launch is turned off the straight line, so that a ball with
+	# sidespin on it bends back onto the point rather than away from it.
+	#
+	# The solver took `spin` from the first day and corrected only the two things
+	# measured along the line of the ball -- how far it got and how long it took.
+	# A curled ball's whole point is that it does not travel along that line, and
+	# nothing here was looking sideways: measured, a cross at the engine's own
+	# `SimTouch.CROSS_CURL` came down **1.5 m** off its target, and at a
+	# footballer's spin it was six. Every bend the game could put on a ball was
+	# therefore a bend away from where it was aimed, which is why there was
+	# almost none. `solve_direct` has the same hole and it does not bite yet:
+	# `SHOT_CURL` is small and a shot is over in half the time.
+	var yaw := 0.0
 	var best := dir * vh + Vector3(0.0, vy, 0.0)
 	var best_err := INF
 	for _i in 8:
-		var launch := dir * vh + Vector3(0.0, vy, 0.0)
+		var aim_dir := dir.rotated(Vector3.UP, yaw)
+		var launch := aim_dir * vh + Vector3(0.0, vy, 0.0)
 		var result := _simulate_to_ground(from, launch, spin, env, to.y, t * 2.5)
 		var reached: float = maxf(result.x, 0.5)  # horizontal distance covered
 		var elapsed: float = maxf(result.y, 0.05)  # time to reach target height
-		var err := absf(reached - distance) / distance + absf(elapsed - t) / t
+		# How far to the side of the intended line it finished, positive toward
+		# the left of it.
+		var land := SimConsts.horizontal(_land_pos - from)
+		var off := land.x * dir.z - land.z * dir.x
+		var err := absf(reached - distance) / distance + absf(elapsed - t) / t \
+			+ absf(off) / distance
 		if err < best_err:
 			best_err = err
 			best = launch
@@ -174,6 +193,12 @@ func solve_lofted(from: Vector3, to: Vector3, flight_time: float, env: SimEnv, s
 			break
 		vh *= pow(clampf(distance / reached, 0.4, 2.5), CORRECTION_DAMPING)
 		vy *= pow(clampf(t / elapsed, 0.4, 2.5), CORRECTION_DAMPING)
+		# Turning the launch by +a moves the ball toward the left of the line, so
+		# a finish to the left is answered by turning the other way. Damped like
+		# the other two corrections, and clamped: a solver that can spin the ball
+		# round to face the other way is worse than one that gives up.
+		yaw = clampf(yaw - clampf(off / reached, -0.5, 0.5) * CORRECTION_DAMPING,
+			-0.6, 0.6)
 	return best
 
 
@@ -223,6 +248,12 @@ func speed_for_arrival(distance: float, time: float) -> float:
 ## Asking for y = 0 means the crossing never fires, the simulation runs on until
 ## the ball has finished bouncing and rolling, and the solver then "corrects" a
 ## perfectly good lofted pass into a flat drive.
+## Where the flight above finished, for the caller that needs the point and not
+## just the distance. Held here rather than returned because every other caller
+## wants the two numbers.
+var _land_pos := Vector3.ZERO
+
+
 func _simulate_to_ground(from: Vector3, vel: Vector3, spin: Vector3, env: SimEnv, target_height: float, max_time: float) -> Vector2:
 	_scratch.pos = from
 	_scratch.vel = vel
@@ -240,9 +271,12 @@ func _simulate_to_ground(from: Vector3, vel: Vector3, spin: Vector3, env: SimEnv
 				SimConsts.BALL_RADIUS + env.surface_height(_scratch.pos.x, _scratch.pos.z))
 		if not rising and _scratch.pos.y <= land_height:
 			var travelled := SimConsts.horizontal_length(_scratch.pos - from)
+			_land_pos = _scratch.pos
 			return Vector2(travelled, t)
 		if _scratch.grounded:
+			_land_pos = prev
 			return Vector2(SimConsts.horizontal_length(prev - from), t)
+	_land_pos = _scratch.pos
 	return Vector2(SimConsts.horizontal_length(_scratch.pos - from), t)
 
 

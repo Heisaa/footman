@@ -142,7 +142,9 @@ static func _strike(ctx: SimContext, player: SimPlayer, kind: int, aim: Vector3,
 		var pace := SimDecision.arrival_pace(distance, ctx.tactics(player.team))
 		SimTouch.ground_pass(ctx, player, aim, pace, -1, kind)
 		return
-	SimTouch.lofted_pass(ctx, player, aim, SimTouch.lofted_flight(distance), -1, kind)
+	var flight: float = SimTouch.cross_flight(distance) if kind == SimTelemetry.Touch.CROSS \
+		else SimTouch.lofted_flight(distance)
+	SimTouch.lofted_pass(ctx, player, aim, flight, -1, kind)
 
 
 ## Where the ball gets to the man it was struck for, which is a different point

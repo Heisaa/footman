@@ -26,6 +26,23 @@ const PACE := 5.5
 ## head start is actually made of.
 const RECOVERY_PACE := 4.5
 
+## Where a man already attacking the box starts, and how fast he is going: this
+## far short of the point he is running at, moving at it.
+##
+## Short of it and moving, never standing on it. A man on the penalty spot when
+## the ball is struck measures the delivery and nothing else, which is what the
+## empty-box rows are for; this is the other half of the same chain -- the ball
+## into an area that is being attacked -- and the pair differ in exactly this.
+## Twelve metres is about three seconds, which is `SimOffBall.BOX_WINDOW`: the
+## lead the engine's own run is priced against.
+const ARRIVAL_BACK := 12.0
+const ARRIVAL_PACE := 4.0
+## And where `cross-open`'s men start, which is a stride short of the ball rather
+## than a run short of it. See that scenario for why.
+const OPEN_ARRIVAL_BACK := 3.0
+## How far into its own flight a scenario's struck ball starts, in seconds.
+const CROSS_FOLLOW_THROUGH := 0.3
+
 
 static func all() -> Array[SimScenario]:
 	return [
@@ -33,9 +50,14 @@ static func all() -> Array[SimScenario]:
 		one_v_one_onrushing(),
 		one_v_one_angle(),
 		one_v_one_chased(),
+		cross_early(),
 		cross_right(),
 		cross_left(),
+		cross_loaded(),
 		cross_byline(),
+		cross_deep(),
+		cross_pullback(),
+		cross_open(),
 		through_ball(),
 		switch_play(),
 		build_up(),
@@ -238,6 +260,19 @@ static func _nearest_outfielder(ctx: SimContext, team: int, to: Vector3) -> SimP
 ## same man wide left is either wrapping his weaker foot round it or whipping it
 ## in off his right. If those two rows read alike, either the draw is not putting
 ## left-footers on the left or the foot is not reaching the cross.
+## **Where the ball is crossed from is the variation, and it is three depths on
+## one flank plus the byline.** A cross from thirty metres out and a cross from
+## beside the goal line are different balls -- different flight, different angle
+## across the keeper, a different run to meet them -- and one row at one depth
+## cannot say which of them the engine is bad at (owner, 2026-08-23). The right
+## flank carries `cross-early` at 24 m, `cross-right` at 30 and `cross-deep` at
+## 49, all at the same width, so depth is the only thing that differs between
+## them.
+static func cross_early() -> SimScenario:
+	return _cross("cross-early", "the early ball, hit from the edge of the final third",
+		24.0, 26.0)
+
+
 static func cross_right() -> SimScenario:
 	return _cross("cross-right", "wide on the right in the final third, box to be attacked",
 		30.0, 26.0)
@@ -248,6 +283,17 @@ static func cross_left() -> SimScenario:
 		30.0, -26.0)
 
 
+## The same ball as `cross-right`, into a box three men are already attacking.
+##
+## The pair is the measurement: everything about the two rows is identical except
+## whether anybody is coming, so the difference between them is what the runs are
+## worth -- and `docs/THE_FOOTBALL.md` 29 has spent its whole life unable to
+## separate a delivery nobody attacks from a delivery that is wrong.
+static func cross_loaded() -> SimScenario:
+	return _cross("cross-loaded", "the same ball, into a box already being attacked",
+		30.0, 26.0, 3)
+
+
 ## From the byline, where the cut-back is the football answer and the ball across
 ## the face is the other one.
 static func cross_byline() -> SimScenario:
@@ -255,11 +301,116 @@ static func cross_byline() -> SimScenario:
 		46.0, 20.0)
 
 
+## Beside the goal line and wide, which is the ball across the face of goal.
+##
+## Three and a half metres from the line: the keeper cannot come, the defenders
+## are turned toward their own goal, and every man attacking it is running the
+## right way. The most dangerous cross in football and the one the engine had no
+## row for.
+static func cross_deep() -> SimScenario:
+	return _cross("cross-deep", "beside the goal line, the ball across the face",
+		49.0, 27.0, 0, true)
+
+
+## On the goal line, cut back, with two men arriving.
+##
+## The pull-back is a different act from a cross -- backwards, along the floor,
+## to a man running on to it -- and it is the one that produces the shot from the
+## edge of the area. It gets bodies because there is nobody to cut it back to
+## otherwise, which is the whole point of the act.
+static func cross_pullback() -> SimScenario:
+	return _cross("cross-pullback", "on the goal line, cut back to men arriving",
+		50.0, 18.0, 2, true)
+
+
+## A cross already in the air, an empty box, and nobody defending it at all: no
+## back line, no goalkeeper (owner, 2026-08-23).
+##
+## It answers the one question every other row on this page can only answer with
+## the defence's help -- **can the side finish a cross, in one touch**. A ball met
+## in front of an empty net that does not go in is a fault in the header or the
+## first touch, and nothing to do with the defending the attacking pass has not
+## built yet.
+##
+## **The ball starts struck, and that is not a shortcut.** Given the ball at his
+## feet in an unopposed box a footballer does not cross it -- he walks it in, and
+## so does the engine: measured, the same situation played from the wide man's
+## feet produced **0.05 crosses a trial**, 2.4 dribbles and a goal in 55% of
+## trials, which is a correct decision and answers nothing about heading. The
+## cross has to be a given for the finish to be the question.
+##
+## **And the runs are timed by hand, for the same reason.** Each man starts the
+## flight's own distance short of the point he is attacking, so he arrives with
+## the ball. Whether the engine's own runs are timed is `cross-loaded`'s question
+## and **29**'s; this row is about what happens when they are.
+static func cross_open() -> SimScenario:
+	var s := _make("cross-open", "a cross already in the air, an empty box, nobody defending", 5.0,
+		func(sc: SimScenario, ctx: SimContext) -> void:
+			var team := sc.attacking_team
+			var dir := ctx.pitch.attack_dir(team)
+			var at := Vector3(34.0 * dir, 0.0, 25.0)
+			var ball_at := at + Vector3(dir * 0.6, 0.0, 0.0)
+			var crosser := _widest(ctx, team, 25.0, ball_at)
+			sc.settle(ctx, ball_at, crosser)
+			crosser.pos = at
+			# The ball, struck the way `SimDecision._add_crosses` would strike it:
+			# at one of the three points the cross is aimed at, hung up rather
+			# than whipped, with the bend a cross carries.
+			var targets := SimOffBall.box_targets(ctx, team, ball_at)
+			var aim: Vector3 = targets[1]
+			aim.y = SimTouch.CROSS_ARRIVE
+			var from := Vector3(ball_at.x, SimConsts.BALL_RADIUS + 0.1, ball_at.z)
+			var flight: float = SimTouch.cross_hang(
+				SimConsts.horizontal_length(aim - from))
+			var spin := Vector3.UP * SimTouch.CROSS_CURL * crosser.attrs.technique
+			var vel := ctx.ballistics.solve_lofted(from, aim, flight, ctx.env, spin)
+			# Each man a stride short of his point and moving on to it.
+			#
+			# Not the flight's own distance short, which is what a timed run
+			# would be: measured that way the ball came down **14.8 m** from the
+			# nearest of ours, because nothing keeps a man running at a point
+			# once the trial starts -- the off-ball layer only re-assigns an
+			# intent when somebody on the ball is deciding, and while the ball is
+			# in the air nobody is. That is `docs/THE_FOOTBALL.md` 29 in its
+			# purest form and it is not what this row is asking. Placed a stride
+			# out, the finish is the question and the run is a given.
+			_arrivals(ctx, team, 3, ball_at, crosser, OPEN_ARRIVAL_BACK)
+			for p in ctx.players:
+				if p.team != team:
+					p.on_pitch = false
+			ctx.offside_on = false
+			# And the ball starts a quarter of a second into its flight, above
+			# and past the man who struck it.
+			#
+			# Left on his boot it never leaves: the crosser is standing over the
+			# ball, `SimDuel.resolve_contacts` hands a ball inside his reach
+			# straight back to him, and measured, every trial had it taken down
+			# again three metres from where it was struck. A follow-through is a
+			# man behind the ball, not on it.
+			var lead := SimBall.new()
+			lead.pos = from
+			lead.launch(vel, spin)
+			for _i in int(CROSS_FOLLOW_THROUGH / SimConsts.DT):
+				lead.integrate(SimConsts.DT, ctx.env)
+			ctx.ball.pos = lead.pos
+			ctx.ball.launch(lead.vel, lead.spin)
+			ctx.ball.grounded = false
+			ctx.update_possession())
+	s.starts_in_flight = true
+	return s
+
+
 ## `along` is how far up the pitch the crosser stands, `across` how wide. Both
 ## have to clear `SimDecision._add_crosses`'s own gate -- past a third of the
 ## pitch and outside 45% of the half-width -- or the act is never a candidate and
 ## the row would be measuring a mechanic that cannot fire.
-static func _cross(name: String, title: String, along: float, across: float) -> SimScenario:
+##
+## `arriving` is how many of ours are already attacking the box (`_arrivals`), and
+## `turned` is whether the crosser is running at the goal line or has got there
+## and turned infield -- a man beside the byline still running forward is out of
+## play in half a second, and the row would be measuring its own placement.
+static func _cross(name: String, title: String, along: float, across: float,
+		arriving := 0, turned := false, unopposed := false) -> SimScenario:
 	var s := SimScenario.new()
 	s.name = name
 	s.title = title
@@ -275,10 +426,57 @@ static func _cross(name: String, title: String, along: float, across: float) -> 
 		sc.settle(ctx, ball_at, crosser)
 		crosser.pos = at
 		crosser.vel = Vector3(dir * 3.0, 0.0, 0.0)
+		if turned:
+			crosser.vel = Vector3(dir * 1.0, 0.0, -signf(across) * 2.5)
 		var up := SimConsts.horizontal(ctx.pitch.target_goal(team) - at)
 		crosser.facing = atan2(up.z, up.x)
+		_arrivals(ctx, team, arriving, ball_at, crosser)
+		if unopposed:
+			# Off the pitch rather than moved away: a defence standing on the
+			# halfway line is still a defence, and `control_at_time` would price
+			# it. And with nobody to hold a line the referee's own fallback puts
+			# the offside line on halfway, so every man in the box would be
+			# flagged -- see `SimContext.offside_on`.
+			for p in ctx.players:
+				if p.team != team:
+					p.on_pitch = false
+			ctx.offside_on = false
 		ctx.update_possession()
 	return s
+
+
+## `n` of ours already running at the box, held short of the points the ball is
+## aimed at.
+##
+## The points are `SimOffBall.box_targets`, which is where the cross is aimed and
+## where the engine's own run goes, so a loaded row asks about the ball and the
+## finish rather than about a geometry nothing else uses. Nearest the goal first,
+## because that is who would be in the move; the crosser is never one of them.
+static func _arrivals(ctx: SimContext, team: int, n: int, ball_at: Vector3,
+		crosser: SimPlayer, back := ARRIVAL_BACK) -> void:
+	if n <= 0:
+		return
+	var dir := ctx.pitch.attack_dir(team)
+	var targets := SimOffBall.box_targets(ctx, team, ball_at)
+	var pool: Array[SimPlayer] = []
+	for p in ctx.players:
+		if p.team != team or p.is_keeper or p.id == crosser.id:
+			continue
+		if not SimRole.is_attacking(p.role) and p.role != SimRole.CM:
+			continue
+		pool.append(p)
+	pool.sort_custom(func(a: SimPlayer, b: SimPlayer) -> bool:
+		return a.pos.x * dir > b.pos.x * dir)
+	for i in mini(n, mini(pool.size(), targets.size())):
+		var p: SimPlayer = pool[i]
+		var point: Vector3 = targets[i]
+		var from: Vector3 = point - Vector3(dir * back, 0.0, 0.0)
+		from.y = 0.0
+		p.pos = from
+		var to := SimConsts.horizontal(point - from)
+		if to.length() > 1e-3:
+			p.vel = to.normalized() * ARRIVAL_PACE
+		_face(p, point)
 
 
 ## The outfielder whose shape station is furthest over on the given flank, for a
@@ -434,20 +632,37 @@ static func through_ball() -> SimScenario:
 ##
 ## A side that never switches plays in one third of the pitch, which is
 ## `docs/THE_FOOTBALL.md` 30's picture from the other side.
+##
+## **The first version put the two men 54 m apart and measured its own placement**
+## (owner, 2026-08-23). `SimDecision.MAX_LOFTED_PASS` is 45, so the ball the row
+## is named for was never generated: the candidate list at the first decision was
+## twelve carries and a hold, with no pass to anybody on it at all. The fourth
+## scenario to do this, and the fourth time the answer was that a value knob
+## cannot create an option that was never on the list.
+##
+## Both men are 20 m off the middle now -- 14 m from their own touchlines, which
+## is where a winger holding width actually stands -- and the ball is 42 m from
+## him. **Whether 45 m is the right ceiling is a separate question and a real
+## one**: a touchline-to-touchline switch on a 68 m pitch is fifty-odd metres and
+## footballers play it. That is a decision about every long ball in the game, so
+## it is not settled from here.
+const SWITCH_WIDTH := 20.0
+
+
 static func switch_play() -> SimScenario:
 	return _make("switch", "ball held on the left, the right wide man free", 7.0,
 		func(sc: SimScenario, ctx: SimContext) -> void:
 			var team := sc.attacking_team
 			var dir := ctx.pitch.attack_dir(team)
-			var at := Vector3(14.0 * dir, 0.0, -25.0)
-			var holder := _widest(ctx, team, -25.0, at)
+			var at := Vector3(14.0 * dir, 0.0, -SWITCH_WIDTH)
+			var holder := _widest(ctx, team, -SWITCH_WIDTH, at)
 			sc.settle(ctx, at + Vector3(dir * 0.6, 0.0, 0.0), holder)
 			holder.pos = at
 			_face(holder, ctx.pitch.target_goal(team))
 			# The far winger held wide and high, where a switch would find him.
-			var far := _widest(ctx, team, 25.0, at)
+			var far := _widest(ctx, team, SWITCH_WIDTH, at)
 			if far != holder:
-				far.pos = Vector3(24.0 * dir, 0.0, 28.0)
+				far.pos = Vector3(26.0 * dir, 0.0, SWITCH_WIDTH)
 				_face(far, ctx.pitch.target_goal(team))
 			ctx.update_possession())
 

@@ -110,7 +110,12 @@ func _ground_passes(ctx: SimContext, moving: bool) -> void:
 				t += SimConsts.FORECAST_DT
 			mean += ctx.ball.pos.x
 		mean /= float(REPS)
-		check_between(mean, distance - 5.0, distance + 4.0,
+		# Five metres either side, and the far edge is the wider one because the
+		# ball is asked to still be *doing* the arrival pace when it gets there:
+		# struck by a moving man it carries some of his run as well, and at the
+		# floor `SimDecision.arrival_pace` was raised to (2026-08-23) a 22 m ball
+		# came out 4.0 m long against a ceiling of 4.0.
+		check_between(mean, distance - 5.0, distance + 5.0,
 			"%s %d m ground pass must arrive about %d m out" % [who, distance, distance])
 
 
@@ -169,7 +174,12 @@ func _headers(ctx: SimContext) -> void:
 		var mean := 0.0
 		for i in REPS:
 			_place(ctx, p, moving, 2.1, Vector3(-9.0, -4.0, 0.0))
-			SimTouch.header(ctx, p, Vector3(1.0, 0.0, 0.0), 0.45)
+			# At the power the clearing header is actually played with. The
+			# primitive's own band belongs to the header at goal, which is a
+			# different act -- `SimAerial.NOT_AT_GOAL_POWER` is the difference,
+			# and testing the primitive flat out measured a header nobody plays.
+			SimTouch.header(ctx, p, Vector3(1.0, 0.0, 0.0), 0.45, SimAerial.CLEAR,
+				Vector3.INF, 0.0, SimAerial.NOT_AT_GOAL_POWER)
 			mean += SimConsts.horizontal_length(_finish(ctx))
 		mean /= float(REPS)
 		check_between(mean, 4.0, 26.0,
@@ -181,11 +191,26 @@ func _headers(ctx: SimContext) -> void:
 	var hard := 0.0
 	for i in REPS:
 		_place(ctx, p, false, 2.1, Vector3(-16.0, -5.0, 0.0))
-		SimTouch.header(ctx, p, Vector3(1.0, 0.0, 0.0), 0.45)
+		SimTouch.header(ctx, p, Vector3(1.0, 0.0, 0.0), 0.45, SimAerial.CLEAR,
+			Vector3.INF, 0.0, SimAerial.NOT_AT_GOAL_POWER)
 		hard += SimConsts.horizontal_length(_finish(ctx))
 	hard /= float(REPS)
 	check_between(hard, 6.0, 30.0,
 		"a header off a driven ball must not carry like a clearance kick")
+
+	# And the other header, which is the one aimed at the goal. The floor is
+	# structural rather than tuned: a ball leaving the forehead slower than this
+	# gives a goalkeeper eleven metres away the better part of a second, and the
+	# owner watched exactly that (2026-08-23). The ceiling is the struck shot --
+	# a header is slower than a shot and not half of one.
+	var at_goal := 0.0
+	for i in REPS:
+		_place(ctx, p, false, 2.1, Vector3(-14.0, -4.0, 0.0))
+		SimTouch.header(ctx, p, Vector3(1.0, 0.0, 0.0), -0.1, SimAerial.AT_GOAL)
+		at_goal += ctx.ball.vel.length()
+	at_goal /= float(REPS)
+	check_between(at_goal, 13.0, SimConsts.SHOT_SPEED_MAX,
+		"a header at goal must leave the head fast enough to beat a keeper")
 
 
 func _small_touches(ctx: SimContext) -> void:

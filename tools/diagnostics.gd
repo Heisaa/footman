@@ -318,8 +318,9 @@ static func _under_challenge(events: Array) -> void:
 		if e["ev"] != SimTelemetry.Ev.TOUCH or not e.has("chal"):
 			continue
 		var kind: int = e["kind"]
-		# Only the carrier's own choices. A tackle or a block is the defender's.
-		if kind == SimTelemetry.Touch.TACKLE or kind == SimTelemetry.Touch.BLOCK:
+		# Only the carrier's own choices. A tackle, a block or a poke is the
+		# defender's.
+		if SimTelemetry.is_defensive_kind(kind):
 			continue
 		var band := n - 1
 		for i in n:
@@ -2077,6 +2078,15 @@ static func _which_idea_he_had() -> void:
 	for i in SimOffBall.box_ease.size():
 		eased.append("%s %d" % [SimOffBall.BOX_EASE_NAMES[i], SimOffBall.box_ease[i]])
 	print("    and while the ball was on the grass he was:  %s  (ticks)" % ",  ".join(eased))
+	# And how many of the runs above were a man changing his mind. A drift is the
+	# one offer that can be abandoned (`SimOffBall._assign`), so this is the whole
+	# population of it, and a zero is the mechanic dead rather than quiet.
+	var switched := PackedStringArray()
+	for i in SimOffBall.switched.size():
+		if SimOffBall.switched[i] > 0:
+			switched.append("%s %d" % [SimOffBall.KIND_NAMES[i], SimOffBall.switched[i]])
+	print("    offers given up for a run instead:  %s" % (
+		",  ".join(switched) if switched.size() > 0 else "none"))
 	if ease_ticks == 0 and box_runs > 0:
 		print("      -- runs were made and neither arm of the timing ran")
 
@@ -3200,7 +3210,12 @@ static func _when_the_cross_drops(ctx: SimContext, events: Array) -> void:
 		if not e.has("to"):
 			continue
 		var to: Vector3 = e["to"]
-		var flight: float = SimTouch.lofted_flight(float(e.get("dist", 0.0)))
+		# The flight it was actually struck with -- a cross is whipped or hung and
+		# the two are three quarters of a second apart, which is the difference
+		# between reading the box as the ball comes down and reading it early.
+		var flight: float = float(e.get("flight", 0.0))
+		if flight <= 0.0:
+			flight = SimTouch.cross_flight(float(e.get("dist", 0.0)))
 		var tick := int(e["t"]) + int(flight * float(SimConsts.TICK_HZ))
 		var index := tick / SimConsts.TRACE_TICKS
 		if index < 0 or index >= trace.size():
@@ -4365,7 +4380,7 @@ static func _in_the_box(ctx: SimContext, events: Array) -> void:
 		if e["ev"] != SimTelemetry.Ev.TOUCH:
 			continue
 		var kind: int = e["kind"]
-		if kind == SimTelemetry.Touch.TACKLE or kind == SimTelemetry.Touch.BLOCK:
+		if SimTelemetry.is_defensive_kind(kind):
 			continue
 		# The box a team is attacking is the one it defends after the ends change.
 		var inside := ctx.pitch.in_opponent_penalty_area(e["team"], e["from"]) if flip > 0.0 \
