@@ -1,12 +1,25 @@
 # art/ — the figure, in Blender
 
-A sandbox for the look of the players. **Nothing here ships.** The game builds
-its figures at run time in `presentation/character_builder.gd`; this exists so a
-shape can be looked at in seconds instead of a Godot launch, and so that
-whatever wins gets carried back into the GDScript by hand.
+A sandbox for the look of the players: a shape can be looked at in seconds here
+instead of a Godot launch. It is not a port of
+`presentation/character_builder.gd` — the construction is different on purpose,
+see *Why a distance field* below.
 
-It is not a port of that file. The construction is different on purpose — see
-*Why a distance field* below.
+**Where a winning shape goes now.** This used to end with a shape being carried
+back into the GDScript by hand, because the game could draw nothing but
+primitives. It can take a model: `SimCharacterModel` instantiates
+`presentation/models/body_<type>.glb` for each of five body types the moment one
+exists, and falls back to the primitives for the rest. **`docs/THE_MODELS.md` is
+the contract** — the five bodies, the axes and the 1.78 m reference, six unpainted
+material slots, hair and accessory variants, and the node names the animation
+poses. Read it before deciding what an export looks like; the node names in
+particular decide whether the figure is rigid parts or a skinned rig, and only
+one of those animates today.
+
+The same document lists the one change this pipeline needs on the way in:
+`cast.py:from_seed` draws its own height and build, and the game packs both into
+the seed instead, so a render is only the man the game will show once it reads
+them back.
 
 ```sh
 ./art/render.sh --who moustache          # one man, full length

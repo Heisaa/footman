@@ -97,6 +97,40 @@ today. Say so before authoring a skeleton, not after.
 `SimCharacterModel.models_enabled = false` draws everybody procedurally whatever
 is on disk, which is the A/B while a model is being judged.
 
+## The sandbox in `art/`
+
+`art/` is where the figure is designed: signed distance fields in Python, meshed
+and rendered in Blender, judged against the reference photographs. `art/README.md`
+is its own document and this one does not govern how a shape is arrived at.
+
+It governs what comes out. Two things have to change in that pipeline before a
+figure it produces can be a figure the game builds:
+
+**1. Height and build come from the record, not from the seed.**
+`art/figure/cast.py:from_seed` draws its own height — a bell round 1.79 with a
+14% chance of a tail — and its own build. The game does not: `WorldGen` decides
+those, and packs them into the seed with the body type (see above). A render is
+only the man the game will show if `from_seed` reads them back instead of
+drawing them. That is a dozen lines of Python: the same masks, the same tag
+byte, and the existing draw kept for a seed that carries no body. Everything
+else `from_seed` invents — skin, hair, moustache, brows, nose, eye gap — stays
+invented, because the record has no opinion about any of it and the free bits
+are there for exactly that.
+
+**2. What ships is a `.glb`, not a render.** `art/README.md` says nothing here
+ships and that a winning shape is carried back into GDScript by hand. That was
+the only route when the game could draw nothing but primitives. Now
+`SimCharacterModel` will instantiate `presentation/models/body_<type>.glb` the
+moment one exists, so the mesher can export five files instead of a person
+re-deriving five silhouettes in another language. What an export has to carry is
+the whole of this document: the axes, the 1.78 m reference, the six material
+slots left unpainted, the hair and accessory variants, and above all the node
+names — because a single fused mesh, however good it looks in a render, cannot
+be animated by anything in the view today.
+
+Neither is urgent while the shape is still being judged. Both are what "finished"
+means.
+
 ## Still open
 
 - **Animation.** The pose code drives the node names above. Whatever the models
