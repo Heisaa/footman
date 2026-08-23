@@ -167,7 +167,7 @@ def _body(skin, look, h):
     trunk_top = h * (SHOULDER - 0.055)
     skin.add(Barrel(
         (0.0, 0.0, (h * SHIRT_HEM + trunk_top) * 0.5),
-        (w * 0.66, h * 0.086), (trunk_top - h * SHIRT_HEM) * 0.5,
+        (w * 0.62, h * 0.068), (trunk_top - h * SHIRT_HEM) * 0.5,
         round=h * 0.072))
 
     for side in (-1.0, 1.0):
@@ -445,44 +445,39 @@ def _kit(shirt, trim, collar, shorts, socks, boots, look, h):
     # then blends outwards from an already-wide shoulder and the arms arrive
     # somewhere under the armpit.
     trunk = w * 0.72
-    # **The rim radius is the shoulder.** One barrel does the whole shirt: an
-    # oval in plan so there are no flat faces to catch the light as a slab, and
-    # a generous rim where the side turns over into the top, which is a shoulder
-    # line. It costs nothing at the hem, because the hem is cut a full rim-radius
-    # up from the bottom and so lands on the straight side.
+    # **The rim radius is the shoulder, and the taper is the side view.** One
+    # barrel does the whole shirt: an oval in plan, so there are no flat faces
+    # to catch the light as a slab; a generous rim where the side turns over
+    # into the top, which is the shoulder line; and a section that draws in
+    # front-to-back as it rises, which is what a shoulder does.
     #
-    # Two shapes were tried instead -- a flattened ball on top, then a capsule
-    # laid across -- and both leave a seam running down the side of the shirt
-    # where the second shape's widest ring meets the barrel's. Blending harder
-    # does not help: the ridge is where two surfaces of equal width meet, and
-    # there is nothing for the fillet to bridge.
+    # The taper is also half of closing the seam where the sleeve joins, which
+    # is a step in **depth**: a deep trunk meeting a sleeve at arm thickness.
+    # There are two ways to shut it and only one is any good. Pushing the
+    # shoulder out to meet the trunk works and leaves a figure far too deep to
+    # look at from the side; bringing the trunk in to meet the sleeve works and
+    # does not. The other shapes tried on top -- a flattened ball, a capsule
+    # laid across, a wide shallow bar -- each left a seam of their own, because
+    # a second surface as wide as the barrel gives a fillet nothing to bridge.
     shirt_round = h * 0.098
     shirt_low = h * SHIRT_HEM - shirt_round
     shirt_high = h * SHOULDER + h * 0.010
     shirt.add(Barrel(
         (0.0, 0.0, (shirt_low + shirt_high) * 0.5),
-        (trunk, h * 0.122), (shirt_high - shirt_low) * 0.5,
-        round=shirt_round))
+        (trunk, h * 0.112), (shirt_high - shirt_low) * 0.5,
+        round=shirt_round, top=(trunk * 0.99, h * 0.084)))
 
     sleeve_end = h * (0.442 if not look.sleeves_long else 0.300)
     for side in (-1.0, 1.0):
-        # On the arm's own line, not the trunk's. Started further in, the
-        # sleeve is narrower at the shoulder than the arm inside it and the bare
-        # arm breaks out through the top of it.
-        # **The sleeve starts as the shoulder, not as a tube stuck to it.** At
-        # the arm's own thickness it is far shallower than the shirt it joins,
-        # so however hard the two are blended a crease runs down the side of the
-        # figure where the depths disagree. Fat at the top and tapered to the
-        # cuff, it *is* the shoulder, and there is nothing left to crease.
-        # **A shoulder as deep as the shirt, then the sleeve out of it.** The
-        # crease down the side of the figure was a step in *depth*, not width:
-        # the shirt is 44cm front to back and a sleeve at arm thickness is 26cm,
-        # so the surface falls away where they meet. No amount of blending fills
-        # it -- past a certain radius a wider blend makes it worse, because a
-        # smooth union that wide reads the field far from any surface, where it
-        # is only approximate.
+        # The other half: a compact mass at the joint, the same depth as the
+        # shirt's own top, so the sleeve leaves a *shoulder* rather than the
+        # side of a trunk. It has to stay compact -- widened into a bar across
+        # the chest it stops being a shoulder and becomes a shoulder pad.
         shirt.add(Ellipsoid((side * w * 0.68, 0.0, h * (SHOULDER - 0.070)),
-                            (h * 0.068, h * 0.116, h * 0.066)), k=h * 0.055)
+                            (h * 0.068, h * 0.084, h * 0.066)), k=h * 0.055)
+        # Fat where it leaves the shoulder and tapered to the cuff. Started
+        # further in than the arm it would be narrower at the top than the arm
+        # inside it, and the bare arm breaks out through it.
         top = (side * w * 0.66, 0.0, h * (SHOULDER - 0.085))
         end = (side * w * 0.86, 0.0, sleeve_end)
         shirt.add(Capsule(top, end, limb * 1.88, limb * 1.16), k=h * 0.055)
@@ -512,7 +507,7 @@ def _kit(shirt, trim, collar, shorts, socks, boots, look, h):
     # what a neckline does -- the insert is under the shirt, not on it.
     # The cut reaches from outside the shirt to well inside it, so it opens a
     # hole rather than scoring a line.
-    face = h * 0.122
+    face = h * 0.104
     for prim in _vee_slabs(w, h, -face - h * 0.030, -face + h * 0.050):
         shirt.cut(prim, k=h * 0.009)
     for prim in _vee_slabs(w, h, -face - h * 0.030, -face + h * 0.075):
@@ -525,7 +520,8 @@ def _kit(shirt, trim, collar, shorts, socks, boots, look, h):
     collar.keep(Barrel(
         (0.0, 0.0, (shirt_low + shirt_high) * 0.5),
         (trunk - inset, face - inset),
-        (shirt_high - shirt_low) * 0.5 - inset, round=shirt_round))
+        (shirt_high - shirt_low) * 0.5 - inset, round=shirt_round,
+        top=(trunk * 0.99 - inset, h * 0.084 - inset)))
     # And out of the collar hole, or the white shows round the back of the neck.
     collar.cut(neck, k=h * 0.006)
 

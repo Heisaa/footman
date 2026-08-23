@@ -171,25 +171,34 @@ class Barrel(Prim):
     bottom edges and is measured inwards from them.
     """
 
-    def __init__(self, centre, radii, half_height, round=0.0, rotation=None):
+    def __init__(self, centre, radii, half_height, round=0.0, top=None,
+                 rotation=None):
         super().__init__(centre, rotation)
         self.radii = np.asarray(radii, dtype=np.float64)
+        # `top` tapers the section towards the shoulder, which is what a shirt
+        # actually does. It is the honest way to close the crease where the
+        # sleeve joins: bring the torso *in* to meet the arm rather than pushing
+        # the shoulder out to meet the torso, which leaves a figure that is
+        # crease-free and far too deep to look at from the side.
+        self.top = self.radii if top is None else np.asarray(top, dtype=np.float64)
         self.half_height = float(half_height)
         self.round = float(min(round, float(np.min(self.radii)),
-                               self.half_height) * 0.999)
+                               float(np.min(self.top)), self.half_height) * 0.999)
 
     def reach(self):
-        return np.array([self.radii[0], self.radii[1], self.half_height])
+        return np.array([max(self.radii[0], self.top[0]),
+                         max(self.radii[1], self.top[1]), self.half_height])
 
     def distance(self, x, y, z):
         px, py, pz = self.local(x, y, z)
-        a = self.radii[0] - self.round
-        b = self.radii[1] - self.round
+        rise = np.clip((pz + self.half_height) / (2.0 * self.half_height), 0.0, 1.0)
+        a = self.radii[0] + (self.top[0] - self.radii[0]) * rise - self.round
+        b = self.radii[1] + (self.top[1] - self.radii[1]) * rise - self.round
         # Distance to the shrunken ellipse, then the whole thing is inflated
         # back out by `round`. Approximate off-axis, exact for a circle, and
         # wrong only by where a fillet sits.
         flat = _ellipse_distance((px / a, py / b), (px / (a * a), py / (b * b)),
-                                 float(min(a, b)))
+                                 float(np.min(np.minimum(a, b))))
         tall = np.abs(pz) - (self.half_height - self.round)
         outside = np.sqrt(np.maximum(flat, 0.0) ** 2 + np.maximum(tall, 0.0) ** 2)
         inside = np.minimum(np.maximum(flat, tall), 0.0)

@@ -98,8 +98,16 @@ contrast is most of what reads as a football kit.
 - **A crease is a step in *depth*, not in width, nine times out of ten.** The
   hard line down the side of the shirt was a 44cm-deep torso meeting a 26cm-deep
   sleeve. Blending harder makes it worse: past a certain radius the smooth union
-  is reading the field far from any surface, where it is only approximate. Give
-  the two the same depth where they meet instead.
+  is reading the field far from any surface, where it is only approximate.
+- **Close that step by bringing the trunk in, never by pushing the shoulder
+  out.** Both shut the crease. One leaves a figure that is fine from the front
+  and far too deep to look at from the side, and the front view will not tell
+  you which one you did — `--mode views` will. The shirt tapers front-to-back
+  as it rises now, and the mass at the joint stays compact: widened into a bar
+  it stops being a shoulder and becomes a shoulder pad.
+- **Some seams are meant to be there.** A shirt has a shoulder seam. Chasing
+  `outline.py` to zero cost the shoulder its shape three times over; the number
+  is for finding a crease, not for deciding it must go.
 - **A distance field has to be a distance.** `(k - 1) * min(radii)` for an
   ellipse under-reports the distance along the wide axis by the whole aspect
   ratio, so a fillet comes out two and a half times smaller there than it was

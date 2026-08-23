@@ -45,8 +45,15 @@ def outline(name="shirt", who="moustache", heights=(0.42, 0.48, 0.53, 0.57)):
         steps = [radii[i - 1] - radii[i] for i in range(1, len(radii))]
         dip = max(steps + [0.0])
         worst = max(worst, dip)
-        print(f"  z {fraction:.2f}  widest {max(radii):.3f}m"
-              f"  biggest inward step {dip * 1000:5.1f}mm")
+        # Half-depth as well as half-width, because the two are a trade: the
+        # crease down the side of the shirt is a step in depth, and closing it
+        # by pushing the shoulder out to meet the torso is how a figure ends up
+        # too deep to look at from the side.
+        inside = plan < 0
+        ys = [i for i in range(plan.shape[1]) if inside[:, i].any()]
+        depth = (ys[-1] - ys[0]) * cell * 0.5 if ys else 0.0
+        print(f"  z {fraction:.2f}  half-width {max(radii):.3f}  "
+              f"half-depth {depth:.3f}  inward step {dip * 1000:5.1f}mm")
     print(f"worst concavity {worst * 1000:.1f}mm")
     return worst
 
