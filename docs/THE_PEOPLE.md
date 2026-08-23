@@ -98,6 +98,18 @@ is the point.
 attribute, the traits in the scout's own words, and a closing line about how
 much of it the club would stand behind. Flat voice, no winking.
 
+## The body, and how it reaches the screen
+
+`appearance_seed` is the only thing about a man's looks that travels into a
+match — `SimPlayer` carries no height and no build because the simulation reads
+neither — so the record's body is packed into the seed's low bits by
+`WorldLook`: body type, height to about a centimetre and a half, and build.
+Presentation reads it back and the man is drawn the size the record says he is.
+
+One of five bodies, picked by his archetype first and his build second: giant,
+sprite, heavy, lean, standard. `docs/THE_MODELS.md` is what a model has to do to
+be one of them, and until a model exists the procedural figure draws them all.
+
 ## The season
 
 `WorldSeason` is the fixture list, the results and the table: a round-robin by
@@ -133,15 +145,9 @@ belief moves toward the truth, that everybody plays everybody twice.
 
 ## Loose ends
 
-- **Height is on the record but not on the model.** `presentation/` still builds
-  the figure from `appearance_seed` alone, so a generated giant is a giant in his
-  attributes and not yet in the picture. `WorldGen.player` takes an optional
-  `body_oracle` — a callable mapping a seed to that seed's height — and samples
-  seeds against it; `world/` must not depend on `presentation/`, so the caller
-  supplies it. Passing `SimAppearance.from_seed(s).height` from the presentation
-  side is the whole of the wiring.
 - **`sim/` reads neither height nor traits.** A giant wins nothing in the air
-  today that his `jumping` and `strength` do not already win.
+  today that his `jumping` and `strength` do not already win. He is drawn as a
+  giant — see below — and plays as an ordinary man with good jumping.
 - **`SimSquadGen` still exists** and still generates its own invented names for
   tests and batch runs. It is not wired to `world/`, and the two are free to
   disagree until something needs them not to.

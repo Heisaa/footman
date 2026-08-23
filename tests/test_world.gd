@@ -20,6 +20,8 @@ func run() -> void:
 	_test_knowledge_starts_vague_and_sharpens()
 	_test_best_eleven_fills_the_shape()
 	_test_sim_team_is_complete()
+	_test_the_body_rides_in_the_seed()
+	_test_a_seed_that_carries_no_body()
 	_test_season_is_the_length_it_says()
 	_test_fixture_list_is_a_double_round_robin()
 	_test_table_arithmetic()
@@ -224,6 +226,67 @@ func _test_sim_team_is_complete() -> void:
 		check(not ids.has(p.id), "two men in one squad share a sim id")
 		ids[p.id] = true
 		check(p.player_name != "", "every man on the team sheet has a name")
+
+
+func _test_the_body_rides_in_the_seed() -> void:
+	# `appearance_seed` is the only thing about a man's looks that reaches the
+	# figure on screen, so the record's body is packed into its low bits. What is
+	# under test is the round trip: what the record said comes back out.
+	var rng := SimRng.new(31)
+	for _i in 40:
+		var seed_value := rng.next_u32()
+		var height := rng.range_float(WorldLook.HEIGHT_MIN, WorldLook.HEIGHT_MAX)
+		var build := rng.unit_float()
+		var body := WorldLook.body_type_for("", height, build)
+		var packed := WorldLook.pack(seed_value, body, height, build)
+
+		check(WorldLook.is_packed(packed), "a packed seed says so")
+		check_equal(WorldLook.body_type_of(packed), body, "the body type comes back")
+		# One height bucket is about a centimetre and a half, so half of one is
+		# the most the round trip can lose.
+		check_near(WorldLook.height_of(packed), height, 0.008, "the height comes back")
+		check_near(WorldLook.build_of(packed), build, 0.08, "the build comes back")
+		check_equal(packed & ~WorldLook.BODY_MASK, seed_value & ~WorldLook.BODY_MASK,
+			"packing leaves the free bits alone")
+
+	# The five bodies, and which man gets which.
+	check_equal(WorldLook.body_type_for(WorldNickname.GIANT, 1.80, 0.5), WorldLook.GIANT,
+		"a giant is a giant whatever he measures")
+	check_equal(WorldLook.body_type_for("", 1.99, 0.5), WorldLook.GIANT, "and so is a very tall man")
+	check_equal(WorldLook.body_type_for(WorldNickname.SPRITE, 1.80, 0.5), WorldLook.SPRITE, "a sprite is a sprite")
+	check_equal(WorldLook.body_type_for("", 1.79, 0.9), WorldLook.HEAVY, "a heavy build is heavy")
+	check_equal(WorldLook.body_type_for("", 1.79, 0.1), WorldLook.LEAN, "a light one is lean")
+	check_equal(WorldLook.body_type_for("", 1.79, 0.5), WorldLook.STANDARD, "and most men are neither")
+
+	# Every generated player carries his own body, and the tails carry theirs.
+	var giants := 0
+	for seed_value in 6:
+		for p in WorldGen.squad(SimRng.new(seed_value), 0.45, WorldNames.ENG, 0):
+			check(WorldLook.is_packed(p.appearance_seed), "%s carries no body" % p.full_name())
+			check_near(WorldLook.height_of(p.appearance_seed), p.height, 0.009,
+				"%s is drawn the height the record gives him" % p.full_name())
+			if p.archetype == WorldNickname.GIANT:
+				giants += 1
+				check_equal(WorldLook.body_type_of(p.appearance_seed), WorldLook.GIANT,
+					"%s is a giant on the record and not in the seed" % p.full_name())
+	check(giants > 0, "six squads and not one giant to check")
+
+
+func _test_a_seed_that_carries_no_body() -> void:
+	# Seeds from `SimSquadGen` and from every build before this carry nothing,
+	# and have to be recognised as carrying nothing rather than read as noise.
+	var rng := SimRng.new(4)
+	var false_positives := 0
+	for _i in 2000:
+		var raw := rng.next_u32() & ~WorldLook.BODY_MASK
+		check(not WorldLook.is_packed(raw), "an empty body field is not a body")
+		check_equal(WorldLook.height_of(raw), 0.0, "and reports no height")
+		check_equal(WorldLook.build_of(raw), -1.0, "and no build")
+		if WorldLook.is_packed(rng.next_u32()):
+			false_positives += 1
+	# One seed in 256 collides with the tag by chance. Over 2000 draws that is
+	# about eight; forty would mean the tag is not eight bits any more.
+	check(false_positives < 40, "an unpacked seed is rarely mistaken for a packed one (%d of 2000)" % false_positives)
 
 
 func _test_season_is_the_length_it_says() -> void:

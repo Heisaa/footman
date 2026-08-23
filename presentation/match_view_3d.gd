@@ -1314,8 +1314,8 @@ func _build_players() -> void:
 	]
 	var kits := _kits
 	for p in _match.ctx.players:
-		var appearance := SimAppearance.from_seed(p.appearance_seed)
-		var node := SimCharacterBuilder.build(appearance, kits[p.team], p.shirt)
+		var appearance := SimCharacterModel.appearance_for(p.appearance_seed)
+		var node := SimCharacterModel.build(p.appearance_seed, appearance, kits[p.team], p.shirt)
 		node.set_meta("appearance", appearance)
 		add_child(node)
 		_players.append(node)
@@ -2175,7 +2175,7 @@ func _pose(node: Node3D, index: int, clock: float) -> void:
 		_:
 			pass
 
-	SimCharacterBuilder.set_expression(
+	SimCharacterModel.set_expression(
 		node, SimAppearance.face_for_anim(anim, _curr.player_stamina[index])
 	)
 

@@ -71,12 +71,6 @@ static func quality_for(reputation: float) -> float:
 
 
 ## One player. `quality` is his own level, already varied off the club's.
-##
-## `body_oracle` is optional and is how a height on the record becomes a height
-## on the model: given a seed it returns that seed's height in metres, and the
-## generator samples seeds until one lands near the height it wanted. Presentation
-## owns that mapping (`SimAppearance.from_seed`), and `world/` must not depend on
-## presentation, so the caller passes it in or the record's height stays advisory.
 static func player(
 	rng: SimRng,
 	id: int,
@@ -85,7 +79,6 @@ static func player(
 	nation_weights: PackedFloat32Array,
 	tail_kind: String = WorldNickname.NONE,
 	side: float = 0.0,
-	body_oracle: Callable = Callable(),
 	traits_already: Dictionary = {}
 ) -> WorldPlayer:
 	var p := WorldPlayer.new()
@@ -117,7 +110,7 @@ static func player(
 	if tail_kind != WorldNickname.NONE:
 		_force_tail(rng, p, tail_kind)
 
-	p.appearance_seed = _appearance_seed(rng, p.height, body_oracle)
+	p.appearance_seed = rng.next_u32()
 	p.traits = WorldTraits.draw(rng, p.attrs, p.age, WorldTraits.draw_count(rng), traits_already)
 	# A firebrand is a temperament as much as a number, and the archetype asks
 	# for both. Give him the trait if the draw did not.
@@ -134,6 +127,11 @@ static func player(
 
 	p.archetype = WorldNickname.archetype(p.attrs, p.height, p.age, p.traits, role == SimRole.GK)
 	p.epithet = WorldNickname.epithet(rng, p.archetype)
+	# The body goes into the seed's low bits, because the seed is the only thing
+	# about his looks that reaches the figure on screen. `WorldLook` says why.
+	# It happens here rather than with the draw above because the body type reads
+	# the archetype, and the archetype is not known until the traits are.
+	p.appearance_seed = WorldLook.pack_for(p.appearance_seed, p)
 
 	p.condition = rng.range_float(0.92, 1.0)
 	p.sharpness = rng.range_float(0.80, 0.98)
@@ -152,8 +150,7 @@ static func squad(
 	reputation: float,
 	club_nation: int,
 	first_id: int,
-	roles: Array = [],
-	body_oracle: Callable = Callable()
+	roles: Array = []
 ) -> Array[WorldPlayer]:
 	var shape: Array = roles if not roles.is_empty() else DEFAULT_SQUAD_ROLES
 	var weights := WorldNames.nation_weights(club_nation)
@@ -185,7 +182,7 @@ static func squad(
 		# substitution a decision.
 		var drop := 0.0 if i < 11 else 0.05
 		var individual := clampf(rng.gauss_clamped(level - drop, QUALITY_SPREAD, 2.0), 0.05, 0.98)
-		var p := player(rng, first_id + i, role, individual, weights, kind, _side_for(role, rng), body_oracle, trait_tally)
+		var p := player(rng, first_id + i, role, individual, weights, kind, _side_for(role, rng), trait_tally)
 		for trait_id in p.traits:
 			trait_tally[trait_id] = int(trait_tally.get(trait_id, 0)) + 1
 		# Two Bloomfields in one squad reads as a bug rather than as brothers.
@@ -263,7 +260,6 @@ static func club(
 	id: int,
 	reputation: float,
 	club_nation: int = WorldNames.ENG,
-	body_oracle: Callable = Callable(),
 	taken: Dictionary = {}
 ) -> WorldClub:
 	var c := WorldClub.new()
@@ -312,7 +308,7 @@ static func club(
 	c.formation = SimFormation.four_three_three()
 	c.tactics = SimTactics.balanced()
 
-	c.squad = squad(rng, reputation, club_nation, id * 100, [], body_oracle)
+	c.squad = squad(rng, reputation, club_nation, id * 100, [])
 	for p in c.squad:
 		p.club_id = id
 	assign_shirts(c)
@@ -352,8 +348,7 @@ static func league(
 	club_count: int,
 	centre: float = 0.4,
 	spread: float = 0.25,
-	club_nation: int = WorldNames.ENG,
-	body_oracle: Callable = Callable()
+	club_nation: int = WorldNames.ENG
 ) -> Array[WorldClub]:
 	var clubs: Array[WorldClub] = []
 	# Carried from club to club: no two towns, no two nicknames, and no more
@@ -363,7 +358,7 @@ static func league(
 		var t := 0.0 if club_count <= 1 else float(i) / float(club_count - 1)
 		# Even along the band, then jittered, so the division is not a ladder.
 		var reputation := clampf(centre + (t - 0.5) * spread * 2.0 + rng.gauss(0.0, 0.02), 0.05, 0.95)
-		clubs.append(club(rng, i, reputation, club_nation, body_oracle, taken))
+		clubs.append(club(rng, i, reputation, club_nation, taken))
 	return clubs
 
 
@@ -476,25 +471,3 @@ static func _side_for(role: int, rng: SimRng) -> float:
 	if role == SimRole.FB or role == SimRole.WIDE:
 		return -1.0 if rng.chance(0.5) else 1.0
 	return 0.0
-
-
-## Picks an appearance seed. With a body oracle it samples until the seed's
-## height is close to the one on the record; without one it takes the first
-## draw, and the record's height is intent rather than fact.
-static func _appearance_seed(rng: SimRng, wanted_height: float, body_oracle: Callable) -> int:
-	var seed_value := rng.next_u32()
-	if not body_oracle.is_valid():
-		return seed_value
-	var best := seed_value
-	var best_error := INF
-	# Bounded: a fixed number of draws, so generation costs the same every time
-	# and a height nothing can reach does not hang the game.
-	for _i in 24:
-		var error: float = absf(float(body_oracle.call(seed_value)) - wanted_height)
-		if error < best_error:
-			best_error = error
-			best = seed_value
-		if error <= 0.015:
-			break
-		seed_value = rng.next_u32()
-	return best

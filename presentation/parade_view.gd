@@ -178,18 +178,18 @@ func _build_row() -> void:
 	var count: int = mini(PER_PAGE, _pool.size() - first)
 	for i in count:
 		var p = _pool[first + i]
-		var appearance := SimAppearance.from_seed(p.appearance_seed)
+		var appearance := SimCharacterModel.appearance_for(p.appearance_seed)
 		var styles := SimCharacterBuilder.HAIR_LIBRARY.size()
 		if _hair >= 0:
 			appearance.hair_style = (_hair + i) % styles
 		var at := Vector3((float(i) - float(count - 1) * 0.5) * SPACING, 0.0, 0.0)
-		var node := SimCharacterBuilder.build(appearance, _kits[p.team], p.shirt)
+		var node := SimCharacterModel.build(p.appearance_seed, appearance, _kits[p.team], p.shirt)
 		node.position = at
 		node.rotation.y = deg_to_rad(_turn)
 		add_child(node)
 		_nodes.append(node)
 		_stand(node)
-		SimCharacterBuilder.set_expression(node, _face)
+		SimCharacterModel.set_expression(node, _face)
 
 		var label := Label3D.new()
 		# The seed is on the caption because it is the handle for feedback: it is
@@ -317,6 +317,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_1, KEY_2, KEY_3, KEY_4, KEY_5:
 			_face = key - KEY_1
 			for node in _nodes:
-				SimCharacterBuilder.set_expression(node, _face)
+				SimCharacterModel.set_expression(node, _face)
 		KEY_Q, KEY_ESCAPE:
 			get_tree().quit()
