@@ -93,6 +93,13 @@ contrast is most of what reads as a football kit.
   slug on the forehead; far enough back to hug the shell, it lands on the brows
   and the two fuse into one bar. The hairline is the cut, and the cut can simply
   come further down the forehead.
+- **A rim radius must be smaller than the straight run it leaves behind.** The
+  shirt barrel rounded over a 135mm rim with only 81mm of straight side, so it
+  began drawing in at z 0.765 while the shoulder above it did not pick up until
+  0.841 — and in between the man had a wasp waist, a quarter thinner just below
+  the chest than at either the hem or the shoulder. It shows only from the side.
+  Small rim, top raised to meet the shoulder: 0.147–0.165 instead of
+  0.113–0.158.
 - **One thickness for the whole body.** The seat of the shorts was the deepest
   thing on the figure — 0.208m half-depth against the chest's 0.147 — so in
   profile the man had a belly and a backside and a chest narrower than either.

@@ -479,9 +479,17 @@ def _kit(shirt, trim, collar, shorts, socks, boots, look, h):
     #
     # So the barrel stops at the armpit and two capsules per side carry the
     # shape up and out: a shoulder that slopes, and a sleeve hung off it.
-    shirt_round = h * 0.075
+    # **The rim radius has to be smaller than the straight run it leaves.** At
+    # h*0.075 the barrel rounded over a 135mm rim but had only 81mm of straight
+    # side, so it began drawing in at 0.765 while the shoulder above did not
+    # pick up until 0.841 -- and in between the man had a wasp waist, a quarter
+    # thinner just below the chest than at either the hem or the shoulder.
+    #
+    # A small rim and a top raised to meet the shoulder: the section now runs
+    # straight from the hem to where the shoulder takes over.
+    shirt_round = h * 0.038
     shirt_low = h * SHIRT_HEM - shirt_round
-    shirt_high = h * 0.500
+    shirt_high = h * 0.545
     shirt.add(Barrel(
         (0.0, 0.0, (shirt_low + shirt_high) * 0.5),
         (trunk, h * 0.088), (shirt_high - shirt_low) * 0.5,
