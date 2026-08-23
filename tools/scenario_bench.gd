@@ -13,6 +13,12 @@ extends RefCounted
 ## with the ball still ours and nothing struck -- which on a five-second
 ## one-on-one means he did not go for goal.
 ##
+## `cross` is crosses struck per trial and `drop m` how far the nearest of ours
+## was from the ball when the first of them came down through heading height.
+## The pair separates the two ways a cross fails, which are fixed in different
+## files: a ball nobody put in, and a ball nobody attacked
+## (`docs/THE_FOOTBALL.md` 29). A dash means no cross came down in any trial.
+##
 ## **What a difference is worth.** Each row is n trials of a binomial, so the
 ## standard error on a share near a half is about `50/sqrt(n)` points: at the
 ## default 40 trials that is 8 points, and a row that moves by five has not
@@ -45,18 +51,19 @@ static func run(flags: Dictionary) -> void:
 		print("no scenario named '%s'. known: %s" % [only, ", ".join(SimScenarios.names())])
 		return
 
-	print("Set situations, run forward  (%d trials each, %.1f s a trial, quality %.2f, standard clock)" % [
-		trials, list[0].seconds, quality])
+	print("Set situations, run forward  (%d trials each, quality %.2f, standard clock)" % [
+		trials, quality])
 	print("  shares of how the situation ended, and they sum to 100")
-	print("  %-16s %6s %6s %6s %6s %6s %6s | %7s %7s %7s" % [
-		"", "goal", "saved", "off", "block", "lost", "none", "shot s", "shot m", "box s"])
+	print("  %-16s %6s %6s %6s %6s %6s %6s | %6s %6s %5s %6s %6s" % [
+		"", "goal", "saved", "off", "block", "lost", "none",
+		"shot s", "shot m", "box s", "cross", "drop m"])
 	for s in list:
 		print("  " + _row(s, trials, quality))
 	print("  a share near a half carries about %.0f points of standard error at n=%d;" % [
 		50.0 / sqrt(float(trials)), trials])
 	print("  a row that moved by less than that has not moved. --trials N for more.")
 	for s in list:
-		print("  %-16s %s" % [s.name, s.title])
+		print("  %-16s %.0f s  %s" % [s.name, s.seconds, s.title])
 
 
 static func _row(s: SimScenario, trials: int, quality: float) -> String:
@@ -66,6 +73,9 @@ static func _row(s: SimScenario, trials: int, quality: float) -> String:
 	var shot_metres := 0.0
 	var shots := 0
 	var box_seconds := 0.0
+	var crosses := 0
+	var drop_total := 0.0
+	var drops := 0
 
 	for i in trials:
 		var opts := SimRunner.Options.new()
@@ -80,6 +90,10 @@ static func _row(s: SimScenario, trials: int, quality: float) -> String:
 		var r := s.run(m)
 		counts[r.resolution] += 1
 		box_seconds += r.box_seconds
+		crosses += r.crosses
+		if r.drop_gap >= 0.0:
+			drops += 1
+			drop_total += r.drop_gap
 		if r.to_shot >= 0.0:
 			shots += 1
 			shot_seconds += r.to_shot
@@ -90,9 +104,11 @@ static func _row(s: SimScenario, trials: int, quality: float) -> String:
 	for c in counts:
 		parts.append("%5.0f%%" % (100.0 * float(c) / n))
 	var shot_n := maxf(float(shots), 1.0)
-	return "%-16s %s | %7s %7s %7.2f" % [
+	return "%-16s %s | %6s %6s %5.2f %6.2f %6s" % [
 		s.name, " ".join(parts),
 		"%.2f" % (shot_seconds / shot_n) if shots > 0 else "-",
 		"%.1f" % (shot_metres / shot_n) if shots > 0 else "-",
 		box_seconds / n,
+		float(crosses) / n,
+		"%.1f" % (drop_total / float(drops)) if drops > 0 else "-",
 	]

@@ -56,6 +56,12 @@ var attacking_team := SimConsts.TEAM_HOME
 var place := Callable()
 
 
+## The height a dropping ball is called arrived at, for `Result.drop_gap`.
+## `SimTouch.CROSS_ARRIVE` is what a cross is solved to come down on, so the
+## measurement is taken where the delivery was aimed.
+const DROP_HEIGHT := 2.2
+
+
 ## What one trial produced.
 class Result extends RefCounted:
 	var resolution := NONE
@@ -69,6 +75,16 @@ class Result extends RefCounted:
 	var box_seconds := 0.0
 	## Passes the attacking side attempted before it resolved.
 	var passes := 0
+	## Crosses the attacking side struck, and how far the nearest of ours was
+	## from the ball when the first of them came down through heading height
+	## (-1 if none did).
+	##
+	## Two columns rather than one because they separate the two ways a cross
+	## fails, and `docs/THE_FOOTBALL.md` 29 is the second of them: a scenario
+	## that ends with no shot is either a ball nobody put in, or a ball nobody
+	## attacked, and those are fixed in different files.
+	var crosses := 0
+	var drop_gap := -1.0
 
 
 ## Puts every player on the station his own shape gives him for a ball at
@@ -132,6 +148,7 @@ func run(m: SimMatch) -> Result:
 	var shot: Dictionary = {}
 	var shot_tick := -1
 	var conceded := false
+	var cross_up := false
 
 	for i in limit:
 		m.tick()
@@ -153,8 +170,19 @@ func run(m: SimMatch) -> Result:
 					goal_at - (e.get("from", Vector3.ZERO) as Vector3))
 			elif kind == SimTelemetry.Ev.PASS_ATTEMPT and int(e.get("team", -1)) == attacking_team:
 				r.passes += 1
+			elif kind == SimTelemetry.Ev.TOUCH and int(e.get("team", -1)) == attacking_team \
+					and int(e.get("kind", -1)) == SimTelemetry.Touch.CROSS:
+				r.crosses += 1
+				cross_up = true
 			elif kind == SimTelemetry.Ev.GOAL and int(e.get("team", -1)) != attacking_team:
 				conceded = true
+
+		# The ball on its way down through the height it was aimed to arrive at,
+		# which is the moment the question "was anybody there" has an answer.
+		if cross_up and ctx.ball.vel.y < 0.0 and ctx.ball.pos.y <= DROP_HEIGHT:
+			cross_up = false
+			if r.drop_gap < 0.0:
+				r.drop_gap = _nearest_of_ours(ctx, ctx.ball.ground_pos())
 
 		if ctx.possession_team == attacking_team \
 				and ctx.pitch.in_opponent_penalty_area(attacking_team, ctx.ball.ground_pos()):
@@ -175,6 +203,18 @@ func run(m: SimMatch) -> Result:
 
 	r.resolution = _verdict(ctx, shot, conceded)
 	return r
+
+
+## Distance from `at` to the nearest attacking outfielder who is not the man who
+## struck the ball -- a crosser standing near his own delivery is not somebody
+## attacking it.
+func _nearest_of_ours(ctx: SimContext, at: Vector3) -> float:
+	var best := INF
+	for p in ctx.players:
+		if p.team != attacking_team or p.is_keeper or p.id == ctx.ball.last_touch_player:
+			continue
+		best = minf(best, p.dist_to(at))
+	return -1.0 if is_inf(best) else best
 
 
 func _verdict(ctx: SimContext, shot: Dictionary, conceded: bool) -> int:

@@ -251,6 +251,11 @@ of instruments here.
   `lost` is the situation ending before a shot, and `none` is the clock running
   out with the ball still ours — on a five-second one-on-one, a man who never went
   for goal.
+- **`cross` and `drop m` separate the two ways a cross fails**, which are fixed
+  in different files: crosses struck per trial, and how far the nearest of ours
+  was from the ball when the first of them came down through heading height. A
+  scenario that ends with no shot is either a ball nobody put in or a ball nobody
+  attacked, and **29** is the second of those.
 - **A share near a half carries about `50/sqrt(n)` points of standard error**, so
   8 points at the default 40 trials. The header prints it. **A row that moved by
   less than that has not moved**, and `--trials` is the answer before believing a
