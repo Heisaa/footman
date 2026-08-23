@@ -41,7 +41,11 @@ static func make_team(rng: SimRng, team_index: int, quality: float, formation: S
 		# Individual quality varies around the team's level, so a squad has a
 		# shape rather than eleven identical players.
 		var individual: float = clampf(rng.gauss_clamped(quality, 0.075, 2.0), 0.05, 0.98)
-		var p := _make_player(rng, next_id, team_index, role, individual, slot + 1)
+		# Which flank the slot stands on, which is what decides his foot. The
+		# canonical frame attacks +X, so -Z is the left of the pitch; see
+		# `SimAttributes.left_foot_chance`.
+		var side: float = clampf(team.formation.homes[slot].z / SimConsts.HALF_WIDTH, -1.0, 1.0)
+		var p := _make_player(rng, next_id, team_index, role, individual, slot + 1, side)
 		next_id += 1
 		team.players.append(p)
 
@@ -55,9 +59,9 @@ static func make_team(rng: SimRng, team_index: int, quality: float, formation: S
 	return team
 
 
-static func _make_player(rng: SimRng, id: int, team_index: int, role: int, quality: float, shirt: int) -> SimPlayer:
+static func _make_player(rng: SimRng, id: int, team_index: int, role: int, quality: float, shirt: int, side: float = 0.0) -> SimPlayer:
 	var p := SimPlayer.new()
-	var attrs := SimAttributes.generate(rng, role, quality)
+	var attrs := SimAttributes.generate(rng, role, quality, 0.12, side)
 	p.configure(id, team_index, role, attrs, person_name(rng))
 	p.shirt = shirt
 	p.appearance_seed = rng.next_u32()

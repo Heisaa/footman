@@ -4619,9 +4619,11 @@ static func _execute(ctx: SimContext, player: SimPlayer, c: Dictionary, uncontro
 		Action.THROUGH_BALL:
 			SimTouch.ground_pass(ctx, player, c["point"], c["pace"], c["target"], SimTelemetry.Touch.THROUGH_BALL, xv, ft)
 		Action.LOFTED_PASS:
-			SimTouch.lofted_pass(ctx, player, c["point"], c["flight"], c["target"], SimTelemetry.Touch.LOFTED_PASS, _curl_for(ctx, player), xv, ft)
+			SimTouch.lofted_pass(ctx, player, c["point"], c["flight"], c["target"], SimTelemetry.Touch.LOFTED_PASS,
+				SimTouch.curl_for(ctx, player, c["point"] - ctx.ball.pos, SimTouch.LOFT_CURL, SimTouch.LOFT_CURL_SIGMA), xv, ft)
 		Action.CROSS:
-			SimTouch.lofted_pass(ctx, player, c["point"], c["flight"], c["target"], SimTelemetry.Touch.CROSS, _curl_for(ctx, player), xv, ft)
+			SimTouch.lofted_pass(ctx, player, c["point"], c["flight"], c["target"], SimTelemetry.Touch.CROSS,
+				SimTouch.curl_for(ctx, player, c["point"] - ctx.ball.pos, SimTouch.CROSS_CURL, SimTouch.CROSS_CURL_SIGMA), xv, ft)
 		Action.DRIBBLE:
 			if _try_beat(ctx, player, c["dir"]):
 				return  # The cut drew the foul; play is stopping.
@@ -4797,10 +4799,6 @@ static func _hold_obstacle(ctx: SimContext, player: SimPlayer, forward: Vector3,
 			best = o
 			best_d = d
 	return best
-
-
-static func _curl_for(ctx: SimContext, player: SimPlayer) -> float:
-	return ctx.rng.gauss_clamped(0.0, 3.0, 2.0) * player.attrs.technique
 
 
 ## True if `point` lies within `radius` of the segment from `a` to `b`.

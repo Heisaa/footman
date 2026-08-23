@@ -27,6 +27,13 @@ class Options extends RefCounted:
 	var small_sided := false
 	var wet := false
 	var fidelity := SimMatchConfig.Fidelity.FULL
+	## A situation to start from instead of a kick-off. See `SimScenario`.
+	##
+	## On `Options` rather than on the bench that runs it, because the 3D view
+	## builds through `SimRunner.build` too -- so the scenario the owner watches
+	## and the scenario the table counts are assembled by the same code, which is
+	## the only thing that makes the two comparable.
+	var scenario: SimScenario = null
 
 
 ## The pitch a seed is played on.
@@ -80,6 +87,8 @@ static func build(opts: Options) -> SimMatch:
 
 	var m := SimMatch.new()
 	m.setup(config)
+	if opts.scenario != null and opts.scenario.place.is_valid():
+		opts.scenario.place.call(opts.scenario, m.ctx)
 	return m
 
 
@@ -119,4 +128,5 @@ static func _clone(o: Options) -> Options:
 	c.small_sided = o.small_sided
 	c.wet = o.wet
 	c.fidelity = o.fidelity
+	c.scenario = o.scenario
 	return c

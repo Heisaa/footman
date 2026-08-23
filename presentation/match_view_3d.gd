@@ -178,6 +178,20 @@ var _pitch: SimPitch = SimPitch.regulation()
 var _prev := SimSnapshot.new()
 var _curr := SimSnapshot.new()
 var _accumulator := 0.0
+## The set situation being watched, and the tick it is played out to. A scenario
+## repeats on the next seed rather than running on into an ordinary match: the
+## point of watching one is seeing the same moment many times, and five seconds
+## of football followed by eighty-nine minutes of something else is not that.
+var _scenario: SimScenario = null
+var _scenario_end_tick := -1
+var _speed_given := false
+## What a scenario runs at when nobody said. A one-on-one is decided inside a
+## second, so the rate an ordinary match is watched at shows the situation
+## already over; half speed is where the decision itself is legible.
+const SCENARIO_SPEED := 0.5
+## Seconds the ball is left alone after the situation's own clock runs out, so
+## the shot arrives, the keeper saves it and the eye sees how it ended.
+const SCENARIO_HOLD := 2.5
 var _speed := 1.0
 var _paused := false
 var _players: Array[Node3D] = []
@@ -331,6 +345,7 @@ func _ready() -> void:
 			match_seed = int(args[i + 1])
 		elif args[i] == "--speed" and i + 1 < args.size():
 			_speed = float(args[i + 1])
+			_speed_given = true
 		# Framing overrides, so the three numbers that decide the composition can
 		# be compared from screenshots without an edit-and-rerun cycle.
 		elif args[i] == "--frame-width" and i + 1 < args.size():
@@ -367,6 +382,15 @@ func _ready() -> void:
 			_bookmark_after = float(args[i + 1])
 		elif args[i] == "--from-bookmark" and i + 1 < args.size():
 			_load_bookmark(args[i + 1])
+		# A set situation instead of a match. The same `SimScenario` the table in
+		# `./run.sh scenario` counts, so what is on screen and what is in the
+		# row are the identical starting position -- which is the only reason
+		# the eye and the numbers can usefully disagree.
+		elif args[i] == "--scenario" and i + 1 < args.size():
+			_scenario = SimScenarios.by_name(args[i + 1])
+			if _scenario == null:
+				push_error("no scenario named '%s'; known: %s" % [
+					args[i + 1], ", ".join(SimScenarios.names())])
 		elif args[i] == "--small":
 			small_sided = true
 		elif args[i] == "--pitch-scale" and i + 1 < args.size():
@@ -389,6 +413,8 @@ func _ready() -> void:
 	# overlay can be read at that rate. Debug is real time unless told otherwise.
 	if _debug and not _clock_rate_given:
 		clock_rate = 1.0
+	if _scenario != null and not _speed_given:
+		_speed = SCENARIO_SPEED
 	# `--speed` sets a rate the ladder has to start from, or the first press of
 	# `[` jumps somewhere unrelated to what is on screen.
 	for i in SPEED_LADDER.size():
@@ -433,6 +459,7 @@ func _match_options(seed_value: int) -> SimRunner.Options:
 	var quality := _quality()
 	opts.home_quality = quality.x
 	opts.away_quality = quality.y
+	opts.scenario = _scenario
 	return opts
 
 
@@ -490,6 +517,10 @@ func _start_match(seed_value: int) -> void:
 	_accumulator = 0.0
 	_paused = false
 	_full_time = false
+	_scenario_end_tick = -1
+	if _scenario != null:
+		_scenario_end_tick = int((_scenario.seconds + SCENARIO_HOLD) / SimConsts.DT)
+		print("scenario %s, seed %d: %s" % [_scenario.name, seed_value, _scenario.title])
 	_build_ground()
 	_build_players()
 	if _scoreboard != null:
@@ -1449,6 +1480,12 @@ func _process(delta: float) -> void:
 		_marked_at = _mark_tick
 		_mark_tick = -1
 		_paused = true
+	# A scenario plays itself out and starts again on the next seed. The quality
+	# ladder is deliberately not walked: the situation is the variable being
+	# watched, and changing the squads under it every repeat would be a second.
+	if _scenario_end_tick >= 0 and _curr.tick >= _scenario_end_tick and not _paused:
+		_go_to_match(match_seed + 1)
+		return
 	_check_full_time()
 	if _debug:
 		_refresh_value_grid()

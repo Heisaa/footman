@@ -694,7 +694,14 @@ static func _take_corner(ctx: SimContext, taker: SimPlayer) -> void:
 	var dir := ctx.pitch.attack_dir(taker.team)
 	var aim := goal + Vector3(-6.5 * dir, 2.1, ctx.rng.range_float(-3.0, 3.0))
 	var mate := ctx.nearest_to(Vector3(aim.x, 0.0, aim.z), taker.team, taker.id)
-	var curl := -signf(taker.pos.z) * ctx.rng.range_float(2.0, 6.0) * taker.attrs.crossing
+	# The swing is the taker's foot, and it used to be the flag he stood at:
+	# `-signf(taker.pos.z)`, which reads the same for both ends of the pitch while
+	# the goal being attacked does not. One team's corners from a given corner
+	# therefore swung in and the other's swung out, from the same expression.
+	# `SimTouch.curl_for` asks the only question that decides it -- see
+	# `docs/THE_FOOTBALL.md` 36 -- and a right-footer at the left flag whips it in.
+	var curl := SimTouch.curl_for(ctx, taker, aim - ctx.ball.pos,
+		SimTouch.CROSS_CURL, SimTouch.CROSS_CURL_SIGMA)
 	SimTouch.lofted_pass(ctx, taker, aim, 1.35, mate.id if mate != null else -1, SimTelemetry.Touch.CROSS, curl)
 
 
