@@ -12,3 +12,8 @@
 # `git add -A` taken while one exists commits a second copy of the project into
 # the first -- 444 files, nested, the last time it happened.
 /.claude/worktrees/
+
+# Blender renders of the toy figure: what one look measured, remade in seconds.
+# The reference images beside them are checked in; these are not.
+/art/renders/
+art/**/__pycache__/
