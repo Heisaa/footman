@@ -133,6 +133,28 @@ const SHOT_APPETITE_URGENT := 8.0
 ## strength -- measured, the aim knob alone reached 1.80 goals against the old
 ## fit's 4.10 on the same instrument. That is the reason the format's unrealism
 ## is placed on the shooting rather than on the goalkeeper.
+## Where that appetite is paid in full, in expected goals.
+##
+## A flat multiplier does not only make a side shoot more -- it moves the point
+## at which shooting beats everything else, and it moves it furthest out exactly
+## where the shot is worst. Measured on `1v1-clear`, twenty-seven metres from
+## goal with nobody near him: a **three per cent** shot scored 0.137 against the
+## best carry's 0.091 and took 98% of the softmax. A striker through on goal shot
+## from range because the fit had made hitting and hoping the best thing on his
+## list -- the owner's "long shots should be an option, but not the default,
+## especially in 1v1 situations".
+##
+## The fit's job is goals per second, and goals come from the chances a side
+## has, not from shots taken from anywhere: its own note above records forty
+## matches in which moving the appetite from 1 to 8 changed shots per team by
+## 2.29 to 2.40, which is nothing. It was never buying shots. It was buying them
+## from the wrong places. Paid in full on a chance worth this much and in
+## proportion below it, a compressed match makes a side keener to *take* its
+## chances instead.
+##
+## A no-op at `clock_rate` 1 like the rest of the block: the appetite is 1.0
+## there and a share of nothing is nothing.
+const SHOT_APPETITE_KNEE := 0.10
 const SHOT_SIGMA_URGENT := 0.15
 ## Multiplier on the keeper's save chance. He still dives, still reads it, still
 ## has his attributes -- he just keeps out fewer of them.
@@ -153,6 +175,21 @@ const KEEPER_REACH_URGENT := 0.75
 
 func shot_appetite() -> float:
 	return lerpf(1.0, SHOT_APPETITE_URGENT, urgency())
+
+
+## The appetite a shot of this quality earns. `quality` is expected goals, on the
+## scale `SimDecision.expected_goals` returns. Everything that prices a strike --
+## the shot, the chip, the square ball to a man facing goal, and the carry toward
+## a shot -- asks this rather than the flat one, so the fit stays one object and
+## the football decides which shot gets taken.
+func shot_appetite_at(quality: float) -> float:
+	# Squared, because the ramp scales both sides of the question. The shot he
+	# could take now and the shot he is carrying toward both ask this, so a
+	# gentle ramp lifts them together and decides nothing; what tells them apart
+	# is how fast it rises between the two. Measured on `1v1-clear`, a linear
+	# ramp moved the shot in by a metre and moving the knee out made it worse.
+	var share := clampf(quality / SHOT_APPETITE_KNEE, 0.0, 1.0)
+	return lerpf(1.0, shot_appetite(), share * share)
 
 
 func shot_sigma_scale() -> float:

@@ -179,3 +179,11 @@ static func _place(ctx: SimContext, team: int, from_goal: float, keeper_out: flo
 	ctx.ball.last_touch_player = striker.id
 	ctx.ball.last_touch_team = team
 	ctx.ball.last_touch_tick = 0
+	# And set over it, which the geometry has been claiming since it was written:
+	# this is a striker *at pace with the ball*, so he has been carrying it and is
+	# not a man it has just arrived at. Left unstamped, `SimDecision.readiness`
+	# read zero, `SET_STRIKE_FLOOR` refused to generate a strike, and the `drive`
+	# and `chip` columns -- half of what this bench exists to compare -- came back
+	# empty for every row.
+	striker.spell_start_tick = 0
+	striker.spell_prep_seconds = SimDecision.PREPARE_SECONDS

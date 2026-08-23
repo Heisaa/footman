@@ -122,6 +122,16 @@ func _options(flags: Dictionary) -> SimRunner.Options:
 		o.home_tactics = _plan_by_name(flags["plan"])
 	if flags.has("away-plan"):
 		o.away_tactics = _plan_by_name(flags["away-plan"])
+	# A named situation instead of a kick-off, for any command that builds a
+	# match. `replay --scenario NAME --tick 1` is the one that matters: the
+	# scenario bench's own `--trace` prints what was *played*, and a row that
+	# reads wrong because an act was never a candidate needs the candidate list,
+	# which only the replay has.
+	if flags.has("scenario"):
+		o.scenario = SimScenarios.by_name(flags["scenario"])
+		if o.scenario == null:
+			printerr("no scenario named '%s'. known: %s" % [
+				flags["scenario"], ", ".join(SimScenarios.names())])
 	return o
 
 

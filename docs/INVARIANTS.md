@@ -120,10 +120,22 @@ the **repositioning pace** at a restart, which pays for the shorter window; and
 know.
 
 **The scoring fit is deliberately one object.** `SimMatchConfig.urgency` is a
-single scalar, 0 at real time and 1 at 30x, and exactly five constants read it:
-`SHOT_APPETITE_URGENT`, `SHOT_SIGMA_URGENT`, `KEEPER_SAVE_URGENT`,
-`KEEPER_REACH_URGENT`, `SimDecision.TERRITORY_URGENT`. A sixth goes in that list
-and in `SimMatchConfig`'s own block, never beside the mechanic it scales. **Every
+single scalar, 0 at real time and 1 at 30x, and exactly six constants read it:
+`SHOT_APPETITE_URGENT`, `SHOT_APPETITE_KNEE`, `SHOT_SIGMA_URGENT`,
+`KEEPER_SAVE_URGENT`, `KEEPER_REACH_URGENT`, `SimDecision.TERRITORY_URGENT`. A
+seventh goes in that list and in `SimMatchConfig`'s own block, never beside the
+mechanic it scales.
+
+**And an appetite paid flat decides where a side shoots from, not how often.**
+`SHOT_APPETITE_URGENT`'s own note records forty matches in which moving it from
+1 to 8 changed shots per team by 2.29 to 2.40 — nothing. What it did move was the
+point at which shooting beats everything else, and it moved it furthest out
+exactly where the shot is worst: a **three per cent** chance from twenty-seven
+metres scored 0.137 against the best carry's 0.091 and took 98% of the softmax.
+`SHOT_APPETITE_KNEE` pays it on the chance rather than on the attempt. It has to
+ramp *steeply*, because the shot he could take now and the shot he is carrying
+toward both ask the same function — a gentle ramp lifts them together and decides
+nothing. **Every
 one must be a no-op at `clock_rate` 1**, and `test_clock` guards it: that
 property is what keeps `--clock-rate 1` meaning the patient engine. The check
 after changing one is `./run.sh diagnose --seed 7 --minutes 10 --clock-rate 1`,
@@ -165,6 +177,17 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   back. A first cut of the recovery run aimed *ahead* of the carrier halved the
   shots in a match. Going round a man means arriving beside the ball.
 
+- **A pace rule that reads its own output has to be latched.** `_contest_pace`
+  sets the chaser's speed cap off the margin between his intercept and his
+  rival's — and the intercept is a race with a decelerating ball, so it is very
+  sensitive to the speed this rule just set. Recomputed clean every refresh the
+  loop closes: the taper eases him off, easing off lengthens his intercept, the
+  margin moves, the pace comes back. Measured on `race`, both men's cap went
+  8.0, 5.0, 8.0, 6.0, 8.0 over two seconds of a sprint they were four metres
+  down on, and the race was decided by whose brakes landed worst. The entry
+  window and the release window must differ — enter on the dead heat, release
+  only when the race is decided — which is the same medicine as `_press_side`.
+
 - **"Fast enough to arrive" is the wrong rule when somebody else wants the ball
   too.** Right for a loose ball nobody contests, wrong for a fifty-fifty: two men
   who each pace themselves to turn up jog alongside each other and neither wins
@@ -182,6 +205,14 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
 - **Softmax temperature has to be relative to the spread of candidate scores.**
   Scores are goal probabilities and often span less than 0.02, so any fixed
   temperature is either random or argmax.
+
+- **A damp and a bias on opposite sides of one product cannot be tuned against
+  each other.** The orientation beat multiplied a strike's `success` by 0.5 and
+  the compressed clock's `shot_appetite` multiplied its bias by 5.7, so the beat
+  could never win the pick however it was priced — measured, a man handed the
+  ball at the top of the box shot at 0.01 s in every trial with the damp fully
+  applied. When one of the two is a fixed object (the scoring fit is), the other
+  has to become a gate. `SET_STRIKE_FLOOR`.
 
 - **A heuristic bias multiplies the gain, not the whole score.** Multiplying a
   negative score by a penalty of 0.5 makes the option *better*.
@@ -211,6 +242,45 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   `CONTROL_RANGE` costs him nothing but his reaction, had a quarter of all passes
   played within a metre and a half of an opponent, completing at about 40%.
 
+- **A gap is not a distance over the grass, and a gate written in one frame
+  cannot test the other.** The knock past a man was gated at five metres of
+  *gap*, which at 5 m/s is a twenty-one metre ball arriving four seconds later —
+  so the engine's only take-on was a hoof into the corner wearing a take-on's
+  name, and honest pricing gave it `succ 0.00`. Everything a knock has to clear
+  — a defender, a touchline, a goalkeeper — is a distance over the grass, so the
+  test belongs there: `carry_push_for` is the conversion and `BURST_CLEAR` is
+  the test.
+
+- **Price the man an act is *about* once.** The knock past a defender charged
+  him in `_escape_value` as the race and again in `_lane_survival` as a leg in
+  the lane. `control_at_time` had always taken him as its `ignore_id`; the third
+  term missed the convention, and the double charge was `succ` 0.02 where one
+  charge is 0.44. When a candidate names an opponent, check every term that
+  walks the opponents.
+
+- **The distance the ball runs before he plays it again is a third number, and
+  it is not `carry_travel`.** That one answers "where would it be if he never
+  touched it again", which is the *burst's* question -- not re-touching is what
+  makes a burst a burst. Every other carry is re-taken as soon as the cooldown
+  lapses and the ball is inside `CONTROL_RANGE`. Run against each other for the
+  first time: `carry_travel` claims 11 m for a 1.08 m touch at a sprint, and
+  `diagnose`'s own count of the ball at consecutive dribble touches in the same
+  match says **0.55 m**. `touch_travel` is the honest one; `_in_play_odds` and
+  the probe horizon were both charging the long journey.
+
+- **A touch size is a gap and a horizon is a distance over the grass**, and
+  `_add_dribbles` had one expression standing for both. It only survived because
+  the term that dominated it was the overstated `carry_travel`; corrected, the
+  forward probe collapsed to two metres in front of the carrier's own feet.
+  `CARRY_HORIZON_SECONDS` is the horizon, in his own running.
+
+- **Risk belongs to the touch and reward belongs to the direction.** Reading
+  both at the horizon meant asking `control_at_time` who owns grass six metres
+  nearer the keeper than the ball was going: at twenty-two metres from goal with
+  nobody within twenty metres, a forward carry came back at `success` 0.07 beside
+  its own gain of 0.517. Score `success`, `escape` and the lane at the ball's
+  landing; score `gain` and `loss` at the horizon.
+
 - **The distance a carrier *looks* and the distance he *knocks it* are two
   numbers.** Sizing the probe off the touch makes the risk model as short-sighted
   as the touch: a jogging carrier asks about the grass 1.5 m ahead, where there is
@@ -229,12 +299,74 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   charging the larger took nearly every forward touch in the attacking half off
   the table.
 
+- **The room a carry has ends at the goalkeeper, not at the paint.** `run_room`
+  measures to the line, and on a run at goal the line is the wrong end of it: a
+  ball knocked that way comes to rest in his hands twenty metres early. Measured,
+  that was `1v1-clear` played as a single 6.4 m knock from thirty metres out —
+  the ball ran 24 m untouched, the keeper collected it, and it was the carrier's
+  only touch of the situation. `SimDecision.keeper_room` is the race for the
+  ball's resting place, and it is confined to the area his hands work in: outside
+  the box a ball at rest is nobody's in particular, and a rule that forgot to say
+  so would ban the forward carry.
+
+- **A ball in a goalkeeper's hands is not a loose ball, and only one place could
+  say so.** `SimDuel.resolve_contacts` skips keepers as contenders and then
+  contested the ball at his chest like any other, so the striker he had just
+  taken it from stood over it and took it back. The general form: skipping the
+  *player* is not the same as skipping the *ball he has*.
+
+- **A carry's ball is not struck from rest, and two things followed from
+  pretending it was.** `SimTouch.dribble` sized the strike to open a *further*
+  `ahead` on top of wherever the ball already lay — and a carrier's ball is never
+  at his feet, it is most of a metre in front, because that is where his last
+  touch put it. And `_perturb` scaled the *whole* velocity, which for a carry is
+  mostly the momentum the ball already shares with a running man. At 8.8 m/s the
+  gap he wants is worth **0.93 m/s** of relative speed and a twenty per cent
+  mis-hit on the total is **1.95** — the error was twice the intent, so the size
+  of a carry was decided by the draw. Measured, the longest a ball ran between
+  two touches of one carry was **16.8 m**; fixed, 4.3. `dribble_opening` is the
+  first, and striking `along + delta * weight` is the second. Elsewhere
+  `_perturb` is right: a pass, a shot and a clearance really are struck from
+  nothing.
+
+- **A settling touch is a check, and a sprinting man cannot make one.**
+  `SimTouch.settle` leaves the ball about a metre away *measured against the
+  grass*, with none of his pace on it — and he keeps all of his. Nothing priced
+  the overrun: the hold read `success` 0.90 for a man doing nine metres a second,
+  and measured he settled it at 9.1 m/s, the ball left his foot at 3.0, and it
+  was 1.3 m *behind* him a quarter of a second later. The distance he needs to
+  pull up in is his own, `v² / 2a`; when that is longer than where the ball comes
+  to rest he runs past it. An *arriving* ball is exempt — that is
+  `SimTouch.first_touch`, a cushion that leaves pace on the ball.
+
+- **The goalkeeper coming out is not a body in your lane.** `_carry_pace` counts
+  opponents in the carrier's lane and withdraws his pace floor as they fill it,
+  which is right for a defender and exactly backwards for a keeper: measured, a
+  striker through on goal was capped at 8.05 and walked down to **5.06** as the
+  keeper advanced, decelerating while the ball ran on at 6.3 — so the gap grew
+  and the keeper collected it. `_contest_pace` cannot cover this either; it is
+  guarded to a ball nobody has, and this one is still his.
+
+- **A race solved in closed form cannot see the other man's velocity.**
+  `keeper_room`'s arithmetic assumed a keeper starting from rest, so a knock it
+  said was won by three metres was collected by an onrushing one. Solve it by
+  bisection against `SimValueField.time_to_arrive`, which is the function every
+  other race in the engine is settled by.
+
 - **A hard room test is the wrong shape for a line you are running beside.** It
   is right for one you run *at*. A winger up the touchline has all the grass in
   the world along his direction and none beside it, and what puts that touch out
   is the aim error — so price it in `success` and the softmax turns him infield on
   its own. Shortening the touch instead is worse than nothing: he stays beside the
   line longer.
+
+- **A fallback act carries the whole weight of the branch that has no other
+  answer.** `SimAerial.play` offered three headers and used the defender's one --
+  `head_clear`, aimed at the far goal and wide -- for every man who found no
+  teammate to head it to. Measured, that was `aerial`: 25 duels won, 25 headers,
+  **25 losses**, every one of them a clearance played by a striker in the
+  opposition half. Read what the last `return` in a decision does before reading
+  what the branches above it are worth.
 
 - **The lofted solver's descent test must use a height the ball can reach.**
   Testing against y = 0 never fires, so the solver "corrects" every cross into a
@@ -244,6 +376,15 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   square of launch speed, so scaling a knock by `room / travel` does not make the
   ball fit the room — it cleared a 5 m knock that left the ball rolling 28 m. The
   launch speed that stops the ball on the line is `sqrt(2 * decel * room)`.
+
+- **A recovery that zeroes a man's velocity is a different act from the one it is
+  named for.** Losing a duel set `recovery_ticks`, and that branch braked at
+  *twice* his maximum deceleration with no steering — a carrier at 3.0 m/s went to
+  **0.0 in three tenths of a second**, and with `SimDuel`'s 0.55–1.1 s touch
+  lockout on top he could not play the ball he still owned while it rolled two
+  metres off him. That is the "ball runs away from the player" the owner watched,
+  and it fires on every lost duel in the match, not just in a one-on-one.
+  Off balance is not stopped: `SimPlayer.RECOVERY_BRAKE`.
 
 - **`TURN_COMMIT` needs its `TURN_PIVOT` guard or locomotion deadlocks**, and
   silently. A stationary man facing the wrong way may not accelerate until he has

@@ -184,11 +184,20 @@ var _accumulator := 0.0
 ## of football followed by eighty-nine minutes of something else is not that.
 var _scenario: SimScenario = null
 var _scenario_end_tick := -1
+## The tick the hold after the situation resolved runs to, once it has. Held
+## separately so the resolution is only noticed once: `live` goes false the
+## instant the keeper has it and stays false while the hold plays out.
+var _scenario_hold_end := -1
+## Whether the ball has been in play yet, for `SimScenario.live`. A set piece
+## starts dead and the watch would end on its first frame without it.
+var _scenario_started := false
 var _speed_given := false
-## What a scenario runs at when nobody said. A one-on-one is decided inside a
-## second, so the rate an ordinary match is watched at shows the situation
-## already over; half speed is where the decision itself is legible.
-const SCENARIO_SPEED := 0.5
+## What a scenario runs at when nobody said. Real time: the situations start
+## twenty-five to thirty metres out and the running is part of what is being
+## judged, so half speed -- which was right when the striker started on the edge
+## of the box and it was over in a second -- is now eight wall seconds of a man
+## jogging before anything happens (owner, 2026-08-23).
+const SCENARIO_SPEED := 1.0
 ## Seconds the ball is left alone after the situation's own clock runs out, so
 ## the shot arrives, the keeper saves it and the eye sees how it ended.
 const SCENARIO_HOLD := 2.5
@@ -518,6 +527,8 @@ func _start_match(seed_value: int) -> void:
 	_paused = false
 	_full_time = false
 	_scenario_end_tick = -1
+	_scenario_hold_end = -1
+	_scenario_started = false
 	if _scenario != null:
 		_scenario_end_tick = int((_scenario.seconds + SCENARIO_HOLD) / SimConsts.DT)
 		print("scenario %s, seed %d: %s" % [_scenario.name, seed_value, _scenario.title])
@@ -1483,6 +1494,15 @@ func _process(delta: float) -> void:
 	# A scenario plays itself out and starts again on the next seed. The quality
 	# ladder is deliberately not walked: the situation is the variable being
 	# watched, and changing the squads under it every repeat would be a second.
+	# The situation ending is what ends the watch, and the clock is only the
+	# backstop. `SimScenario.live` is the rule the table scores by, so the last
+	# thing on screen is the thing the row counted.
+	if _scenario != null and not _scenario_started:
+		_scenario_started = _match.ctx.in_play
+	if _scenario != null and _scenario_end_tick > _scenario_hold_end \
+			and not _scenario.live(_match.ctx, _scenario_started):
+		_scenario_hold_end = _curr.tick + int(SCENARIO_HOLD / SimConsts.DT)
+		_scenario_end_tick = mini(_scenario_end_tick, _scenario_hold_end)
 	if _scenario_end_tick >= 0 and _curr.tick >= _scenario_end_tick and not _paused:
 		_go_to_match(match_seed + 1)
 		return

@@ -202,6 +202,26 @@ var _nominal_speed := 7.5
 var _cap_speed := 7.5
 var _cap_accel := 4.5
 var _cap_decel := 8.1
+## What a lost challenge takes out of a man's momentum, as a share of his own
+## braking, for as long as `recovery_ticks` lasts.
+##
+## It was **twice** his maximum deceleration, and that is not a footballer losing
+## a fifty-fifty, it is a footballer being stopped. Measured on `1v1-chased`: a
+## carrier running at 3.0 m/s lost a duel, was braked to **0.0 m/s in three
+## tenths of a second**, and then could not touch the ball for the 0.55-1.1 s
+## cooldown `SimDuel` gives the loser -- so the ball that was still his rolled
+## two metres away from a man standing still. That is "the ball runs away from
+## the player" (owner, 2026-08-23), and it is not a one-on-one problem: every
+## lost duel in the match does it.
+##
+## Off balance rather than stopped. He keeps running; what he has lost is the
+## drive and the act, and the act is denied by `can_touch()` -- untouched here,
+## and the anti-pinball guard `SimDuel` relies on is that cooldown rather than
+## this braking. A man beaten by a feint still reads as beaten, because what
+## makes him beaten is the direction he has committed to and `time_to_arrive`
+## charges him for that whatever his speed.
+const RECOVERY_BRAKE := 0.35
+
 ## Reaction delay before acting on new information. Constant for a match.
 var reaction := 0.26
 var _caps_countdown := 1
@@ -281,7 +301,7 @@ func locomote(dt: float) -> void:
 		refresh_caps()
 	if recovery_ticks > 0:
 		recovery_ticks -= 1
-		vel = vel.move_toward(Vector3.ZERO, max_decel() * 2.0 * dt)
+		vel = vel.move_toward(Vector3.ZERO, max_decel() * RECOVERY_BRAKE * dt)
 		pos += vel * dt
 		return
 

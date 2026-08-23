@@ -39,6 +39,23 @@ static func update(ctx: SimContext) -> void:
 		_try_gather(ctx, k)
 
 
+## True while either goalkeeper has the ball in his hands.
+##
+## A caught ball is dead. The situation is over, the restart is his, and nothing
+## outside this module used to say so: `SimDuel.resolve_contacts` skips keepers
+## as contenders and then treated the ball sitting at his chest as a loose one,
+## so the striker he had just taken it from was a contender for it and took it
+## straight back. Watched, that reads as the keeper rolling the ball out to the
+## man he saved from -- `docs/THE_FOOTBALL.md` 40, and the reason a `1v1-clear`
+## he had ended came back as a goal from six yards.
+static func ball_in_hands(ctx: SimContext) -> bool:
+	for team in 2:
+		var k: SimPlayer = ctx.teams[team].keeper()
+		if k != null and k.on_pitch and _holding(ctx, k):
+			return true
+	return false
+
+
 ## True while this keeper has the ball in hand.
 static func _holding(ctx: SimContext, k: SimPlayer) -> bool:
 	return ctx.ball.last_touch_player == k.id \

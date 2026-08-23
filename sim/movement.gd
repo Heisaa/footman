@@ -194,6 +194,9 @@ static var _chase_role := PackedInt32Array()
 ## race, and recomputing it for that would be walking the forecast twice.
 static var _chase_time := PackedFloat32Array()
 
+## Whether this player is currently in a race, latched. See `_contest_pace`.
+static var _contest_latch := PackedInt32Array()
+
 ## Which side of the ball each support presser chose to close, latched for the
 ## length of his press and zero when he is not pressing. See
 ## `_support_press_point`, which is the only reader and the only writer.
@@ -245,6 +248,7 @@ static func reset() -> void:
 	_chase_role = PackedInt32Array()
 	_chase_time = PackedFloat32Array()
 	_press_side = PackedFloat32Array()
+	_contest_latch = PackedInt32Array()
 
 
 static func update(ctx: SimContext) -> void:
@@ -311,6 +315,9 @@ static func _assign_chasers(ctx: SimContext) -> void:
 		_chase_role.resize(n)
 		_chase_time.resize(n)
 		_press_side.resize(n)
+		_contest_latch.resize(n)
+		for i in n:
+			_contest_latch[i] = 0
 	for i in n:
 		_chase_role[i] = CHASE_NONE
 		_chase_time[i] = INF
@@ -1024,6 +1031,18 @@ static func _carry_pace(ctx: SimContext, p: SimPlayer) -> float:
 		var o: SimPlayer = ctx.players[j]
 		if not o.on_pitch:
 			continue
+		# The goalkeeper coming out is not a body in his lane, he is the man to
+		# beat, and the answer to him is to get there first.
+		#
+		# Counted like an outfielder he withdrew the pace floor of the one man
+		# who most needs it. Measured on `1v1-clear`: a striker through on goal
+		# with the ball a metre and a half in front of him was capped at 8.05
+		# and then walked down to **5.06** as the keeper advanced -- decelerating
+		# while the ball ran on at 6.3, so the gap grew and the keeper collected
+		# it. `_contest_pace` cannot cover this: it is guarded to a ball nobody
+		# has, and this one is still his.
+		if o.is_keeper:
+			continue
 		var to := SimConsts.horizontal(o.pos - p.pos)
 		var along := to.dot(heading)
 		if along <= 0.0 or along >= open:
@@ -1076,18 +1095,43 @@ static func _contest_pace(ctx: SimContext, p: SimPlayer) -> float:
 	# turnovers -- 53 interceptions to 104 on one seed -- and left 56% of
 	# regains lost again inside two and a half seconds. Pinball, not football.
 	if not _ball_is_loose(ctx):
+		_contest_latch[p.id] = 0
 		return 0.0
 	var mine := _chase_time[p.id]
 	if is_inf(mine):
+		_contest_latch[p.id] = 0
 		return 0.0
 	var theirs := INF
 	for oid in ctx.opponent_ids(p.team):
 		if _chase_role[oid] != CHASE_NONE:
 			theirs = minf(theirs, _chase_time[oid])
 	if is_inf(theirs):
+		_contest_latch[p.id] = 0
 		return 0.0
 	var margin := absf(theirs - mine)
+	# Latched, because this reads its own output.
+	#
+	# `_chase_time` is an intercept with a decelerating ball, so it is very
+	# sensitive to the chaser's own speed -- and his own speed is what this
+	# function sets. Recomputed clean every refresh the loop closes: the taper
+	# eases him off, easing off lengthens his intercept, the margin moves, and
+	# the pace comes back. Measured on `race`, a two-man foot race from a
+	# standing start with both men level, the cap on each of them went 8.0, 5.0,
+	# 8.0, 6.0, 8.0 over two seconds -- both men braking for a third of a sprint
+	# they were four metres down on, and the race settled by whose brakes landed
+	# worst rather than by who was quicker (`docs/THE_FOOTBALL.md` 44).
+	#
+	# `docs/INVARIANTS.md` already names the shape and the answer: latch a
+	# discrete choice for the length of the act. Entering a race is the choice;
+	# it holds until the race is *decided*, which is a margin outside the whole
+	# window rather than outside the dead heat. Everything else is the taper as
+	# it was.
+	if _contest_latch[p.id] != 0:
+		if margin <= CONTEST_WINDOW:
+			return 1.0
+		_contest_latch[p.id] = 0
 	if margin <= CONTEST_DEAD_HEAT:
+		_contest_latch[p.id] = 1
 		return 1.0
 	return clampf(1.0 - (margin - CONTEST_DEAD_HEAT) / (CONTEST_WINDOW - CONTEST_DEAD_HEAT), 0.0, 1.0)
 

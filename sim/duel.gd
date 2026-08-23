@@ -65,6 +65,10 @@ static func resolve_contacts(ctx: SimContext) -> void:
 	_challenge_win.clear()
 	_challenge_foul.clear()
 	var ball := ctx.ball
+	# A ball in a goalkeeper's hands is not a loose ball, and this is the only
+	# place that could have said so. See `SimKeeper.ball_in_hands`.
+	if SimKeeper.ball_in_hands(ctx):
+		return
 	var overhead := SimAerial.is_aerial(ctx)
 	for p in ctx.players:
 		# Note the cooldown is deliberately *not* checked here. A player who has

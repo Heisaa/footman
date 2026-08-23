@@ -56,6 +56,23 @@ var attacking_team := SimConsts.TEAM_HOME
 var place := Callable()
 
 
+## How soon after a defending touch the ball has to be ours again to count as
+## given back, in simulated seconds. Long enough to cover a rebound picked up,
+## short enough that a defence winning it and losing it again in open play is a
+## different thing.
+const GIVE_BACK := 1.0
+
+## Touch kinds that leave the ball under someone's control. Everything else --
+## a pass, a shot, a clearance, a parry -- puts it in flight, and the time it
+## spends there is not a gap in anybody's carry.
+const CONTROL_TOUCHES := [
+	SimTelemetry.Touch.DRIBBLE,
+	SimTelemetry.Touch.FIRST_TOUCH,
+	SimTelemetry.Touch.CHEST,
+	SimTelemetry.Touch.TACKLE,
+	SimTelemetry.Touch.KEEPER_CATCH,
+]
+
 ## The height a dropping ball is called arrived at, for `Result.drop_gap`.
 ## `SimTouch.CROSS_ARRIVE` is what a cross is solved to come down on, so the
 ## measurement is taken where the delivery was aimed.
@@ -85,6 +102,53 @@ class Result extends RefCounted:
 	## attacked, and those are fixed in different files.
 	var crosses := 0
 	var drop_gap := -1.0
+	## Touches by the attacking side before it resolved, of any kind.
+	var touches := 0
+	## The longest stretch, in simulated seconds, that the ball went untouched by
+	## anybody while nobody had struck it -- a ball rolling on with no pass and
+	## no shot in it, which is a ball that has got away from the man who was
+	## meant to have it.
+	##
+	## The "nobody had struck it" half is what keeps it honest: a cross hanging
+	## for a second and a half is untouched too, and is football. Only the gaps
+	## in a carry are counted.
+	var carry_gap := 0.0
+	## And how far the ball got from the man whose it was while that ran, in
+	## metres.
+	##
+	## `carry_gap` counts seconds and cannot tell the two apart: a man running
+	## alongside his own ball for half a second without touching it is football,
+	## and a man standing still while it rolls two metres off him is the thing
+	## the owner keeps seeing. Same seconds, different pictures, and only the
+	## distance separates them -- which is what the eye is reading from the
+	## stand.
+	var carry_drift := 0.0
+	## The defending side touched the ball and the attacking side had it again
+	## within `GIVE_BACK`.
+	##
+	## A blocked shot rebounding to the striker is one of these and is real
+	## football; a keeper catching it and the ball being back at the striker's
+	## feet is one too and is not. The column does not tell them apart and is not
+	## meant to -- it says how much of what this scenario produced came *through*
+	## the defence rather than past it, and a row where that is a third of the
+	## goals is a row to go and watch.
+	var given_back := false
+	## Touches by the attacking side before it resolved, counted by kind, and the
+	## duels, offsides and fouls in the trial.
+	##
+	## The outcome columns say how it ended and the columns beside them say
+	## whether the football was real; this says *what was played*, which is the
+	## only one of the three that can tell an act that is never chosen from an
+	## act that is chosen and fails. `--acts` prints it.
+	var acts := PackedInt32Array()
+	var duels := 0
+	var offsides := 0
+	var fouls := 0
+	## Filled only when the scenario is `traced`.
+	var log: Array = []
+
+	func _init() -> void:
+		acts.resize(SimTelemetry.TOUCH_NAMES.size())
 
 
 ## Puts every player on the station his own shape gives him for a ball at
@@ -134,6 +198,30 @@ func settle(ctx: SimContext, ball_at: Vector3, holder: SimPlayer) -> void:
 	ctx.update_possession()
 
 
+## Whether the situation is still live: the ball in play, and nobody else's.
+##
+## Its own function because both halves have to stop at the same moment.
+## `view3d` played on to a fixed clock, so a keeper collecting the ball at three
+## seconds was scored `lost` by the table while the screen carried on and showed
+## a goal a second later -- the eye and the row disagreeing about nothing, which
+## is the one thing this pair exists not to do (owner, 2026-08-23).
+## `started` is whether the ball has ever been in play in this trial. A set piece
+## begins dead, and without that flag every corner and every free kick would be
+## scored as over before the taker had reached the ball.
+func live(ctx: SimContext, started: bool) -> bool:
+	if not ctx.in_play:
+		return not started
+	return ctx.possession_team < 0 or ctx.possession_team == attacking_team
+
+
+## Every event of one trial, as `[seconds, event]`, when `traced` is on.
+##
+## The table says how often; this says what happened, in order, in one of them.
+## Kept on the result rather than printed from inside the loop so the caller
+## decides what is worth reading.
+var traced := false
+
+
 ## Runs one trial of this scenario on an already-built match and scores it.
 ##
 ## Stops at the first resolution rather than at the whistle. A trial that ran on
@@ -149,15 +237,35 @@ func run(m: SimMatch) -> Result:
 	var shot_tick := -1
 	var conceded := false
 	var cross_up := false
+	# The carry clock: when the ball was last under somebody's control, and
+	# whether it is in flight from a struck ball right now.
+	var touched_at := 0.0
+	var in_flight := false
+	# Whether anybody has actually controlled the ball yet. `in_flight` cannot
+	# stand in for it: a scenario that starts the ball moving does not log a
+	# touch, so before the first one the ball has a nominal owner who is thirty
+	# metres away and has never been near it -- measured, `aerial` read a drift
+	# of 59 m, which is the placement and not a carry.
+	var controlled := false
+	# Whether the ball has been in play yet, for `live`.
+	var started := false
+	# When the defending side last had a touch, for `given_back`.
+	var theirs_at := -100.0
 
 	for i in limit:
 		m.tick()
+		if not started:
+			started = ctx.in_play
+			# The wait over a dead ball is not a gap in anybody's carry.
+			touched_at = float(i) * SimConsts.DT
 		# New events only. The trace is append-only, so an index is the whole of
 		# the bookkeeping.
 		while seen < ctx.telemetry.events.size():
 			var e: Dictionary = ctx.telemetry.events[seen]
 			seen += 1
 			var kind: int = e["ev"]
+			if traced:
+				r.log.append([float(i) * SimConsts.DT, e])
 			if kind == SimTelemetry.Ev.SHOT and int(e.get("team", -1)) == attacking_team \
 					and shot.is_empty():
 				# Held by reference: `on_target`, `goal` and `blocked` are filled
@@ -170,10 +278,32 @@ func run(m: SimMatch) -> Result:
 					goal_at - (e.get("from", Vector3.ZERO) as Vector3))
 			elif kind == SimTelemetry.Ev.PASS_ATTEMPT and int(e.get("team", -1)) == attacking_team:
 				r.passes += 1
-			elif kind == SimTelemetry.Ev.TOUCH and int(e.get("team", -1)) == attacking_team \
-					and int(e.get("kind", -1)) == SimTelemetry.Touch.CROSS:
-				r.crosses += 1
-				cross_up = true
+			elif kind == SimTelemetry.Ev.TOUCH:
+				var now := float(i) * SimConsts.DT
+				var touch: int = int(e.get("kind", -1))
+				var by: int = int(e.get("team", -1))
+				if not in_flight:
+					r.carry_gap = maxf(r.carry_gap, now - touched_at)
+				touched_at = now
+				in_flight = not CONTROL_TOUCHES.has(touch)
+				controlled = controlled or not in_flight
+				if by == attacking_team:
+					r.touches += 1
+					if touch >= 0 and touch < r.acts.size():
+						r.acts[touch] += 1
+					if now - theirs_at <= GIVE_BACK:
+						r.given_back = true
+					if touch == SimTelemetry.Touch.CROSS:
+						r.crosses += 1
+						cross_up = true
+				else:
+					theirs_at = now
+			elif kind == SimTelemetry.Ev.DUEL:
+				r.duels += 1
+			elif kind == SimTelemetry.Ev.OFFSIDE and int(e.get("team", -1)) == attacking_team:
+				r.offsides += 1
+			elif kind == SimTelemetry.Ev.FOUL:
+				r.fouls += 1
 			elif kind == SimTelemetry.Ev.GOAL and int(e.get("team", -1)) != attacking_team:
 				conceded = true
 
@@ -188,6 +318,14 @@ func run(m: SimMatch) -> Result:
 				and ctx.pitch.in_opponent_penalty_area(attacking_team, ctx.ball.ground_pos()):
 			r.box_seconds += SimConsts.DT
 
+		# How far the ball has got from the man it belongs to, while nobody has
+		# struck it. The distance half of `carry_gap`; see `Result.carry_drift`.
+		if controlled and not in_flight and ctx.ball.last_touch_player >= 0:
+			var owner: SimPlayer = ctx.players[ctx.ball.last_touch_player]
+			if owner.team == attacking_team and not owner.is_keeper:
+				r.carry_drift = maxf(r.carry_drift,
+					SimConsts.horizontal_length(ctx.ball.ground_pos() - owner.pos))
+
 		# A struck ball is given time to arrive before its record is believed;
 		# past that the situation is over however it ended.
 		if not shot.is_empty():
@@ -196,10 +334,14 @@ func run(m: SimMatch) -> Result:
 			continue
 		# Before a shot, the situation ends when the ball does, or when it is
 		# somebody else's.
-		if not ctx.in_play or conceded:
+		if conceded or not live(ctx, started):
 			break
-		if ctx.possession_team >= 0 and ctx.possession_team != attacking_team:
-			break
+
+	# The last stretch counts too: a striker who never touches it again and lets
+	# the clock run out is the loudest version of this, and a gap only closed by
+	# a touch would score him a zero.
+	if not in_flight:
+		r.carry_gap = maxf(r.carry_gap, float(limit) * SimConsts.DT - touched_at)
 
 	r.resolution = _verdict(ctx, shot, conceded)
 	return r

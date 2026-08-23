@@ -358,7 +358,11 @@ static func _catch_point(ctx: SimContext, player: SimPlayer, c: Dictionary) -> V
 	var ahead := SimTouch.dribble_ahead(
 		ctx, player, float(c.get("space", 0.0)),
 		float(c.get("push", 0.0)), float(c.get("max_ahead", INF)))
-	var travel := SimDecision.carry_travel(ctx, player, dir, ahead)
+	# The burst runs to completion and every other touch is re-taken, which is
+	# the difference between the two functions. Drawn from the same pair the
+	# decision layer scores with, so the mark and the option cannot drift apart.
+	var travel: float = SimDecision.carry_travel(ctx, player, dir, ahead) \
+		if c.has("push") else SimDecision.touch_travel(ctx, player, dir, ahead)
 	return ctx.pitch.clamp_to_pitch(ctx.ball.ground_pos() + dir * travel, 0.5)
 
 

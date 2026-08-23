@@ -25,11 +25,11 @@ and the keeper's saves are the next one, held on purpose — a defending row mar
 | Through ball in behind | built | `_add_passes` |
 | Shot, with a chosen placement | built | `_add_shot`, `_pick_shot_aim` |
 | Clearance | built | `_add_clear` |
-| Carry, eight probed directions | built | `_add_dribbles` |
-| Knock past a man, and race him | built | `_add_dribbles`, the burst |
+| Carry, eight probed directions | built — and the room it has ends at the goalkeeper, not at the paint | `_add_dribbles`, `keeper_room` |
+| Knock past a man, and race him | built — same room, except when going round the keeper *is* the act | `_add_dribbles`, the burst |
 | Hold — the settling touch | built | `_add_hold`, `_play_hold` |
 | The dwell — a free man keeps it a beat, takes another look, then plays | built | `SimDecision.scan_gain` |
-| Orient before the act — a beat between coming by the ball and striking it | built | `SimDecision.readiness`, `_apply_set_damp` |
+| Orient before the act — a beat between coming by the ball and striking it | built — a price either side of a gate, because the price alone loses to the shot appetite | `SimDecision.readiness`, `_apply_set_damp`, `SET_STRIKE_FLOOR` |
 | First touch, and the turn | built | `SimTouch.first_touch` |
 | Receive on the half-turn — hips opened while the ball travels | built | `SimMovement._orient_receiver` |
 | The layoff — first-time ball back to the man facing play | built | `SimTouch.redirect_share` |
@@ -97,7 +97,7 @@ with a ball in the air. The fourth act is not touching it at all.
 | Behaviour | | Where |
 |---|---|---|
 | Height decides who can play the ball | built | `SimTouch.playable_height` |
-| Head it — clear, shoot, flick on | built | `SimAerial.play` |
+| Head it — clear, shoot, flick on, nod it down for yourself | built — four acts, and the fourth was the fallback the module did not have | `SimAerial.play`, `_head_down` |
 | Take it down on the chest | built | `SimTouch.chest` |
 | Let a dropping ball come to you | built | `SimAerial.lets_it_drop` |
 | Jump for it, contest it in the air | built | `SimDuel`, weighted by `SimAerial.duel_skill` |
@@ -114,7 +114,7 @@ with a ball in the air. The fourth act is not touching it at all.
 | Dive, parry or catch | built | `SimKeeper` |
 | Starting position, sweeping behind the line | built | `SimKeeper` |
 | Come out and smother | built | `SimKeeper` |
-| Distribution, short or long | built | `decide_with_ball` |
+| Distribution, short or long | built — and the ball is his while he holds it: nobody else is a contender for it | `decide_with_ball`, `ball_in_hands` |
 | Claim a cross, command the area | built | `_claim_target`, `_try_gather` |
 | Where a parry goes | partial — the rebound is a loose ball nobody aims (**3**) | |
 | The one-on-one | partial — priced into `expected_goals`, so the engine's answer is not to shoot | |
@@ -152,7 +152,10 @@ with a ball in the air. The fourth act is not touching it at all.
 
 # The proposals
 
-Numbered, stable, and cited from code comments. Nothing here has been measured.
+Numbered, stable, and cited from code comments. Nothing here has been measured
+*unless its entry says so* — **43** to **45** were watched and then counted, and
+each says what the figure was. Every figure in them is from
+`./run.sh scenario --trials 25 --acts`, whose rows are named in the entry.
 When one is built its row above changes and its entry here goes.
 
 | | Proposal | Where |
@@ -169,6 +172,8 @@ When one is built its row above changes and its entry here goes.
 | **34** | Nothing in the sim reads the score or the clock | `SimTactics`, `SimContext` |
 | **37** | The match has one tempo and football has two | `SimDecision.scan_gain`, `SimTactics` |
 | **38** | Attributes make a player better, never different | `SimDecision`, `SimAttributes` |
+| **43** | A goal kick is nine passes in his own half and then a turnover | `SimSetPiece._take_goal_kick`, `SimMovement` |
+| **44** | A striker and a centre-back are the same speed | `SimRole._WEIGHTS`, `SimAttributes` |
 
 **3 surfaced when shots started reaching the target.** About a third are second
 attempts within four seconds of the last: parry, rebound, strike again. Real
@@ -296,6 +301,17 @@ What is left of 29 is a set-piece question as much as an open-play one: a large
 share of football's headed attempts come from corners, and corners are 0.02 a team
 a match until **5** lands.
 
+**29, measured in set situations, 2026-08-23.** The scenario table puts numbers
+on it that a match cannot. A corner is delivered in **100%** of trials and the
+nearest of ours is **7.2 m** (right) and **9.1 m** (left) from the ball when it
+comes down; headers off it run at 0.2 and 0.1 a corner; 64-72% end `lost`. The
+`corner-left` trace is one event — the cross at 1.98 s — and then ten seconds of
+nothing at all. A wide free kick is the same picture with the delivery even more
+reliable: `fk-wide` crosses **1.0** a trial, produces **no shot in any of 25
+trials**, and drops 6.4 m from the nearest of ours. The delivery is not the
+problem in any of the three rows, which is what **29** has said since it was
+written; now the run that is missing has a distance attached.
+
 **30 is the owner's, 2026-08-15.** Keep structure and width, and make the midfield
 a real link between the defence and the strikers. One midfielder dropping to meet
 the defenders is fine; there have to be link players. **And fewer offsides** —
@@ -345,6 +361,15 @@ ahead of the ball are not running forward, *and* the ones who are do not reach t
 candidate list. Both are `SimOffBall` and `_add_passes`, neither is a value knob,
 and this is the fourth time this project has been caught pricing an option that
 was never generated.
+
+**33, measured in a set situation, 2026-08-23.** `through-ball` builds the
+geometry the proposal is about — a midfielder on the ball at the top of his own
+half, two forwards on the shoulder of a flat back line, grass behind it — and the
+through ball is played **0.1 times a trial**. What is played instead is 7.1
+carries and 2.0 ground passes, and the sequence ends wide and crossed: the trial
+1 trace is three dribbles, a lofted ball to the right wing, and a first-time
+cross blocked at 2.8 s. `box s` is **0.05**. The ball in behind is not being
+declined by the softmax; it is not on the list.
 
 **34 is the cheapest football on this page, and it was found by grep.** `ctx.score`
 is written by `SimMatch` when a goal goes in, copied into the snapshot and the
@@ -430,6 +455,325 @@ The three things a trait layer has to settle, none of them settled here:
 - **Whether a viewer can see one without being told.** The test of the layer. A
   trait nobody can name from the stand is a number in a save file, and the engine
   already has plenty of those.
+
+**39 and 40 were one thing on screen and two in the code** (owner, 2026-08-23,
+watching `1v1-clear`), and both are built. The striker was through, took one
+touch, and the ball simply ran on without him; the keeper collected it; a beat
+later the ball was at the striker's feet again and he scored. The owner's words:
+*even though it is a goal the behaviour is wrong.*
+
+**39 was the carry, and the act was the burst.** The trace of `1v1-clear` at seed
+4001 is one `dribble` of 6.4 m at 0.0 s from thirty metres out and then nothing
+until the keeper takes it at 2.6 s: the ball ran 24 m untouched and the row read
+`touch` 3.4, `gap s` **2.84**, `lost` **56%**. It was not a man dribbling badly
+and it was not a candidate that failed to generate — the knock was generated,
+scored and played, and it was sized against the *touchline*. Nothing asked
+whether the ball would come to rest in the keeper's hands twenty metres before
+it got there. `SimDecision.keeper_room` is the room test that asks: a hard one,
+which is the right shape for a line he is running at, and it only bites inside
+the area his hands work in. Measured after: `gap s` **1.05**, `touch` 5.0,
+`lost` **12%**, and the trace is an opening stride touch, five short ones and a
+shot from eighteen metres.
+
+**40 was the keeper, and it was what made it a goal instead of a lost ball.**
+`SimDuel.resolve_contacts` skips goalkeepers as contenders and then treated the
+ball sitting at his chest as a loose one, so the striker he had just taken it
+from was a contender for it and took it straight back. A caught ball is dead —
+the situation is over and the restart is his — and `SimKeeper.ball_in_hands` is
+now the one place that says so.
+
+**41 was the orientation beat, priced but not enforced**, and it is built.
+`shot-edge` puts the ball at the top of the box with two centre-backs four
+metres in front of it. Every trial, at **0.01 s**, he shot: 1.0 shots and 0.0
+carries a trial, mean time to shot one hundredth of a second.
+
+**The candidate list is what named it**, and it needed an instrument that did
+not exist — `replay` now takes `--scenario NAME`, so the situations the table
+scores can be opened at the decision that made them. Seed 4001, tick 1:
+
+```
+> shot, 19 m    0.1356   succ 0.03  gain 1.000  bias 5.74  set 0.50   w 98%
+  hold          0.0820   succ 0.63  gain 0.135             bias 1.05  w  2%
+  carry fwd     0.0351   succ 0.18  gain 0.235             bias 1.16  w  0%
+```
+
+Eleven candidates, so nothing was missing from the list and the settling touch
+was there to be picked. **`set 0.50` is the beat, already applied** — and the
+shot still takes 98% of the softmax, because `bias 5.74` is the compressed
+match's `shot_appetite` and the two sit on opposite sides of one product.
+Neither can be tuned against the other: the appetite is the scoring fit and is
+one object (`docs/INVARIANTS.md`), and the beat is a fact about a body.
+
+So the beat is a gate as well as a price — `SET_STRIKE_FLOOR`, a quarter of a
+second of orientation below which no strike at goal is generated. It is narrow
+by construction: only a man whose ball is already under control and who has had
+*no* look at all. A first-time strike is a different act and is exempt, and
+`readiness` counts a pass's flight as preparation, so a received ball is never
+gated — what it catches in a match is the man who has just won a tackle, for a
+quarter of a second.
+
+Measured after: shots struck at **0.53 s** rather than 0.01, from 17.4 m rather
+than 18.6, with **1.6 carries** a trial in front of them where there were none.
+The trace is two setting touches and then the shot. **The 1v1 rows moved with
+it** — every strike out of a fresh spell now waits a beat — but at n=25 those
+moves are one to two standard errors and the row that was aimed at is the only
+one that moved decisively.
+
+**The same row is where 5 has a number on it.** Two centre-backs standing four
+metres in front of the ball produced **0 blocks in 25 trials**, and 80% of the
+shots through them reached the target: 32% goal, 48% saved, 20% off. With the
+beat in front of the shot it is 1 block in 25 — the defence gets the quarter of
+a second it never had, and does almost nothing with it.
+
+**42 was 25 aerial duels, 25 headers, 25 losses**, and it is built. `aerial`
+drops a long ball between a striker and a centre-back twenty-eight metres out.
+Our man won it and headed it — 1.0 headers a trial, so the duel and the header
+both worked — and the resolution was `lost` **100% of the time**, every trial,
+with no shot and no retained possession anywhere.
+
+**The trace named the act: `head=0`, cleared, every seed.** `SimAerial.play`
+had three acts and the third was the fallback for all of them — a man who found
+no teammate inside `HEADER_REACH` played `head_clear`, which aims at the far
+goal and *wide*. That is the right ball out of your own six-yard box and a
+giveaway from anywhere else, and an isolated striker thirty metres from the
+opposition goal is anywhere else: the ball went eight to twenty-five metres
+toward the corner flag with nobody of ours going after it.
+
+**The fourth act is nodding it down for himself** (`_head_down`), aimed by
+`SimDecision.safe_direction` — the same function the chest-down asks, and the
+same question: not where the goal is, but where the ball is still his. It is a
+cushion rather than a nod, which needed `SimTouch.header` to gain a
+`power_scale`: the power there is entirely about how far a man can *send* one,
+so a knock-down at full power is a clearance whatever it is aimed at.
+
+Measured after: `lost` **68%**, `none` **28%** — the clock running out with the
+ball still ours, which is the good outcome here — 4.0 touches a trial against
+1.0, and a shot where there was none. What is left is a lone striker losing a
+fifty-fifty to a centre-back with no support, which is football. The knock lands
+one to two metres away and is still moving; roughly a third of the time the
+centre-back gets a head to it before our man turns, and **whether the man who
+nodded it down should be favourite for his own knock-down is an open question**
+— nothing in `SimMovement` knows he chose where it was going.
+
+**43 is the goal kick, and the trace is the finding.** `goal-kick` retains the
+ball for eleven seconds and 88% of trials end `lost`, `box s` **0.00** — the
+side never once reaches the opposition box. Trial 1 in full: eight passes from
+x=-47 to x=-6, not one of them past halfway, then a duel lost on the touchline.
+The passes are not bad; there is nowhere forward to put one, which is **30** and
+**33** seen from the goalkeeper's boot. It is listed separately because the
+restart is the one moment a side has eight seconds to arrange itself and this is
+what it arranges.
+
+**44 is measured, and it is small enough to be worth writing down.** `race`
+knocks a ball into the channel and starts a striker and a centre-back level with
+it. Seed 4001: the striker's top speed is **8.09** and the centre-back's
+**8.83**. Seed 4004: **9.36** against **8.92**. The race is a coin toss decided
+by the draw, because `pace` has relevance 0.8 for a striker and 0.6 for a
+centre-back, and at quality 0.6 the draw `lerpf(0.35 + 0.3 * q, q, relevance)`
+puts them at **0.586 and 0.572** — one and a half per cent of the range apart.
+A centre-back is as quick as a striker in this engine. It is **38**'s point
+("attributes make a player better, never different") with a specific number, and
+**15**'s draw formula is the mechanism.
+
+**The arithmetic is confirmed and it was not what was deciding the row**, which
+is worth writing down because it nearly went in as a fix. Probed tick by tick,
+the two men in `race` were not sprinting: the speed cap on each of them read
+8.0, 8.0, 8.0, **5.0**, 5.0, 8.0, **6.0**, 6.0, 8.0 over two seconds of a foot
+race they were four metres down on. Both were braking for a third of it, and the
+race was settled by whose brakes landed worst. `_contest_pace` reads its own
+output — the cap sets his speed, his speed sets the intercept, the intercept
+sets the margin, the margin sets the cap — and recomputed clean every refresh
+the loop closes. Latched (`docs/INVARIANTS.md`), both men now hold top speed for
+the whole race and it is decided by pace, which is what the row is named for.
+
+**What is left of 44 is a change to every player in the game**, and it is 38's
+rather than this row's. `lerpf(0.35 + 0.3 * q, q, relevance)` has two anchors
+that converge at mid quality: at q = 0.6 they are 0.53 and 0.60, so the whole
+role system spans **0.07 of attribute while the draw's own spread is 0.12**.
+Role is noise at the level the game is measured at. And relevance can only pull
+an attribute *up* toward its owner's quality — it can never put one below the
+population, so **a player has strengths and no weaknesses** and "a centre-back
+is slow" is not a thing this engine can say. Fixing that means a tilt term with
+a fitted coefficient, applied to every attribute of every player, at a moment
+`PLAN.md` §11.1.1 says to tune late. It is the owner's call, not a side effect
+of a scenario row.
+
+**45 was the take-on**, and it is built. `take-on` puts a wide man on the ball
+twenty-six metres out with a full-back two metres in front of him and nobody
+else near. **92% of trials ended `lost` and none in a goal**; the trace was
+three small touches and then a thirty-metre ball infield at 19.6 m/s to where
+the other side picked it up. He did not run at the man and he did not go round
+him.
+
+**Two things were wrong and the candidate list separated them.**
+
+**The row was measuring its own placement.** `SimDecision.BURST_PACE` is 3.5 —
+below it the engine holds that knocking the ball past a man is not a foot race
+but a giveaway — and the scenario started the winger at **3.0**. The take-on was
+never a candidate, so the softmax was not declining it and no value knob could
+have reached it. The third of the twenty-five to do this. He starts at 5.0 now,
+which is what a winger receiving in the final third is doing.
+
+**And the act on the list was not a take-on.** Started at burst pace, the
+candidate read `burst fwd 21.6 m` at **`succ 0.00`**: a twenty-one-metre ball
+arriving 4.3 seconds later, which `control_at_time` correctly prices at nothing
+because by then the whole defence is level with it. The size gate was
+`push < BURST_DISTANCE * 0.55` — five metres of *gap* — and a gap is not a
+distance over the grass: at 5 m/s five metres of gap is twenty-one metres of
+ball. The knock is now sized by the man rather than by a constant, `BURST_CLEAR`
+to `BURST_PAST_MAX` past where he stands, in the frame he is standing in.
+
+**And the man being beaten was charged twice.** `_escape_value` prices the race
+against him and `_lane_survival` then charged him again as a leg in the lane,
+which is the same man in the same act — the whole point of a take-on is that he
+is in the way. `control_at_time` already took him as its `ignore_id`; this term
+had missed the convention. Measured on its own, that one line is `succ` **0.02
+to 0.44** and the weight the softmax gives the take-on **0% to 96%**.
+
+The trace now goes forward and outside — 27 to 32 in x, 24 to 21 in z — with
+0.7 duels a trial against 0.1, and crosses up from 0.28 to 0.44 a trial. `lost`
+is **80%**, barely moved, because what he now reaches the byline to do is put in
+a cross, and **29** is what happens to it.
+
+**One measurement hazard, found while doing this.** `SimDuel` logs
+`SimTelemetry.Touch.BLOCK` for *any* loose ball won without control that did not
+come from a contest, so a defender jogging onto a ball nobody struck at him is
+recorded as having blocked it. `race` reads "block" where the football is "he got
+there first". Anything counting blocks — including `--acts` — is counting those
+too.
+
+**46 is where the shot gets taken from** (owner, 2026-08-23, watching the
+one-on-one): *the shooting range is a bit too far away. Long shots should be an
+option, but not the default, especially in 1v1 situations.* Four things were
+found and fixed under it and the row it was named for still has not moved, so
+it stays open with what is known written down.
+
+**The carry was priced against a model of itself that was eight to twenty times
+out.** `carry_travel` is where the ball would be if he never touched it again --
+the burst's question -- and it was the horizon every carry probe was scored at.
+`./run.sh diagnose`, counting the ball at consecutive dribble touches in the
+same match, says the ball runs **0.55 m** between them where that function
+claims 4.3 at the mean speed of a match and 11 at a sprint. `touch_travel` is
+the honest one and `_in_play_odds` now asks it, which stopped an unpressured
+striker being charged for putting the ball over a line it was never going to
+reach.
+
+**Correcting it exposed a units bug it had been hiding.** `_add_dribbles` used
+one expression as both the size of the touch (a gap) and how far down the line
+he is going (a distance over the grass). With the overstated travel gone the
+horizon collapsed: at twenty-one metres from goal the forward probe came back
+priced two metres in front of his own feet. `CARRY_HORIZON_SECONDS` separates
+them.
+
+**And the risk and the reward were being read at the same point.** At
+twenty-two metres from goal with nobody within twenty metres, the forward carry
+scored `success` **0.07** beside its own gain of 0.517 -- `control_at_time` was
+being asked who owned grass six metres nearer the keeper than the ball was
+going. Split, the same probe reads **0.53**.
+
+**Measured, the shot came closer nearly everywhere and not where it was
+watched.** `hold-up` 23.5 m to 12.8 (since drifted back), `cross-left` 16.3 to
+9.5, `cross-right` 15.2 to 12.1, `shot-edge` 17.4 to 16.7 with goals 28% to
+**44%**, `1v1-onrushing` 22.6 to 21.2 with `lost` 20% to 8% and goals to 52%,
+`cross-byline` to 28% goals. **`1v1-clear` went 21.6 to 21.3 and is the row the
+owner watched.**
+
+**46 was the settling touch, and it is fixed.** He took six touches and advanced
+nine metres, seven of them on the first: after that `hold` won decision after
+decision, and a hold goes nowhere. `_hold_score`'s own docstring says a hold
+"cannot beat a winning one" -- and the arithmetic of a man through on goal was
+`0.83 success x 1.05 bias x 1.28 look x 0.99 discount` = **1.10 times the option
+it was deferring**. The term that broke the invariant is the dwell. `scan_gain`
+is the understatement in a continuation caused by `SimPerception` keeping his
+view of his *teammates* stale, and it was being applied to continuations that do
+not depend on them at all: a shot at goal, a carry, a clearance. Gated on
+whether a look could buy anything, the invariant holds again. `1v1-clear` goals
+**12% to 20%** and `lost` **28% to 20%**.
+
+**What it did not do is move the shot distance**, which is what was watched.
+`1v1-clear` has read 21.3 to 21.6 m through every one of these, and the reason
+is arithmetic rather than football: a shot from twenty-two metres has an
+`expected_goals` of **0.03** and scores 0.19, because `shot_appetite` is 5.74.
+Nothing else on a one-on-one list reaches 0.19 -- the best carry is about 0.17 at
+its healthiest -- so the shot wins, and it wins from wherever he happens to be
+standing when it first clears the floor.
+
+**A flat multiplier on every shot cannot be the right shape for this.** The
+appetite exists because a compressed match holds fewer seconds of football and
+needs goals per second scaled to match; applied as a flat bias it also moves the
+crossover between shooting and everything else, and it moves it furthest out
+exactly where the shot is worst. That is the one-line statement of "long shots
+are the default". But it is the compressed clock's scoring fit, it is
+deliberately one object, and `docs/INVARIANTS.md` says a sixth constant goes in
+that list rather than beside the mechanic it scales -- so **this is a tuning
+freeze job and the owner's call**, not something to be quietly reshaped from a
+scenario row.
+
+**47 was the ball running away from the man carrying it** (owner, 2026-08-23,
+watching `1v1-clear` trials 4 and 7: *a carry forward becomes much longer than
+the player intended*). It is built, and it was two faults in the strike.
+
+**The ball is not at his feet when he plays it.** `SimTouch.dribble` sized the
+touch to open a further `ahead` metres, on top of the 0.86 m the ball already
+lay in front of him -- so a man asking for it 1.7 m ahead got it 2.6 m ahead,
+struck at 9.0 m/s while he ran at 5.3, and it stayed outside his 0.9 m reach for
+**1.15 seconds and nine metres** with his touch cooldown reading zero the whole
+way: ready to play it and unable to reach it.
+
+**And the mis-hit was bigger than the intent.** `_perturb` scales the whole
+velocity, which is right for a pass or a shot -- struck from nothing, so all the
+speed is his. A carry is not: most of the ball's speed is momentum it already
+shares with a running man, and that is in the ball whether he strikes it well or
+badly. At 8.8 m/s the gap he wants is worth 0.93 m/s of relative speed and a
+twenty per cent error on the total is 1.95, so **the size of every carry was
+decided by the draw rather than by the decision**. The weight now scales
+`delta` alone.
+
+Measured in a match, the longest a ball ran between two touches of one carry:
+**16.8 m to 4.3 m**. Across the scenario table the `away` column -- the furthest
+the ball got from the man whose it was -- fell in every row: `through-ball` 3.33
+to 2.39, `cross-right` 2.54 to 1.77, `take-on` 2.20 to 1.68, `1v1-chased` 2.01
+to 1.57, `hold-up` 1.60 to 0.99. Trial 4 is now ten touches at 0.22 s intervals
+and a shot from nineteen metres; trial 7 is a goal from fourteen.
+
+**It moved the bands and some of it wants watching.** Touch counts are up
+everywhere and several rows now produce no shot at all -- `take-on`,
+`through-ball`, `aerial`, `switch`, `build-up`. A carry that keeps the ball is
+an option that got better, so the softmax takes it more often; whether that is
+football or whether the shot now needs to answer it is the next thing to look
+at, and it belongs beside **46**'s note on the appetite.
+
+**49 is the shot appetite, and it was the wall behind everything above**
+(owner, 2026-08-23). Four separate fixes to the carry — the strike, the re-touch
+model, the pace floor, the keeper race — each did what it claimed and none moved
+where the shot came from, because a **three per cent** chance from twenty-seven
+metres scored 0.137 against the best carry's 0.091 and took 98% of the softmax.
+`shot_appetite` is 5.76 at the nine-minute clock and it was paid flat on every
+strike.
+
+**A flat appetite does not buy shots, it buys them from the wrong places.** The
+constant's own note records forty compressed matches in which moving it from 1 to
+8 changed shots per team by 2.29 to 2.40. What it moves is the crossover between
+shooting and everything else, and it moves it furthest out where the shot is
+worst — which is the whole of "long shots should be an option, but not the
+default".
+
+`SHOT_APPETITE_KNEE` pays it on the chance instead: in full on a chance worth
+0.10 expected goals and in proportion below, squared. **Squared because the ramp
+scales both sides of the question** — the shot he could take now and the shot he
+is carrying toward ask the same function through `_carry_shot_gain`, so a gentle
+ramp lifts them together and decides nothing. Measured on `1v1-clear`, a linear
+ramp moved the shot in by one metre and moving the knee *out* made it worse.
+
+Measured at the knee, `1v1-clear`: shots from **22.4 m to 16.3**, goals **24% to
+44%**, off target 40% to 16%. Elsewhere `1v1-angle` 15.2 to 13.4, `through-ball`
+to 11.1, `cross-byline` to 12.7, `hold-up` to 16.0. `shot-edge` is unmoved at
+17.5, which is right: a chance from the edge of the box with two bodies in front
+of it is a poor one however keen the format is.
+
+**The value is a first fit and belongs in the tuning freeze** (`PLAN.md`
+§11.1.1). It was chosen by measuring 0.06 to 0.30 on one row at twenty-five
+trials, which is enough to see that lower is better and not enough to settle it.
 
 ## Order
 
@@ -704,7 +1048,11 @@ not a finding; it is the list working.
 - **Nobody holds the ball.** It is played on within about a second of arriving,
   every time, by everyone (**28**) — but check the open question at the end of the
   order before treating it as a fault.
-- A cross arrives and nobody makes the run to the near or far post (**29**).
+- A cross arrives and nobody makes the run to the near or far post (**29**) — a
+  corner comes down **seven to nine metres** from the nearest of ours, and a wide
+  free kick produces no shot at all.
+- The two centre-backs four metres in front of a shot from the edge of the box
+  block one in twenty-five of them (**5**).
 - A ball is headed in the box and goes anywhere but at goal (**29**).
 - Play crabs across the middle third with no one between the lines to give it
   forward (**30**).

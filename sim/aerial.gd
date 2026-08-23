@@ -17,11 +17,11 @@ extends RefCounted
 ## cross was met on the floor or not at all, so every ball in the air ended as a
 ## bounce nobody contested.
 
-## What a header was for, carried on the touch so the log can tell three quite
+## What a header was for, carried on the touch so the log can tell four quite
 ## different acts apart. `docs/DIAGNOSTICS.md` reads them back.
-enum { CLEAR, AT_GOAL, TO_A_MAN }
+enum { CLEAR, AT_GOAL, TO_A_MAN, DOWN_FOR_HIMSELF }
 
-const INTENT_NAMES := ["cleared", "at goal", "to a man"]
+const INTENT_NAMES := ["cleared", "at goal", "to a man", "down for himself"]
 
 ## Where the body stops and the head begins.
 ##
@@ -73,6 +73,17 @@ const HEADER_SHOT_FLOOR := 0.015
 const HEADER_REACH := 16.0
 ## Nobody gets a head on a ball that is on top of him.
 const HEADER_MIN := 4.0
+
+## How much grass the direction is tested for, which is not how far the ball
+## goes -- `SimTouch.header` has no solver, so nothing here names a distance and
+## this is a room test like the chest-down's `CHEST_AHEAD`. Measured off the
+## trace, the ball lands one to two metres away and is still moving; what this
+## rules out is nodding it down into a man or over a line.
+const KNOCK_AHEAD := 4.0
+## How much of his neck goes into it -- see `SimTouch.header`'s `power_scale`.
+const KNOCK_POWER := 0.45
+## And down, which is what makes it drop in front of him rather than fly.
+const KNOCK_ANGLE := -0.25
 
 ## Pressure at which a man in his own half stops looking for a shirt and heads it
 ## away. `CHALLENGE_SIGHT` is 5.5 m, so this is somebody genuinely on him.
@@ -202,8 +213,8 @@ static func play(ctx: SimContext, player: SimPlayer) -> void:
 		return
 	var mate := _header_target(ctx, player)
 	if mate == null:
-		_note(ctx, player, "header clear, nobody to find")
-		head_clear(ctx, player)
+		_note(ctx, player, "nodded down for himself")
+		_head_down(ctx, player)
 		return
 	_note(ctx, player, "header to #%d" % mate.shirt)
 	_head_to(ctx, player, mate)
@@ -294,6 +305,32 @@ static func head_clear(ctx: SimContext, player: SimPlayer) -> void:
 	var side: float = signf(player.pos.z) if absf(player.pos.z) > 2.0 else (1.0 if ctx.rng.chance(0.5) else -1.0)
 	var dir := (away + Vector3(0.0, 0.0, side * 0.45)).normalized()
 	SimTouch.header(ctx, player, dir, ctx.rng.range_float(0.45, 0.7), CLEAR)
+
+
+## Nodding it down for himself, which is what a man with nobody to find does.
+##
+## The act the module did not have, and its absence was a giveaway by
+## construction. `head_clear` is a *defender's* header -- it aims at the far
+## goal and wide, which is the right ball from your own six-yard box and the
+## wrong one from anywhere else -- and it was the fallback for every man who won
+## a header with no teammate inside `HEADER_REACH`. Played by a striker thirty
+## metres from the opposition goal it is the ball hoofed toward the corner flag
+## that nobody of ours is running to.
+##
+## Measured, that is the whole of `aerial`: 25 trials, 25 headers won, **25
+## losses**, every one of them `cleared` and every one of them landing eight to
+## twenty-five metres away with an opponent nearest to it
+## (`docs/THE_FOOTBALL.md` 42).
+##
+## `SimDecision.safe_direction` is the same function the chest-down asks, and
+## the same question: not where the goal is, but where the ball is still his.
+## The pace is `KNOCK_POWER` of his neck because the act is a cushion -- taking
+## the pace off a dropping ball is the whole skill in it, and at full power the
+## direction does not matter, it is a clearance either way.
+static func _head_down(ctx: SimContext, player: SimPlayer) -> void:
+	var dir := SimDecision.safe_direction(ctx, player, KNOCK_AHEAD)
+	SimTouch.header(ctx, player, dir, KNOCK_ANGLE, DOWN_FOR_HIMSELF,
+		Vector3.INF, 0.0, KNOCK_POWER)
 
 
 ## Who to head it to.

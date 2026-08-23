@@ -35,7 +35,7 @@ Every one exists because a count in the event log cannot answer its question.
 | `Where the pass was aimed` | a ball played into grass the opposition owns — identical to a good ball in every count, and it found a quarter of all passes threaded within 1.5 m of a defender |
 | `Passing by direction` | which way the ball went and what it was *worth* (`xT gained`), whether the receiver kept it, whether passes string into moves |
 | `Restarts` | how long the ball sat there, and where the side actually stood when it was struck |
-| `In the air` | headers split by intent — clear, at goal, knock-down — chests, and the keeper's claims |
+| `In the air` | headers split by intent — cleared, at goal, to a man, down for himself — chests, and the keeper's claims. The four are different acts and a count of headers cannot tell them apart: `docs/THE_FOOTBALL.md` 42 was a striker playing the defender's one |
 | `Goalkeeping` | split by whether there was anything to defend on purpose |
 | `Taking it down` | what a first touch did, bucketed by where the ball ended up relative to *where the man wanted to go* |
 | `Under challenge`, `touch` column | how big the carry touch was, by how hard he was being closed down. A row that does not shorten as pressure rises is a carrier who has not noticed the man on him |
@@ -249,13 +249,47 @@ of instruments here.
   outcome set would be a new table to learn each time. `goal + saved` is the shot
   that was worth taking, `off` is the finish, `blocked` belongs to the defence,
   `lost` is the situation ending before a shot, and `none` is the clock running
-  out with the ball still ours — on a five-second one-on-one, a man who never went
-  for goal.
+  out with the ball still ours — on a one-on-one, a man who never went for goal.
+- **`touch`, `gap s` and `back` say whether the football was real**, which the
+  outcome columns cannot — a goal scored off a keeper who handed the ball back is
+  a goal in the `goal` column and nowhere else. `touch` is attacking touches per
+  trial (a man carrying it takes one every three tenths of a second), `gap s` the
+  longest stretch the ball went untouched with nothing struck — a hanging cross
+  does not count, a ball rolling away from its owner does — and `back` the share
+  of trials where the defence touched it and we had it again within a second.
+  **`1v1-clear` found `docs/THE_FOOTBALL.md` 39 with this column** and nothing
+  else could have: `gap s` 2.8 and `lost` 56% against `goal` 20%, on a row whose
+  outcome columns read like a one-on-one that sometimes goes in. It was a single
+  24 m knock into the keeper's hands. It now runs `gap s` 1.1 and `lost` 12%.
+- **`away` is the distance half of `gap s`, and it is the one the eye reads.**
+  Seconds cannot tell a man running alongside his own ball without touching it —
+  football — from a man standing still while it rolls off him. Same seconds,
+  different pictures. `away` is the furthest the ball got from the man whose it
+  was while nobody had struck it, and it only counts once somebody has actually
+  controlled it: before that a scenario's ball has a nominal owner thirty metres
+  away who has never been near it, and `aerial` read a drift of 59 m. **A carry
+  that is working keeps it inside about a metre and a half.**
 - **`cross` and `drop m` separate the two ways a cross fails**, which are fixed
   in different files: crosses struck per trial, and how far the nearest of ours
   was from the ball when the first of them came down through heading height. A
   scenario that ends with no shot is either a ball nobody put in or a ball nobody
   attacked, and **29** is the second of those.
+- **`--acts` is the second instrument and answers the question the table cannot:
+  what was actually played.** Touches by the attacking side per trial, by kind,
+  then duels, offsides and fouls. It is the only one of the three that separates
+  **an act that is never a candidate from an act that is chosen and fails** — the
+  distinction `docs/THE_FOOTBALL.md` says this project has been caught by three
+  times. A kind nothing ever played is not printed as a column at all.
+- **`replay --scenario NAME --tick 1` is the fourth, and it is the only one that
+  shows the candidate *list*.** The three below say what was played; a row that
+  reads wrong because an act was never on the list, or was on it and lost, is
+  answered by nothing else. `docs/THE_FOOTBALL.md` 41 is the worked example: the
+  act was generated, the beat that should have beaten it was applied, and the
+  line `bias 5.74` beside `set 0.50` is the whole finding.
+- **`--trace N` is the third, and the other two send you to it.** Every event of
+  trial N of each selected scenario, in order, with who and from where. A share
+  says a situation ends badly and `--acts` says which act was played; only the
+  order says the keeper caught it at 2.6 s and the striker had it back at 3.3.
 - **A share near a half carries about `50/sqrt(n)` points of standard error**, so
   8 points at the default 40 trials. The header prints it. **A row that moved by
   less than that has not moved**, and `--trials` is the answer before believing a
@@ -263,15 +297,43 @@ of instruments here.
 - **The variants are different questions, not samples of one.** A keeper set on
   his line and a keeper committed to closing are opposite problems; splitting them
   is what lets a change say *which* it moved.
+- **The one-on-one starts twenty-five to thirty metres out, with the defence
+  higher up the pitch than the ball** — a man who has just been played through,
+  not a man stood over it with everyone already goal-side. The first version was
+  the latter and read as a penalty with a run-up: the only thing left to decide
+  was where he put the shot.
 - **Each trial is a different seed, so the squads differ.** The situation is fixed
   and the players in it are not: a scenario is a property of the rules, not of one
   striker.
+- **Twenty-five situations, in five families**, so a change can be asked which
+  kind of football it moved:
+  - **the one-on-one** — `1v1-clear`, `1v1-onrushing`, `1v1-angle`, `1v1-chased`
+  - **the cross** — `cross-right`, `cross-left`, `cross-byline`
+  - **the pass** — `through-ball`, `switch`, `build-up`, `pocket`
+  - **the shot** — `shot-edge`, `volley`, `long-range`
+  - **the duel** — `race`, `aerial`, `hold-up`, `take-on`
+  - **the restart** — `corner-right`, `corner-left`, `fk-shot`, `fk-wide`,
+    `penalty`, `throw-in`, `goal-kick`
+- **`build-up` and `goal-kick` read backwards**, and they are the only two:
+  `none` is the good outcome (the clock ran out and the ball is still ours) and
+  `lost` the bad one. Playing out is the commonest thing a defence does with the
+  ball and nothing else on this page asks whether the engine can do it.
+- **The restarts are `SimSetPiece`'s own routines, started rather than authored**,
+  and both sides are settled around the spot the restart will be taken from
+  before it begins. That last part is not cosmetic: settled around the middle of
+  the third instead, a throw-in had no teammate inside `throw_range` and nine in
+  ten came out as a clearance — the row was measuring its own placement. **A
+  scenario that places the bodies badly produces a bug report about the
+  scenario**, and two of the first twenty-five did.
 - **It runs at the standard compressed clock**, for `./run.sh box`'s reason —
   `shot_appetite` is part of what decides a shot, and a bench that turned it off
   would describe a match nobody watches.
-- **Watching one defaults to half speed.** A one-on-one is decided inside a
-  second; at the rate a match is watched the situation is over before the eye
-  arrives.
+- **Watching one runs at real time**, and it **ends when the situation does** —
+  `SimScenario.live`, the same rule the table scores by, plus a hold so the eye
+  sees how it ended. Both were the other way round and both were wrong: half
+  speed was sized for a striker starting on the edge of the box, and a fixed
+  clock meant the screen played on past the moment the row stopped counting and
+  showed a goal the table had already called `lost`.
 
 ## The live overlay
 

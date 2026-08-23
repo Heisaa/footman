@@ -456,6 +456,21 @@ const TOUCH_SECONDS := 0.55
 ## metres has not beaten anybody, he has given it away.
 const BURST_SECONDS := 1.2
 const BURST_PACE := 3.5
+## How far past the man the ball has to finish for the knock to be a foot race
+## rather than a touch he can stick a boot on -- his reach and a stride.
+##
+## In metres over the *grass*, which is the frame the man is standing in. The
+## gate this replaces was `push < BURST_DISTANCE * 0.55`, five metres of *gap*,
+## and the two are not the same test at any pace a footballer runs: measured on
+## `take-on` at 5 m/s, five metres of gap is a **21.6 m** ball arriving 4.3
+## seconds later, which `control_at_time` correctly prices at nothing because by
+## then the whole defence is level with it. The engine's only take-on was a hoof
+## into the corner wearing a take-on's name, and it scored `succ 0.00`
+## (`docs/THE_FOOTBALL.md` 45).
+const BURST_CLEAR := 2.5
+## And how far past him is still a take-on rather than a ball into the corner.
+## The upper end of the same window, in the same frame.
+const BURST_PAST_MAX := 8.0
 ## How far in front of himself a man puts the ball when he is not trying to go
 ## anywhere with it. The smallest touch the engine has: `SimTouch.dribble`'s own
 ## floor, a ball kept inside the width of his own stride.
@@ -474,6 +489,27 @@ const HOLD_AHEAD := SimTouch.DRIBBLE_AHEAD_FLOOR
 ## Where a touch stops being a way of covering ground and starts being a way of
 ## setting yourself: the distance from the goal at which touches begin to shorten,
 ## and the size they shorten to on top of it.
+## How far down a line a carrier is judged to be going, in seconds of his own
+## running. The distance every term in a carry's score is read at.
+##
+## It is not the size of the touch, and the two had been one expression for a
+## long time without it showing. `carry_room` answers "how big a touch fits
+## here", which is a *gap* between him and the ball; this answers "how far down
+## this line is he going", which is where the defender, the touchline and the
+## goalkeeper actually are. The mixture was survivable only because the number
+## that dominated it was `carry_travel` -- the ball's journey if he never touched
+## it again, which is eight to twenty times the journey he plays. Correcting that
+## to `touch_travel` collapsed the horizon with it: at twenty-one metres from
+## goal the forward probe came back priced **two metres in front of his own
+## feet**, which is exactly the short-sightedness `_add_dribbles`' own comment was
+## written to prevent, and it is why a striker through on goal could never price
+## running the ball into the box and shot from wherever he stood instead (owner,
+## watching the one-on-one).
+##
+## A second or so of his own running is what "still going this way a few touches
+## from now" means for a man at pace, and it is bounded below by the ordinary
+## probe distance so a walking carrier still looks further than his own boot.
+const CARRY_HORIZON_SECONDS := 1.2
 const CLOSE_CONTROL_FAR := 22.0
 const CLOSE_CONTROL_NEAR := 6.0
 const CLOSE_CONTROL_TOUCH := 1.6
@@ -785,6 +821,11 @@ static func _add_shot(ctx: SimContext, player: SimPlayer, first_time: bool) -> v
 	var distance := SimConsts.horizontal_length(goal - from)
 	if distance > 38.0:
 		return
+	# The beat, as a gate. See `SET_STRIKE_FLOOR`; `_apply_set_damp` is the price
+	# either side of it, and this is before `_add_chip` because a chip at goal is
+	# a strike and earns the same beat.
+	if not first_time and readiness(ctx, player) < SET_STRIKE_FLOOR:
+		return
 	var aim := _pick_shot_aim(ctx, player, goal)
 	var quality := expected_goals(ctx, player, from, aim)
 	# Not every sight of goal is a shot, and the floor is here to keep a hopeless
@@ -840,7 +881,7 @@ static func _add_shot(ctx: SimContext, player: SimPlayer, first_time: bool) -> v
 		# `shot_appetite` is 1.0 at real time and only leaves it under compression:
 		# see `SimMatchConfig`, "the compressed match's scoring fit".
 		"bias": lerpf(0.75, 1.25, tactics.directness) * (0.6 if first_time else 1.0)
-			* ctx.config.shot_appetite(),
+			* ctx.config.shot_appetite_at(quality),
 		"power": clampf(0.5 + distance / 40.0, 0.45, 1.0),
 	})
 	_keep_factors()
@@ -984,7 +1025,7 @@ static func _add_chip(ctx: SimContext, player: SimPlayer, from: Vector3, goal: V
 		"loss": loss,
 		"first_time": first_time,
 		"bias": lerpf(0.75, 1.25, tactics.directness) * (0.6 if first_time else 1.0)
-			* ctx.config.shot_appetite(),
+			* ctx.config.shot_appetite_at(quality),
 		"power": 0.4,
 	})
 	_keep_factors()
@@ -1125,9 +1166,10 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				# does: the shot this ball buys competes with the shot the
 				# passer would take himself, and only one of them was being
 				# multiplied by the fit.
-				var square: float = expected_goals(ctx, mate, lead,
-					ctx.pitch.target_goal(player.team)) * SQUARE_CONVERT \
-					* ctx.config.shot_appetite()
+				var square_xg := expected_goals(ctx, mate, lead,
+					ctx.pitch.target_goal(player.team))
+				var square: float = square_xg * SQUARE_CONVERT \
+					* ctx.config.shot_appetite_at(square_xg)
 				gain = maxf(gain, square)
 			var length_bias := 1.0 / (1.0 + raw_distance * 0.21)
 			var call := _call_bias(ctx, mate)
@@ -1181,9 +1223,10 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				var d_arrival := _arrival_gain(ctx, player.team, lead, believed, mate, d_travel)
 				var d_gain: float = xt * focus + d_arrival
 				if ctx.pitch.in_opponent_penalty_area(player.team, lead):
-					d_gain = maxf(d_gain, expected_goals(ctx, mate, lead,
-						ctx.pitch.target_goal(player.team)) * SQUARE_CONVERT
-						* ctx.config.shot_appetite())
+					var d_xg := expected_goals(ctx, mate, lead,
+						ctx.pitch.target_goal(player.team))
+					d_gain = maxf(d_gain, d_xg * SQUARE_CONVERT
+						* ctx.config.shot_appetite_at(d_xg))
 				_note_factor(SimAblation.F_FOCUS, d_gain - d_arrival - xt)
 				_note_factor(SimAblation.F_ARRIVAL, d_arrival)
 				_note_factor(SimAblation.F_OFF_BALANCE, ob)
@@ -1583,7 +1626,7 @@ static func _add_pullback(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 	# What it is worth is what *his* shot is worth, not what the grass is. A point
 	# thirteen metres out reads much like any other patch of the D on the map, and
 	# the difference — that he is facing goal and nobody is — is the whole act.
-	var gain: float = best_worth * SQUARE_CONVERT * ctx.config.shot_appetite()
+	var gain: float = best_worth * SQUARE_CONVERT * ctx.config.shot_appetite_at(best_worth)
 	var call := _call_bias(ctx, mate)
 	var pattern := SimPatterns.pass_bias(ctx, player, best_mate, best_point)
 	_note_factor(SimAblation.F_OFF_BALANCE, off_balance)
@@ -2451,7 +2494,20 @@ const LANE_TAIL := 6.0
 ## `LANE_TAIL` for a ball into space, `FEET_TAIL` for one to feet. Neither is zero,
 ## and the note that said a ball to feet had nothing else pricing the man marking
 ## him was wrong -- `control_at` prices him, and always did.
-static func _lane_survival(ctx: SimContext, player: SimPlayer, from: Vector3, to: Vector3, travel: float, tail: float = 0.0) -> float:
+## `ignore_id` is the man the act is *about*, and there is exactly one caller
+## that has one: the knock past a defender. He is priced twice otherwise, once
+## as the race in `_escape_value` and once as a leg in the lane here, and the
+## two are the same man in the same act -- the whole point of a take-on is that
+## he is in the way. `control_at_time` already takes him as its `ignore_id` for
+## this reason; this term was the one that missed the convention.
+##
+## Measured before it did (`./run.sh replay --scenario take-on --seed 4001
+## --tick 1`): the knock up the line came back `succ 0.02` against a settling
+## touch's 0.40, with the full-back 2.2 m in front of the ball and 0.8 m off its
+## line -- charged at almost a certainty here, so the take-on could not be worth
+## anything however the rest of it was priced. 84% of trials ended `lost` and
+## none in a goal (`docs/THE_FOOTBALL.md` 45).
+static func _lane_survival(ctx: SimContext, player: SimPlayer, from: Vector3, to: Vector3, travel: float, tail: float = 0.0, ignore_id: int = -1) -> float:
 	var survival := 1.0
 	var seg := SimConsts.horizontal(to - from)
 	var length: float = maxf(seg.length(), 0.1)
@@ -2459,7 +2515,7 @@ static func _lane_survival(ctx: SimContext, player: SimPlayer, from: Vector3, to
 	var journey: float = maxf(length - tail, length * 0.5)
 	for oid in ctx.opponent_ids(player.team):
 		var o := ctx.players[oid]
-		if not o.on_pitch:
+		if not o.on_pitch or o.id == ignore_id:
 			continue
 		var rel := SimConsts.horizontal(o.pos - from)
 		var along: float = rel.dot(dir)
@@ -2538,8 +2594,17 @@ static func _escape_value(challenger: SimPlayer, player: SimPlayer, target: Vect
 ## then wait for him. Asking whether there is room for the *gap* rather than for
 ## the ball is how a carrier ends up knocking it into touch and calling it a
 ## run in behind.
-static func _room_ahead(ctx: SimContext, player: SimPlayer, dir: Vector3) -> float:
+static func _room_ahead(ctx: SimContext, player: SimPlayer, dir: Vector3,
+		round_keeper: bool = false) -> float:
+	var along: float = maxf(player.vel.dot(dir), 0.0)
 	var room := ctx.pitch.run_room(player.pos, dir, 1.0)
+	# ...and it ends at the keeper, unless going past him is the act. See
+	# `keeper_room`. The limit it returns is the ball's catch-up distance and
+	# this inversion is its roll to a stop, which is the longer of the two, so
+	# feeding one to the other errs toward the shorter knock -- the right way
+	# round for a ball being knocked at a goalkeeper.
+	if not round_keeper:
+		room = minf(room, keeper_room(ctx, player.pos, dir, player.team, along))
 	if is_inf(room):
 		return BURST_DISTANCE
 	# Undo the overshoot: ball travel is roughly its launch speed squared over
@@ -2566,12 +2631,126 @@ static func _room_ahead(ctx: SimContext, player: SimPlayer, dir: Vector3) -> flo
 	# the line, `sqrt(2 * decel * room)`; what the knock is worth is whatever is
 	# left of that after his own pace, converted back through the relative
 	# deceleration the way `carry_room` does it.
-	var along: float = maxf(player.vel.dot(dir), 0.0)
 	var decel: float = maxf(ctx.env.roll_decel, 0.1)
 	var delta: float = sqrt(2.0 * decel * maxf(room, 0.0)) - along
 	if delta <= 0.0:
 		return 0.0  # Running this fast, the ball is out of play before he is.
 	return minf(BURST_DISTANCE, delta * delta / (2.0 * decel))
+
+
+## How far a carried ball may travel this way before the goalkeeper is the man
+## who ends it.
+##
+## The room tests below measure to the paint, and the paint is the wrong end of
+## a run at goal. A ball knocked that way comes to rest in the keeper's hands
+## twenty metres before it reaches the line, and every metre between him and the
+## line is grass the touch may not spend. Nothing else in the engine said so:
+## `carry_room` and `_room_ahead` both invert the ball's travel against
+## `SimPitch.run_room`, and `close_control` shrinks the touch by where the ball
+## is *now*, which on a run from thirty metres is nowhere near where this one
+## ends up.
+##
+## Measured before it existed, `./run.sh scenario --only 1v1-clear --trace 1`:
+## seed 4001 is a single 6.4 m knock from thirty metres out, the ball runs 24 m
+## untouched, and the keeper collects it at 2.6 s -- the carrier's only touch of
+## the whole situation. The row read `touch` 3.4 and `gap s` 2.84 where a carry
+## that keeps the ball is under half a second (`docs/THE_FOOTBALL.md` 39).
+##
+## A hard test rather than a priced one, which is the right shape here: this is
+## a line he is running *at*, not one he is running beside (`docs/INVARIANTS.md`,
+## "a hard room test is the wrong shape for a line you are running beside").
+##
+## The race is between the keeper and the carrier for the ball's own resting
+## place, and it is linear. The carrier meets it at `L / along` -- the carry is
+## his and he has been running onto it the whole way. The keeper needs
+## `a / vk + reaction`, where `a` is how far he stands along the touch. Setting
+## the two equal gives `L = (a / vk + reaction) / (1 / along + 1 / vk)`, and no
+## square roots: the ball may run as far as the last metre the keeper cannot
+## beat him to.
+##
+## **Only inside his own penalty area**, which is the whole of what keeps this
+## from banning the forward carry. A ball coming to rest thirty metres from goal
+## is not a keeper's ball -- he has no hands out there and does not leave his
+## line for it -- so the limit is never shorter than the distance to the edge of
+## his area. What the rule bites on is the touch that would put the ball *past*
+## that edge, unattended, with him waiting for it. A carry that never reaches
+## the box is untouched by it, and so is a walking carrier: at low `along` the
+## race is his by a distance.
+##
+## His offset from the line of the touch is charged as time rather than as
+## distance -- the seconds it costs him to come across. A ball down the wing has
+## him a long way off it, the limit goes out with him, and the winger carries as
+## before.
+## How far past the edge of his area to look when the pitch itself sets no
+## bound, and how many halvings the race is solved in. Four puts the answer
+## inside a metre over a sixteen-metre span, which is finer than the touch it
+## sizes.
+const KEEPER_RACE_SPAN := 16.0
+const KEEPER_RACE_STEPS := 4
+
+
+static func keeper_room(ctx: SimContext, from: Vector3, dir: Vector3, team: int, along: float) -> float:
+	var keeper: SimPlayer = ctx.teams[SimConsts.other_team(team)].keeper()
+	if keeper == null or not keeper.on_pitch or along <= 0.01:
+		return INF
+	var d := SimConsts.horizontal(dir)
+	if d.length() < 1e-4:
+		return INF
+	d = d.normalized()
+	# Where the touch first enters the area his hands work in. Outside it the
+	# ball is nobody's in particular, and this says nothing about it.
+	#
+	# **Both bounds of the area, and the width one is not decoration.** Tested on
+	# the depth alone -- which is what this was -- a ball carried up the touchline
+	# thirty metres from the middle is "inside the box" the moment it passes the
+	# eighteen-yard line, and the race below then cut a winger's knock up the line
+	# from seven metres to under five, which is under the size that makes it a
+	# foot race, so `_add_dribbles` stopped offering the take-on at all. A ball at
+	# rest on the touchline is not a goalkeeper's whatever its x.
+	var attack: float = ctx.pitch.attack_dir(team)
+	var edge_x: float = ctx.pitch.target_goal(team).x - attack * ctx.pitch.penalty_depth
+	var toward: float = d.x * attack
+	if toward < 1e-4:
+		return INF  # Not going his way at all.
+	var box_entry: float = maxf((edge_x - from.x) / d.x, 0.0)
+	# ...and the stretch of the touch that is between the two edges of the area,
+	# which for a ball going straight down the line is nothing at all.
+	var half_w: float = ctx.pitch.penalty_half_width
+	if absf(d.z) > 1e-4:
+		var t_a: float = (half_w - from.z) / d.z
+		var t_b: float = (-half_w - from.z) / d.z
+		var enter: float = minf(t_a, t_b)
+		var leave: float = maxf(t_a, t_b)
+		if leave <= box_entry:
+			return INF  # Out of the area's width before it is deep enough.
+		box_entry = maxf(box_entry, enter)
+	elif absf(from.z) > half_w:
+		return INF  # Straight down a line the area never reaches.
+	var to_him := SimConsts.horizontal(keeper.pos - from)
+	if to_him.dot(d) <= 0.0:
+		return INF  # Behind the touch; not his ball.
+	# The furthest along this line the ball can come to rest with the carrier
+	# still beating him to it, solved against `SimValueField.time_to_arrive`
+	# rather than in closed form.
+	#
+	# A closed form cannot see the keeper's *velocity*, and a keeper who has
+	# already set off is the whole case this exists for: measured on `1v1-clear`,
+	# a knock that the standing-keeper arithmetic said was won by three metres
+	# was collected by an onrushing one. `time_to_arrive` charges him for the
+	# momentum he has and the momentum he has to shed, which is the same function
+	# every other race in the engine is settled by.
+	var lo := box_entry
+	var edge := ctx.pitch.run_room(from, d, LINE_MARGIN)
+	var hi: float = maxf(edge, box_entry) if not is_inf(edge) else box_entry + KEEPER_RACE_SPAN
+	hi = minf(hi, box_entry + KEEPER_RACE_SPAN)
+	for _i in KEEPER_RACE_STEPS:
+		var mid: float = (lo + hi) * 0.5
+		var at := from + d * mid
+		if SimValueField.time_to_arrive(keeper, at, keeper.reaction) > mid / along:
+			lo = mid
+		else:
+			hi = mid
+	return maxf(lo, box_entry)
 
 
 ## How big a touch this direction has room for, capped at `wanted`.
@@ -2602,17 +2781,29 @@ static func _room_ahead(ctx: SimContext, player: SimPlayer, dir: Vector3) -> flo
 ## for that whole stretch, so there is no second touch to shorten it with: the
 ## decision that put it there is the only one that could have known.
 static func carry_room(ctx: SimContext, player: SimPlayer, dir: Vector3, wanted: float) -> float:
-	var room := ctx.pitch.run_room(ctx.ball.ground_pos(), dir, LINE_MARGIN)
-	if is_inf(room):
-		return wanted
-	room = maxf(room, 0.0)
 	var along: float = maxf(player.vel.dot(dir), 0.0)
-	var decel: float = maxf(ctx.env.roll_decel, 0.1)
-	# `travel = 2 * along * sqrt(2 * decel * ahead) / decel`, solved for `ahead`.
-	# The standing case is the other branch: the ball simply goes `ahead`.
-	var allowed := room
-	if along > 0.01:
-		allowed = minf(allowed, room * room * decel / (8.0 * along * along))
+	var allowed := wanted
+	# The line is a hard end: past it the ball is out, so the touch shrinks to
+	# fit and a direction with no room at all is not a direction.
+	var room := ctx.pitch.run_room(ctx.ball.ground_pos(), dir, LINE_MARGIN)
+	if not is_inf(room):
+		allowed = minf(allowed, carry_push_for(ctx, player, dir, maxf(room, 0.0)))
+	# The keeper's ground is not that kind of end. He owns the grass a long
+	# knock would run to and he does not stop a man taking a one-metre touch in
+	# front of him, so this shortens the touch and never removes the direction.
+	#
+	# Floored for a specific reason. `_add_dribbles` drops a probe whose horizon
+	# is under `DRIBBLE_AHEAD_FLOOR`, and unfloored this drove the forward probe
+	# under it everywhere inside about sixteen metres -- so a man through on goal
+	# had no goal-ward carry on his list at all and nothing to do but strike it
+	# from wherever he happened to be. Measured on `./run.sh box`, the `carry`
+	# column was empty in every row of the eleven- and seven-metre blocks. The
+	# owner watched the same thing from the stand and called it shooting from too
+	# far out.
+	var his := keeper_room(ctx, ctx.ball.ground_pos(), dir, player.team, along)
+	if not is_inf(his):
+		allowed = minf(allowed, maxf(carry_push_for(ctx, player, dir, maxf(his, 0.0)),
+			SimTouch.DRIBBLE_AHEAD_FLOOR))
 	return minf(wanted, allowed)
 
 
@@ -2679,8 +2870,87 @@ static func close_control(ctx: SimContext, player: SimPlayer, wanted: float) -> 
 static func carry_travel(ctx: SimContext, player: SimPlayer, dir: Vector3, ahead: float) -> float:
 	var along: float = maxf(player.vel.dot(dir), 0.0)
 	var decel: float = maxf(ctx.env.roll_decel, 0.1)
-	var delta: float = sqrt(2.0 * decel * maxf(ahead, 0.0))
+	# The same `delta` the strike uses, off the same function, or this is a model
+	# of `SimTouch.dribble` that `SimTouch.dribble` does not obey.
+	var delta: float = sqrt(2.0 * decel * SimTouch.dribble_opening(ctx, player, dir, ahead))
 	return maxf(ahead, 2.0 * along * delta / decel)
+
+
+## The knock, in metres of *gap*, that sends the ball `travel` metres over the
+## grass. `carry_travel` read backwards, and the same inversion `carry_room`
+## does inline.
+##
+## It exists because the two frames are not interchangeable and the burst's own
+## size gate was written in the wrong one. A knock is specified as a gap between
+## the ball and a man who keeps running; everything it has to clear -- a
+## defender, a touchline, a goalkeeper -- is a distance over the grass; and at
+## any real running pace the second is three or four times the first.
+static func carry_push_for(ctx: SimContext, player: SimPlayer, dir: Vector3, travel: float) -> float:
+	var along: float = maxf(player.vel.dot(dir), 0.0)
+	var decel: float = maxf(ctx.env.roll_decel, 0.1)
+	if along <= 0.01:
+		return maxf(travel, 0.0)
+	return maxf(travel, 0.0) * maxf(travel, 0.0) * decel / (8.0 * along * along)
+
+
+## Where the ball is when the carrier plays it again, which for every touch but
+## the burst is a long way short of `carry_travel`.
+##
+## `carry_travel` answers "where would the ball be if he never touched it again".
+## That is the *burst's* question -- not re-touching is what makes a burst a
+## burst -- and it was being used as the horizon for the ordinary carry too,
+## which is re-taken the moment his cooldown lapses and the ball is inside
+## `CONTROL_RANGE`.
+##
+## The two had never been run against each other, which is `docs/INVARIANTS.md`'s
+## own trap: a function whose name is a claim about another function is unchecked
+## until something runs both. Run: `carry_travel` claims 11 m for a 1.08 m touch
+## at a sprint and 4.3 m at the mean speed of a match, and `./run.sh diagnose` --
+## counting the ball's own position at consecutive dribble touches in that same
+## match -- reports **0.55 m** between them, longest 0.78. Eight to twenty times
+## out, and it was the point every carry probe was scored at.
+##
+## Near goal that is the whole of "he shoots from too far out" (owner, watching
+## the one-on-one). The probe sat past the goal line, so `_in_play_odds` charged
+## an unpressured striker for putting the ball out and `control_at_time` handed
+## the grass to the keeper: a four-metre touch with nobody within twenty metres
+## came back at `success` 0.28, nothing could beat the shot, and the shot was
+## taken from wherever he happened to be standing.
+##
+## The gap opens to `ahead` and comes back, and he plays it at the first moment
+## his cooldown has lapsed *and* the ball is within his reach. A touch smaller
+## than his reach never leaves it, so that is simply the cooldown. Capped at
+## `carry_travel`, which is the same journey with nobody interrupting it.
+static func touch_travel(ctx: SimContext, player: SimPlayer, dir: Vector3, ahead: float) -> float:
+	var along: float = maxf(player.vel.dot(dir), 0.0)
+	var decel: float = maxf(ctx.env.roll_decel, 0.1)
+	# Off the same opening the strike uses, so the two cannot disagree.
+	var opening: float = SimTouch.dribble_opening(ctx, player, dir, ahead)
+	var delta: float = sqrt(2.0 * decel * opening)
+	var peak: float = delta / decel
+	var wait: float = player.touch_cooldown_length()
+	if ahead > SimConsts.CONTROL_RANGE:
+		# It is out of his reach between these two moments, so if the cooldown
+		# lapses inside that window he waits for it to come back.
+		#
+		# Measured against the *total* gap and not against the opening, which is
+		# the whole of it. The ball a carrier plays is not at his feet -- it lies
+		# most of a metre in front, right at the edge of `CONTROL_RANGE` -- so a
+		# touch that opens only a few centimetres still puts it beyond his reach,
+		# and he cannot play it again until friction has brought the whole gap
+		# back inside. Asked about the opening alone this said a man at nine
+		# metres a second would meet his ball 2.6 m on; the ball ran **seven
+		# metres** into the keeper's hands, and `keeper_room` and
+		# `control_at_time` were both being handed the short answer
+		# (`docs/THE_FOOTBALL.md` 48).
+		var span: float = sqrt(2.0 * decel * (ahead - SimConsts.CONTROL_RANGE)) / decel
+		if wait > peak - span:
+			wait = maxf(wait, peak + span)
+	# The ball has stopped by then whatever happens, and cannot travel further
+	# than its own roll.
+	var launch: float = along + delta
+	var t: float = minf(wait, launch / decel)
+	return clampf(launch * t - 0.5 * decel * t * t, 0.0, launch * launch / (2.0 * decel))
 
 
 ## How long that takes -- the other half of `carry_travel`, and the half the
@@ -2729,8 +2999,18 @@ static func carry_time(ctx: SimContext, player: SimPlayer, dir: Vector3, ahead: 
 ## distance; the weight error stretches or shortens the travel, which only
 ## matters for a line the touch is heading at. Sharing them with `SimTouch`
 ## means tuning the error model retunes what the engine is willing to try.
-static func _in_play_odds(ctx: SimContext, player: SimPlayer, dir: Vector3, ahead: float) -> float:
-	var travel := carry_travel(ctx, player, dir, ahead)
+## `commits` is whether this is a touch he runs to the end of. The burst is the
+## one that is -- not re-touching is the act -- so its ball really does travel
+## the whole of `carry_travel`. Every other carry is re-taken while the ball is
+## still nowhere near stopping, and asking this term about the longer journey
+## charged an ordinary touch for a line the ball was never going to reach.
+## Measured at eleven metres from goal with nobody recovering, that alone was
+## the difference between `success` 0.19 and a carry a striker would actually
+## play. See `touch_travel`.
+static func _in_play_odds(ctx: SimContext, player: SimPlayer, dir: Vector3, ahead: float,
+		commits: bool = false) -> float:
+	var travel: float = carry_travel(ctx, player, dir, ahead) if commits \
+		else touch_travel(ctx, player, dir, ahead)
 	if travel < 0.1:
 		return 1.0
 	var yaw := SimTouch.aim_sigma(ctx, player, player.attrs.dribbling, ahead, SimTouch.DRIBBLE_AIM_BASE, dir)
@@ -2848,8 +3128,8 @@ static func _carry_shot_gain(ctx: SimContext, player: SimPlayer, target: Vector3
 	# amount of patient pricing survives a 6:1 handicap. With it on both
 	# sides, the fit decides how much shots are worth and the football decides
 	# which shot gets taken.
-	return expected_goals(ctx, player, target, Vector3(goal.x, 0.9, 0.0)) \
-		* CARRY_SHOT_CONVERT * ctx.config.shot_appetite()
+	var chance := expected_goals(ctx, player, target, Vector3(goal.x, 0.9, 0.0))
+	return chance * CARRY_SHOT_CONVERT * ctx.config.shot_appetite_at(chance)
 
 
 ## Whether a knock past the man in front is a finish round the keeper: he is
@@ -2968,6 +3248,7 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 		# the ball over the line: clamped back inside the pitch, the probe
 		# looked exactly like one played along it.
 		var wanted := close_control(ctx, player, DRIBBLE_DISTANCE)
+		var along_dir: float = maxf(player.vel.dot(dir), 0.0)
 		var horizon := carry_room(ctx, player, dir, wanted)
 		if horizon < SimTouch.DRIBBLE_AHEAD_FLOOR:
 			continue
@@ -2988,6 +3269,11 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 		# several touches from now, and `carry_room` and `close_control` already
 		# say how far that direction can be pursued at all. That is the horizon to
 		# price it over. The touch is the step he takes along it.
+		# How far down this line he is going, which is a distance over the grass
+		# and not a touch size. See `CARRY_HORIZON_SECONDS`.
+		var pursuit: float = maxf(along_dir * CARRY_HORIZON_SECONDS, DRIBBLE_DISTANCE)
+		pursuit = minf(pursuit, maxf(ctx.pitch.run_room(ctx.ball.ground_pos(), dir, LINE_MARGIN), 0.0))
+		pursuit = minf(pursuit, maxf(keeper_room(ctx, ctx.ball.ground_pos(), dir, player.team, along_dir), 0.0))
 		var reach: float = minf(horizon, stride_room(player, dir))
 		# The size of the touch follows the room the direction actually buys, so
 		# getting away from a man is a knock into space and being hemmed in is a
@@ -3018,18 +3304,38 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 		# carrier probing the metre in front of his feet and finding it empty; the
 		# roll is added because it is where the ball ends up.
 		var ahead := SimTouch.dribble_ahead(ctx, player, space, 0.0, reach)
-		var look: float = maxf(horizon, carry_travel(ctx, player, dir, ahead))
+		var look: float = maxf(pursuit, touch_travel(ctx, player, dir, ahead))
 		# Bias the probe set toward the way this team attacks, so a right-back
 		# does not consider dribbling into their own net as often as forward.
 		var target := ctx.pitch.clamp_to_pitch(player.pos + dir * look, 1.0)
+		# Where this touch actually leaves the ball, which is not where the
+		# direction leads.
+		#
+		# The risk belongs to the touch and the reward belongs to the direction,
+		# and reading both at one point is what stopped a striker running the
+		# ball into the box. `target` is the horizon -- several touches down the
+		# line, which is right for what a carry is *worth* -- and asking
+		# `control_at_time` there means asking who owns grass six metres nearer
+		# the keeper than the ball is going. Measured at twenty-two metres from
+		# goal with nobody within twenty metres of him, the forward carry came
+		# back at `success` **0.07** while the same probe's gain read 0.517: the
+		# keeper owned the far end, so the man could never price carrying toward
+		# him and struck it from where he stood instead.
+		#
+		# What survives here unchanged is `_lane_survival` below -- the ball's
+		# own journey is this short, so the lane is this short -- and the gain
+		# and the loss, which are read at the horizon because that is the
+		# question they answer.
+		var landing := ctx.pitch.clamp_to_pitch(
+			ctx.ball.ground_pos() + dir * touch_travel(ctx, player, dir, ahead), 1.0)
 		var forwardness: float = dir.x * attack
-		var escape := _escape_value(challenger, player, target)
+		var escape := _escape_value(challenger, player, landing)
 		# When the contest at the far end happens, which is when he is there with
 		# it. `control_at_time` is then the same question a ball into space is
 		# priced with -- who owns that grass at the moment it matters, rather than
 		# who is standing nearest to it now.
-		var when := SimValueField.time_to_arrive(player, target, 0.0)
-		var success := ctx.value.control_at_time(ctx, target, player.team, when)
+		var when := SimValueField.time_to_arrive(player, landing, 0.0)
+		var success := ctx.value.control_at_time(ctx, landing, player.team, when)
 		# Working the ball back across himself is a touch he is far less likely to
 		# get right, and the probe set is the only place the engine can express
 		# that as a *choice*. The race in `_escape_value` already charges him for
@@ -3066,7 +3372,7 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 		# It costs nothing on the carry that stays under his sole: the lane is two
 		# metres long, and `_lane_survival` only counts opponents between the ends
 		# of it.
-		success *= _lane_survival(ctx, player, ctx.ball.ground_pos(), target, when)
+		success *= _lane_survival(ctx, player, ctx.ball.ground_pos(), landing, when)
 		var c_xt := ctx.value.xt_at(player.team, target, ctx.pitch)
 		var c_focus := tactics.focus_at(target.z, ctx.pitch)
 		# Near goal the carry is worth the shot it carries toward, not the
@@ -3137,11 +3443,31 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 	# scores a point clamped back inside the touchline. Knocking it into space you
 	# do not have is a throw-in, and unchecked it produced them by the dozen.
 	var wanted_burst: float = BURST_DISTANCE * 0.7 if round_keeper else close_control(ctx, player, BURST_DISTANCE)
-	var push := minf(wanted_burst, _room_ahead(ctx, player, burst_dir))
+	var push := minf(wanted_burst, _room_ahead(ctx, player, burst_dir, round_keeper))
 	# Beyond his stride, but still off it: the knock a man at full pace can run
 	# onto is not the one a man who has just got going can.
 	push = minf(push, stride_room(player, burst_dir, BURST_SECONDS))
-	if push < BURST_DISTANCE * (0.35 if round_keeper else 0.55):
+	# In a one-on-one the man to beat is the keeper, who is never a challenger.
+	var beat_man := challenger
+	if round_keeper and beat_man == null:
+		beat_man = ctx.teams[SimConsts.other_team(player.team)].keeper()
+	# And the size of it is set by the man, not by a constant.
+	#
+	# A take-on is a ball put far enough past him that he cannot reach it and no
+	# further -- `BURST_CLEAR` to `BURST_PAST_MAX` beyond where he stands, over
+	# the grass. Left as a fixed gap the act was the same nine metres whoever was
+	# in front of it and wherever he stood, which at pace is a twenty-metre ball
+	# and a different act entirely. Nobody in front of him is the other case: the
+	# knock into an empty half has no man to be sized by, and keeps the gap-frame
+	# test it always had.
+	var beat_along: float = -1.0
+	if beat_man != null:
+		beat_along = SimConsts.horizontal(beat_man.pos - ctx.ball.ground_pos()).dot(burst_dir)
+	if beat_along > 0.0:
+		push = minf(push, carry_push_for(ctx, player, burst_dir, beat_along + BURST_PAST_MAX))
+		if carry_travel(ctx, player, burst_dir, push) < beat_along + BURST_CLEAR:
+			return  # It does not finish past him, so it is not a foot race.
+	elif push < BURST_DISTANCE * (0.35 if round_keeper else 0.55):
 		return  # Not enough grass for this to be the knock it was scored as.
 	# And every term below is read where the ball ends up, which is a long way
 	# past where the gap opens.
@@ -3190,10 +3516,6 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 	# into a defended third is actually decided by. It is the same function a
 	# lofted pass into the box is priced with, for the same reason.
 	var burst_seconds := carry_time(ctx, player, burst_dir, push)
-	# In a one-on-one the man to beat is the keeper, who is never a challenger.
-	var beat_man := challenger
-	if round_keeper and beat_man == null:
-		beat_man = ctx.teams[SimConsts.other_team(player.team)].keeper()
 	var burst_escape := _escape_value(beat_man, player, arrival)
 	var burst_success := ctx.value.control_at_time(
 		ctx, arrival, player.team, burst_seconds, beat_man.id if beat_man != null else -1)
@@ -3205,10 +3527,14 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 	# to spread. Left unpriced while the carry was priced, the softmax simply
 	# moved the problem: carries out of play fell by a fifth and bursts out of
 	# play rose by a fifth.
-	burst_success *= _in_play_odds(ctx, player, burst_dir, push)
+	burst_success *= _in_play_odds(ctx, player, burst_dir, push, true)
 	# The longest lane in the game, and the one most likely to have somebody
 	# standing in it. Same term as the carry above and as every pass.
-	burst_success *= _lane_survival(ctx, player, ctx.ball.ground_pos(), arrival, burst_seconds)
+	# ...and the man it is being knocked past is not charged here as well. See
+	# `_lane_survival`'s `ignore_id`: `burst_escape` above is his race and it is
+	# the same man and the same act.
+	burst_success *= _lane_survival(ctx, player, ctx.ball.ground_pos(), arrival, burst_seconds,
+		0.0, beat_man.id if beat_man != null else -1)
 	# Pace, acceleration and the room already won decide whether it comes off,
 	# and all three are in the race above.
 	#
@@ -3301,6 +3627,33 @@ static func _add_hold(ctx: SimContext, player: SimPlayer, uncontrolled: bool, re
 	var success: float = lerpf(0.72, 0.97, player.attrs.first_touch)
 	var shield_cost: float = lerpf(0.30, SHIELD_CHALLENGE_COST, shield_skill(player))
 	success -= ctx.pressure_on(player) * 0.16 + ctx.challenge_on(player) * shield_cost
+	# And a settling touch is a *check*, which a man at a sprint cannot make in
+	# one touch.
+	#
+	# `SimTouch.settle` leaves the ball about a metre away measured against the
+	# grass, with none of his pace on it -- and he keeps all of his. The distance
+	# he needs to pull up in is his own, `v^2 / 2a`, and when that is longer than
+	# where the ball comes to rest he runs straight past it and has to turn back.
+	# Nothing said so: the hold read `success` 0.90 for a man doing nine metres a
+	# second.
+	#
+	# Measured on `1v1-clear` trial 6: at **9.1 m/s** he settled the ball, it left
+	# his foot at **3.0**, and it was 1.3 m *behind* him a quarter of a second
+	# later. He braked from 9.1 to 2.4, turned, came back, and the situation had
+	# lost 1.3 seconds and no ground -- the owner's "the ball ends up behind the
+	# player, so he loses the momentum".
+	#
+	# Priced rather than forbidden, and `first_touch` is already the other half of
+	# this success, so it stays what the owner asked for: something a man with bad
+	# control does occasionally and a good one rarely.
+	# Only for a ball already at his feet. A ball arriving with pace is taken by
+	# `SimTouch.first_touch`, which is a cushion and not a stop -- it leaves pace
+	# on the ball and the man running onto it keeps up with it, which is what
+	# taking one down on the move is.
+	if not uncontrolled:
+		var pull_up: float = SimConsts.horizontal(player.vel).length_squared() \
+			/ (2.0 * maxf(player.max_decel(), 0.1))
+		success *= clampf(HOLD_AHEAD / maxf(pull_up, HOLD_AHEAD), 0.15, 1.0)
 	_note_factor(SimAblation.F_RETENTION, tactics.retention_bias())
 	_candidates.append({
 		"action": Action.HOLD,
@@ -4126,6 +4479,27 @@ static func _wait_discount(ctx: SimContext, player: SimPlayer, ablate: int = -1)
 const PREPARE_SECONDS := 0.5
 ## What a wholly unprepared strike keeps of its accuracy.
 const SET_SUCCESS_FLOOR := 0.5
+## And below this much orientation there is no strike at goal on the list at all.
+##
+## The damp above prices a rushed strike and cannot forbid one, and half of
+## `success` is not enough to lose the pick against the compressed match's
+## `shot_appetite`, which is 5.7 at the nine-minute clock. Measured on
+## `shot-edge` (`./run.sh replay --scenario shot-edge --seed 4001 --tick 1`):
+## with `set 0.50` already applied the shot scores 0.1356 against the settling
+## touch's 0.0820, takes **98%** of the softmax, and is struck at **0.01 s** --
+## 1.0 shots and 0.0 carries a trial, every trial, from a man who has this
+## instant come by the ball with two centre-backs four metres in front of him
+## (`docs/THE_FOOTBALL.md` 41).
+##
+## Two multipliers on opposite sides of one product cannot be compared by
+## tuning either: the appetite is the compressed clock's scoring fit and is one
+## object (`docs/INVARIANTS.md`), and the beat is a fact about a body. So the
+## beat is a gate as well as a price, and the gate is narrow -- only a man whose
+## ball is already under his control and who has had *no* look at all. A ball
+## arriving with pace is a first-time strike and a different act: `readiness`
+## counts its flight as preparation, and this is skipped for it besides.
+## Everything above the floor is priced by the damp exactly as before.
+const SET_STRIKE_FLOOR := 0.25
 
 
 ## Seconds of orientation this player has had: time on the ball this spell,
@@ -4207,6 +4581,15 @@ static func scan_gain(ctx: SimContext, player: SimPlayer) -> float:
 	return SCAN_GAIN * clampf(stale / float(n) / SCAN_STALE_SECONDS, 0.0, 1.0) * freedom
 
 
+## Whether an option's value depends on where this player's teammates are, which
+## is the only thing a look up buys him. See the dwell in `_hold_score`.
+static func _reads_teammates(action: int) -> bool:
+	match action:
+		Action.GROUND_PASS, Action.LOFTED_PASS, Action.THROUGH_BALL, Action.CROSS:
+			return true
+	return false
+
+
 ## What a hold is worth: the decision it defers, not the ball it keeps.
 ##
 ## Every other candidate resolves the possession. A pass ends with the ball at
@@ -4284,8 +4667,26 @@ static func _hold_score(ctx: SimContext, player: SimPlayer, c: Dictionary, best_
 	# The dwell. Applied with the same sign guard as the bias: above zero the
 	# look makes waiting worth more, below zero it makes waiting cost less --
 	# both are "the board after a look is better than this one".
+	#
+	# **And only to a continuation a look could improve.** `scan_gain` is the
+	# understatement in his continuation caused by `SimPerception` keeping his
+	# view of his *teammates* stale -- that is the whole of its derivation. A
+	# shot at goal, a carry and a clearance do not depend on where his teammates
+	# are, so for those the understatement is zero and there is nothing to buy.
+	#
+	# Applied to them anyway it broke this function's own invariant. The
+	# docstring above says a hold "cannot beat a winning one", and the arithmetic
+	# of a man through on goal was `0.83 success x 1.05 bias x 1.28 look x 0.99
+	# discount` = **1.10 times the option it was deferring** -- so waiting beat
+	# acting outright, every decision, for as long as he was unpressured.
+	# Measured, he took six touches, advanced nine metres of which seven were his
+	# first, and then struck it from wherever the dwell had left him standing:
+	# `1v1-clear` shot from 21.3 m however the shot and the carry were priced
+	# (`docs/THE_FOOTBALL.md` 46, owner watching the one-on-one).
 	var scan := scan_gain(ctx, player)
 	if ablate == SimAblation.T_SCAN:
+		scan = 0.0
+	if best_index >= 0 and not _reads_teammates(int(_candidates[best_index]["action"])):
 		scan = 0.0
 	if scan > 0.0:
 		var look := 1.0 + scan

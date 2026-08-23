@@ -52,15 +52,22 @@ usage: ./run.sh <command> [args]
                             said, against what the engine did with the same ball.
                             One geometry, every ball played, so no selection is
                             in it. Simulates: ~10 s at the default 40 trials
-  scenario [--only NAME]    the named situations, each set rather than waited
+  scenario [--only NAME]    the 25 named situations, each set rather than waited
       [--trials N]          for, run forward a few seconds and scored by how it
       [--quality Q]         ended. A table of shares, and the same situations are
-                            watchable with `view3d --scenario NAME`. ~2 s each
-                            at the default 40 trials
+      [--acts]              watchable with `view3d --scenario NAME`. ~2 s each
+      [--trace N]           at the default 40 trials.
+                            --acts adds what the attacking side actually played,
+                            per trial, by touch kind: the only way to tell an act
+                            that is never generated from one that is chosen and
+                            fails. --trace N prints trial N's event log in order
   strike [--seed N]         where a struck ball actually lands, against where
                             execution_accuracy told the decision layer it would.
                             The two share one error model or they do not. Instant
   replay --tick T           every decision around one tick of one seed, in
+      [--scenario NAME]     --scenario opens a named situation instead of a
+                            kick-off, so the candidate list behind a scenario row
+                            can be read at --tick 1
       [--seed N] [--around S]
                             words. The other half of the overlay's bookmark:
                             it prints the command that reproduces it

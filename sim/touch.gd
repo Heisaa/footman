@@ -74,8 +74,25 @@ const SHOT_AIM_BASE := 0.08
 ## construction. A touch has to be something the player then has to run onto.
 const DRIBBLE_AHEAD_MIN := 1.8
 const DRIBBLE_AHEAD_MAX := 4.2
-## However hard a dribbler is pressed, the touch still has to clear their reach.
-const DRIBBLE_AHEAD_FLOOR := SimConsts.CONTROL_RANGE * 1.2
+## The smallest touch there is: the ball kept at the edge of his own reach.
+##
+## It was `CONTROL_RANGE * 1.2` -- deliberately *past* his reach, so that a touch
+## is always something he has to run onto and the ball is never glued to him
+## (`PLAN.md` §10). That reasoning holds; the twenty per cent did not, because a
+## gap is not a distance over the grass. A ball a fifth of a metre beyond his
+## reach is a ball he cannot play again until friction has brought the whole gap
+## back inside, and at nine metres a second that is **seven metres of pitch**.
+##
+## So the engine's *smallest* forward touch was a seven-metre ball, and a striker
+## bearing down on a goalkeeper had no way to keep it close: his choices were a
+## knock the keeper collected or a shot from twenty-five metres, which is both of
+## the things the owner watched. At the edge of his reach instead, the same man
+## plays it again a third of a second later having covered three metres -- close
+## control at a sprint, which is the act that was missing.
+##
+## It is still not glued. He has to run onto every touch; what has changed is
+## that the run is a stride rather than a chase.
+const DRIBBLE_AHEAD_FLOOR := SimConsts.CONTROL_RANGE
 ## How far round a first touch can turn the ball from the line it arrived on, in
 ## radians, from a player with no touch to speak of to one who can take anything
 ## down facing anywhere. Beyond this he takes what he can now and turns with his
@@ -896,6 +913,35 @@ static func dribble_ahead(ctx: SimContext, player: SimPlayer, space: float, push
 	return minf(ahead, max_ahead)
 
 
+## How much of `ahead` this touch still has to open up.
+##
+## `ahead` is where the touch leaves the ball *relative to him* -- that is what
+## `dribble_ahead` documents, what the debug overlay draws as the place he will
+## meet it again, and what `SimDecision` prices the carry on. The strike below
+## was sizing itself to open a further `ahead` on top of wherever the ball
+## already was, and a carrier's ball is never at his feet: it lies most of a
+## metre in front of him, because that is where his last touch put it.
+##
+## So a man asking for the ball 1.7 m in front of him got it 2.6 m in front,
+## struck at 9.0 m/s while he ran at 5.3, and it stayed outside his 0.9 m reach
+## for **1.15 seconds and nine metres of pitch** with his cooldown reading zero
+## the whole way -- ready to play it and unable to reach it. The owner's words
+## watching `1v1-clear` trials 4 and 7: *a carry forward becomes much longer than
+## the player intended*.
+##
+## Zero when the ball is already further ahead than he wants it. There is nothing
+## to open then, and the touch is the gentlest one he has.
+##
+## A settling touch is not in this frame at all -- `settle` measures against the
+## grass -- so it does not ask.
+static func dribble_opening(ctx: SimContext, player: SimPlayer, dir: Vector3, ahead: float) -> float:
+	var d := SimConsts.horizontal(dir)
+	if d.length_squared() < 1e-6:
+		return maxf(ahead, 0.0)
+	var gap := SimConsts.horizontal(ctx.ball.ground_pos() - player.pos).dot(d.normalized())
+	return clampf(ahead - maxf(gap, 0.0), 0.0, maxf(ahead, 0.0))
+
+
 static func dribble(ctx: SimContext, player: SimPlayer, dir: Vector3, space: float, push: float = 0.0, away: float = 0.0, max_ahead: float = INF, settle: bool = false) -> void:
 	var d := SimConsts.horizontal(dir)
 	if d.length_squared() < 1e-6:
@@ -905,12 +951,32 @@ static func dribble(ctx: SimContext, player: SimPlayer, dir: Vector3, space: flo
 	# Relative speed that puts the ball `ahead` metres in front before friction
 	# hands it back to the runner -- and, for a settling touch, the whole of the
 	# strike, because there the runner is not going anywhere with it.
-	var delta := sqrt(2.0 * maxf(ctx.env.roll_decel, 0.1) * ahead)
+	# Only the part of `ahead` the ball has not already got. See
+	# `dribble_opening`; a settling touch is measured against the grass and is
+	# the whole strike either way.
+	var opening: float = ahead if settle else dribble_opening(ctx, player, d, ahead)
+	var delta := sqrt(2.0 * maxf(ctx.env.roll_decel, 0.1) * opening)
 	var along: float = 0.0 if settle else maxf(player.vel.dot(d), 0.0)
-	var speed: float = clampf(along + delta, 1.2, 16.0)
 
 	var sigma := aim_sigma(ctx, player, player.attrs.dribbling, ahead, DRIBBLE_AIM_BASE, d)
-	var vel := _perturb(ctx, d * speed, sigma, weight_sigma(player, player.attrs.dribbling) * 1.25, 0.0)
+	# The weight error belongs to the part of the strike he is choosing, and for
+	# a carry that is `delta` alone.
+	#
+	# `_perturb` scales the whole velocity, which everywhere else is the right
+	# thing: a pass, a shot and a clearance are struck from nothing, so all of
+	# the speed is his. A carry is not -- most of the ball's speed is the
+	# momentum it already shares with a running man, and that is in the ball
+	# whether he strikes it well or badly. Scaling it made the mis-hit bigger
+	# than the intent: at 8.8 m/s the gap he wants is worth **0.93 m/s** of
+	# relative speed and a twenty per cent error on the total is **1.95**, so the
+	# size of a carry was decided by the draw and not by the decision. The ball
+	# then ran metres past where he meant it to be -- `1v1-clear` trials 4 and 7,
+	# and the owner's words: *a carry forward becomes much longer than the player
+	# intended*.
+	var weight: float = clampf(1.0 + ctx.rng.gauss_clamped(
+		0.0, weight_sigma(player, player.attrs.dribbling) * 1.25, 2.5), 0.3, 2.0)
+	var struck: float = clampf(along + delta * weight, 1.2, 16.0)
+	var vel := (d * struck).rotated(Vector3.UP, ctx.rng.gauss_clamped(0.0, sigma, 2.8))
 	vel.y = 0.0
 	# Slight topspin so the touch runs on rather than sitting up. Positive
 	# up-cross-direction is topspin; negative is backspin.
@@ -1489,7 +1555,12 @@ static func clearance(ctx: SimContext, player: SimPlayer) -> void:
 const HEADER_PACE_BONUS_MAX := 4.5
 
 
-static func header(ctx: SimContext, player: SimPlayer, dir: Vector3, aim_up: float, intent: int = -1, goal_aim: Vector3 = Vector3.INF, chance_quality: float = 0.0) -> void:
+## `power_scale` is how much of his neck goes into it, and it is the only way
+## this function can be told that a contact is a cushion rather than a nod. The
+## power below is entirely about how far a man can *send* one -- `heading`,
+## `jumping` and the pace already on the ball -- so a knock-down played at full
+## power is a clearance whatever direction it is aimed in.
+static func header(ctx: SimContext, player: SimPlayer, dir: Vector3, aim_up: float, intent: int = -1, goal_aim: Vector3 = Vector3.INF, chance_quality: float = 0.0, power_scale: float = 1.0) -> void:
 	var d := SimConsts.horizontal(dir)
 	if d.length_squared() < 1e-6:
 		d = player.heading_dir()
@@ -1501,7 +1572,7 @@ static func header(ctx: SimContext, player: SimPlayer, dir: Vector3, aim_up: flo
 	# metres -- the owner watched it, and `test_distances` now has the band.
 	var power: float = lerpf(5.0, 13.0, player.attrs.heading) \
 		+ minf(incoming * 0.32, HEADER_PACE_BONUS_MAX)
-	power *= lerpf(0.8, 1.1, player.attrs.jumping) * player.fatigue_factor()
+	power *= lerpf(0.8, 1.1, player.attrs.jumping) * player.fatigue_factor() * power_scale
 	var vel := d * (power * cos(aim_up)) + Vector3(0.0, power * sin(aim_up), 0.0)
 	var sigma := aim_sigma(ctx, player, player.attrs.heading, 10.0, 0.13)
 	vel = _perturb(ctx, vel, sigma, 0.16, 1.0)
