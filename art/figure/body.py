@@ -48,6 +48,14 @@ class Look:
     # can honestly mean.
     build = 0.5
 
+    # Which of `WorldLook`'s five bodies this man is. **Nothing here reads it
+    # yet.** Every proportion in this class is a fraction of height and the game
+    # scales a model by height over 1.78, so the five bodies come out of the
+    # mould identical but for `build` -- a giant is a big standard man and
+    # nothing more. Making him a different *shape* is a table of overrides that
+    # does not exist, and `docs/THE_MODELS.md` is where the decision belongs.
+    body_type = 0
+
     # The head is a rounded box, not a ball. This is the single biggest
     # departure from a sphere-based figure and it is what the references
     # actually are: a flat-ish front to carry the face, soft corners, and a jaw
@@ -120,6 +128,7 @@ def build(look: Look):
     boots = Solid("boots")
     collar = Solid("collar")
     stripes = Solid("stripes")
+    hoops = Solid("hoops")
 
     _body(skin, look, h)
     # The hair shell and its hairline are cut first: the cut takes a bite out of
@@ -127,7 +136,7 @@ def build(look: Look):
     # squarely inside the bite.
     _hair(hair, look, h)
     _head(skin, ink, hair, look, h)
-    _kit(shirt, trim, collar, shorts, socks, boots, stripes, look, h)
+    _kit(shirt, trim, collar, shorts, socks, boots, stripes, hoops, look, h)
 
     parts.append((skin, look.skin))
     parts.append((shirt, look.shirt_colour))
@@ -135,6 +144,7 @@ def build(look: Look):
     parts.append((collar, look.trim_colour))
     parts.append((shorts, look.shorts_colour))
     parts.append((socks, look.sock_colour))
+    parts.append((hoops, look.trim_colour))
     parts.append((boots, look.boot_colour))
     parts.append((stripes, look.trim_colour))
     # Always: a bald man still has brows, and they live in the hair solid
@@ -462,7 +472,7 @@ def _hair(hair, look, h):
 # --- The kit ----------------------------------------------------------------
 
 
-def _kit(shirt, trim, collar, shorts, socks, boots, stripes, look, h):
+def _kit(shirt, trim, collar, shorts, socks, boots, stripes, hoops, look, h):
     w = look.width() * h
     limb = look.limb() * h
 
@@ -612,15 +622,34 @@ def _kit(shirt, trim, collar, shorts, socks, boots, stripes, look, h):
         top = (side * w * 0.43, 0.0, h * (SOCK_TOP + 0.02))
         ankle = (side * w * 0.44, 0.0, h * (BOOT_TOP - 0.005))
         socks.add(Capsule(top, ankle, limb * 1.52, limb * 1.28))
+    socks.cut(Plane((0.0, 0.0, h * SOCK_TOP), (0.0, 0.0, -1.0)), k=h * 0.004)
+
+    # The hoops: **a slab crossed with the sock's own shell**, the same trick as
+    # the boot stripes and the neckline insert, and for the same reason.
+    #
+    # They used to be capsules a shade wider than the sock, placed on its centre
+    # line. A capsule of radius r is a *ball* until its ends are further apart
+    # than r, and these were 28 mm apart at a radius of 98 mm -- so each "hoop"
+    # spanned 220 mm of a 280 mm sock, and two of them covered the leg. Worse,
+    # at that radius the ball ran tangent to the sock for its whole length, so
+    # the two surfaces were never more than a millimetre or two apart and any
+    # thinning at all made them cross.
+    #
+    # **No render in this sandbox could have shown it**, and that is the part
+    # worth remembering: every kit in `cast.KITS` paints the sock and the trim
+    # the same colour, so a sock swallowed by its own hoops looks exactly like a
+    # sock. It took a `.glb` painted from a real club's palette.
+    #
+    # A slab clipped to the sock is a band that follows the taper and the lean
+    # for nothing, and it has a real thickness rather than a radius.
+    for side in (-1.0, 1.0):
         for i in range(look.sock_hoops):
             at = h * (SOCK_TOP - 0.024 - i * 0.030)
-            # On the sock's own line rather than at a fixed x: the sock leans
-            # and tapers, and a hoop that ignores both climbs the leg.
-            t = (h * (SOCK_TOP + 0.02) - at) / (h * (SOCK_TOP + 0.025 - BOOT_TOP))
-            x = side * w * (0.43 + 0.01 * t)
-            r = limb * (1.52 - 0.24 * t) + h * 0.0016
-            trim.add(Capsule((x, 0.0, at + h * 0.008), (x, 0.0, at - h * 0.008), r))
-    socks.cut(Plane((0.0, 0.0, h * SOCK_TOP), (0.0, 0.0, -1.0)), k=h * 0.004)
+            hoops.add(RoundBox((side * w * 0.44, 0.0, at),
+                               (limb * 2.2, limb * 2.2, h * 0.009),
+                               radius=h * 0.0026))
+    # Standing a little proud of it, the way the stripes stand off the boot.
+    hoops.keep_inside(socks, -h * 0.0016)
 
     # --- Boots ---------------------------------------------------------------
     # A rounded wedge with the toe forward and the heel under the ankle, plus

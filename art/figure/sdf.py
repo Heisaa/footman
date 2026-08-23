@@ -322,17 +322,46 @@ class Solid:
         self.ops.append(("keep_inside", (other, float(offset)), float(k)))
         return self
 
+    def cut_inside(self, other, offset=0.0, k=0.0):
+        """Take another solid's outer form out of this one.
+
+        `keep_inside` upside down, and it is for the same trouble seen from the
+        other side. A trim laid on a garment -- a hoop on a sock, a cuff on a
+        sleeve -- stands a couple of millimetres proud of it, and both surfaces
+        are there, two millimetres apart. Thin the pair to a triangle budget and
+        they cross, and the hoop comes out as a ragged band of the wrong colour.
+
+        Cut the host away underneath and there is only one surface: the trim
+        sits in a groove of its own, which is what a hoop knitted into a sock
+        looks like anyway. A **negative** `offset` cuts that much beyond the
+        other's surface, which is the clearance the two need.
+        """
+        self.ops.append(("cut_inside", (other, float(offset)), float(k)))
+        return self
+
     def bounds(self, pad=0.0):
         los, his = [], []
+        clip = None
         for kind, prim, k in self.ops:
-            if kind != "add":
-                continue
-            lo, hi = prim.bounds()
-            los.append(lo - k - pad)
-            his.append(hi + k + pad)
+            if kind == "add":
+                lo, hi = prim.bounds()
+                los.append(lo - k - pad)
+                his.append(hi + k + pad)
+            elif kind == "keep":
+                # A smooth intersection never leaves anything outside the shape
+                # it kept, so the grid need not reach past it. Only an
+                # optimisation, and the one that makes a solid clipped to a
+                # single limb cost a limb rather than a whole figure.
+                lo, hi = prim.bounds()
+                pair = (lo - k - pad, hi + k + pad)
+                clip = pair if clip is None else (np.maximum(clip[0], pair[0]),
+                                                  np.minimum(clip[1], pair[1]))
         if not los:
             raise ValueError(f"solid {self.name!r} has nothing in it")
-        return np.min(los, axis=0), np.max(his, axis=0)
+        lo, hi = np.min(los, axis=0), np.max(his, axis=0)
+        if clip is not None:
+            lo, hi = np.maximum(lo, clip[0]), np.minimum(hi, clip[1])
+        return lo, hi
 
     def sample(self, axes, shape):
         """This solid's outer form on someone else's grid: added shapes only."""
@@ -356,6 +385,10 @@ class Solid:
             if kind == "keep_inside":
                 other, offset = prim
                 grid = smax(grid, other.sample(axes, grid.shape) + np.float32(offset), k)
+                continue
+            if kind == "cut_inside":
+                other, offset = prim
+                grid = smax(grid, -(other.sample(axes, grid.shape) + np.float32(offset)), k)
                 continue
             plo, phi = prim.bounds()
             pad = k + 2.0 * cell

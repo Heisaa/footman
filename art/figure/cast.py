@@ -9,6 +9,44 @@ from .body import Look
 from .palette import Color
 from .rng import SimRng, clamp, lerp
 
+# --- The body the record packed into the seed --------------------------------
+#
+# `world/look.gd` writes a man's body type, height and build into the low bits
+# of his `appearance_seed`, because `SimPlayer` carries none of the three and
+# the seed is the only thing about his looks that reaches a match. A render is
+# only the man the game will show if it reads them back instead of drawing its
+# own -- a record saying 2.04 m used to arrive here and get an ordinary man.
+#
+# These masks are `WorldLook`'s and have to stay its. The tag is a byte and not
+# a flag bit: a single bit is set in half of all the seeds that were never
+# packed, so half of them would have had a body read out of noise.
+
+TYPE_SHIFT, TYPE_MASK = 0, 0x7
+HEIGHT_SHIFT, HEIGHT_MASK = 3, 0x1F
+BUILD_SHIFT, BUILD_MASK = 8, 0x7
+TAG_SHIFT, TAG_MASK, TAG = 11, 0xFF, 0xA7
+HEIGHT_MIN, HEIGHT_MAX = 1.56, 2.04
+
+TYPE_NAMES = ["standard", "giant", "sprite", "heavy", "lean"]
+
+
+def unpack_body(seed_value: int):
+    """(body type, height, build), or None for a seed that carries no body.
+
+    Every seed written before the identity layer landed, and every one
+    `SimSquadGen` draws, carries none -- and the draw in `from_seed` stands.
+    """
+    if (seed_value >> TAG_SHIFT) & TAG_MASK != TAG:
+        return None
+    height = lerp(HEIGHT_MIN, HEIGHT_MAX,
+                  ((seed_value >> HEIGHT_SHIFT) & HEIGHT_MASK) / HEIGHT_MASK)
+    build = ((seed_value >> BUILD_SHIFT) & BUILD_MASK) / BUILD_MASK
+    return (seed_value >> TYPE_SHIFT) & TYPE_MASK, height, build
+
+
+def type_name(body_type: int) -> str:
+    return TYPE_NAMES[max(0, min(body_type, len(TYPE_NAMES) - 1))]
+
 SKIN_TONES = [
     Color("f6dcc4"), Color("f2cfae"), Color("e8bd95"), Color("d9a273"),
     Color("c1885a"), Color("a36c42"), Color("835434"), Color("643f26"),
@@ -66,6 +104,15 @@ def from_seed(seed_value: int) -> Look:
             else lerp(1.88, 2.02, rng.unit_float())
     else:
         height = lerp(1.70, 1.88, (rng.unit_float() + rng.unit_float()) * 0.5)
+    build = clamp((rng.unit_float() + rng.unit_float()) * 0.5
+                  + (height - 1.79) * 0.9, 0.0, 1.0)
+    # The record wins where it has an opinion. The draws above still run, so a
+    # packed and an unpacked seed take the same path and everything below --
+    # skin, hair, face, kit -- comes off the same stream either way.
+    body_type = 0
+    packed = unpack_body(seed_value)
+    if packed is not None:
+        body_type, height, build = packed
 
     skin = SKIN_TONES[rng.range_int(0, len(SKIN_TONES) - 1)]
     hair = HAIR_COLOURS[rng.range_int(0, len(HAIR_COLOURS) - 1)]
@@ -81,8 +128,8 @@ def from_seed(seed_value: int) -> Look:
 
     return Look(
         height=height,
-        build=clamp((rng.unit_float() + rng.unit_float()) * 0.5
-                    + (height - 1.79) * 0.9, 0.0, 1.0),
+        build=build,
+        body_type=body_type,
         head_w=lerp(0.158, 0.174, rng.unit_float()),
         head_h=lerp(0.155, 0.172, rng.unit_float()),
         head_d=lerp(0.142, 0.158, rng.unit_float()),
@@ -104,6 +151,7 @@ def from_seed(seed_value: int) -> Look:
 
 
 def describe(look: Look) -> str:
-    return (f"{look.height:.2f}m build {look.build:.2f} head "
+    return (f"{type_name(look.body_type)} {look.height:.2f}m "
+            f"build {look.build:.2f} head "
             f"{look.head_w:.3f}x{look.head_h:.3f} {look.hair_style}"
             f"{' tache' if look.moustache else ''} {look.mouth}")

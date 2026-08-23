@@ -9,6 +9,7 @@ it and 3mm is where they stop looking chipped.
 
 import bmesh
 import bpy
+import numpy as np
 from . import surfacenets
 from .palette import Color
 
@@ -60,11 +61,20 @@ def skin_material(colour: Color, cache: dict):
 
 
 def to_object(solid, colour: Color, cell: float, material, parent=None,
-              smooth_passes: int = 1):
+              smooth_passes: int = 1, offset=None):
+    """`offset` moves the mesh data, not the object.
+
+    An exported part has to sit in its joint's own space, and a joint is posed
+    by rotation -- so the pivot has to be the object's origin and the geometry
+    has to be measured from it. Moving the object instead would put the pivot
+    back at the figure's feet.
+    """
     field, origin, size = solid.field(cell)
     verts, quads = surfacenets.mesh(field, origin, size)
     if len(verts) == 0:
         return None
+    if offset is not None:
+        verts = verts - np.asarray(offset, dtype=verts.dtype)
 
     mesh = bpy.data.meshes.new(solid.name)
     mesh.from_pydata(verts.tolist(), [], quads.tolist())
