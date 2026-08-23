@@ -99,25 +99,23 @@ def main():
         target = (0.0, 0.0, tallest * 0.50)
         half_w, half_h = span * 0.5 + 0.42, tallest * 0.56
     elif args.mode == "heads":
-        # A team photo: each row back is a row up, or the second row is six
-        # heads hidden behind the first.
-        columns = min(args.count, 4)
-        rows = math.ceil(args.count / columns)
-        gap, back, riser = 0.62, 0.80, 0.55
+        # One row, framed on the faces. A second row was tried on a riser, the
+        # way a team photo does it, and half the squad never appeared: the
+        # framing is computed off the heads and the back row lands outside it.
+        # A contact sheet does not need depth.
+        gap = 0.66
+        span = gap * (args.count - 1)
         low, high = 1e9, 0.0
         for i in range(args.count):
-            col, row = i % columns, i // columns
             look = cast.from_seed(args.seed + i)
             looks.append(look)
-            x = (col - (columns - 1) * 0.5) * gap + (row % 2) * gap * 0.5
-            at = (x, row * back, row * riser)
-            stand(look, at, args.cell, f"P{args.seed + i}", cache)
-            top = look.height * body.CROWN + at[2]
-            low = min(low, top - look.height * 0.36)
-            high = max(high, top + look.height * 0.06)
-        target = (0.0, (rows - 1) * back * 0.5, (low + high) * 0.5)
-        half_w = gap * (columns - 1) * 0.5 + (gap * 0.5 if rows > 1 else 0.0) + 0.30
-        half_h = (high - low) * 0.5
+            stand(look, (-span * 0.5 + i * gap, 0.0, 0.0), args.cell,
+                  f"P{args.seed + i}", cache)
+            top = look.height * body.CROWN
+            low = min(low, top - look.height * 0.40)
+            high = max(high, top + look.height * 0.05)
+        target = (0.0, 0.0, (low + high) * 0.5)
+        half_w, half_h = span * 0.5 + 0.32, (high - low) * 0.5
     else:  # pragma: no cover
         raise SystemExit(args.mode)
 
