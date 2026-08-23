@@ -4715,6 +4715,16 @@ static func _new_mechanics() -> void:
 		SimDecision.tally_feint, SimDecision.tally_beat, SimDecision.tally_beat_foul])
 	print("  chips                   %4d" % SimTouch.chips_played)
 	print("  volleys                 %4d" % SimTouch.volleys_struck)
+	# Does the foot reach the strike. `mean across` at zero would mean every ball
+	# in the match is played straight down the line the striker is facing, and the
+	# whole of `SimTouch.foot_cost` would be a term that cannot vary.
+	if SimTouch.foot_strikes > 0:
+		var n := float(SimTouch.foot_strikes)
+		print("  struck with a foot %4d   off his weaker one %4d (%.0f%%)" % [
+			SimTouch.foot_strikes, SimTouch.foot_off_foot,
+			100.0 * float(SimTouch.foot_off_foot) / n])
+		print("    mean across the body %.2f   mean foot cost %.2f" % [
+			SimTouch.foot_across_sum / n, SimTouch.foot_cost_sum / n])
 	# Generated against played, for the acts that read zero. A zero on the left is
 	# a gate and a zero on the right with a number on the left is the softmax
 	# declining it, and those are fixed in different files.

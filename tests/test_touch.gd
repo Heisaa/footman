@@ -15,6 +15,8 @@ func run() -> void:
 	_first_touch_leaves_residual_pace()
 	_pass_solver_lands_near_the_target()
 	_execution_accuracy_falls_off_with_distance()
+	_the_ball_is_on_a_foot()
+	_the_curl_comes_off_the_striking_foot()
 
 
 static func _drill_context(seed_value: int = 5) -> SimContext:
@@ -163,3 +165,88 @@ func _execution_accuracy_falls_off_with_distance() -> void:
 	var far := SimTouch.execution_accuracy(ctx, p, p.attrs.passing, 45.0, 0.055, SimDecision.pass_tolerance(45.0))
 	check_greater(near, 0.75, "a ten-metre pass is nearly always struck as intended")
 	check_less(far, near - 0.15, "a forty-five-metre pass is not")
+
+
+## `docs/THE_FOOTBALL.md` 35. The mechanism, not an outcome: the geometry of
+## which side the ball is on, and that the side changes what a strike costs.
+## Nothing here asserts that footedness makes the football better, because
+## nobody has decided which way any match number should move for it.
+func _the_ball_is_on_a_foot() -> void:
+	var ctx := _drill_context()
+	var p := ctx.players[9]
+	p.pos = Vector3.ZERO
+	p.vel = Vector3.ZERO
+	p.facing = 0.0  # Facing +X, so +Z is his right.
+	var right := Vector3(0, 0, 1)
+	var left := Vector3(0, 0, -1)
+
+	check_near(SimTouch.lateral_of(p, right), 1.0, 0.01, "+Z is the right of a man facing +X")
+	check_near(SimTouch.lateral_of(p, left), -1.0, 0.01, "and -Z is his left")
+	check_near(SimTouch.lateral_of(p, Vector3(1, 0, 0)), 0.0, 0.01, "straight ahead is neither")
+
+	# A right-footer opens onto his left. The ball to his right is the awkward
+	# one, and that is the whole asymmetry the mechanic exists to create.
+	p.attrs.foot = SimAttributes.FOOT_RIGHT
+	p.attrs.weak_foot = 0.2
+	check_near(SimTouch.foot_cost(p, left), 0.0, 0.01, "a right-footer plays the ball to his left for nothing")
+	check_greater(SimTouch.foot_cost(p, right), 0.4, "and pays to play it to his right")
+	check_greater(SimTouch.aim_sigma(ctx, p, 0.6, 20.0, 0.05, right),
+		SimTouch.aim_sigma(ctx, p, 0.6, 20.0, 0.05, left),
+		"so the ball on his wrong side is struck worse")
+	check_less(SimTouch.strike_range(p, right, 40.0), SimTouch.strike_range(p, left, 40.0),
+		"and struck shorter")
+
+	# Mirrored, or the model has a handedness of its own.
+	p.attrs.foot = SimAttributes.FOOT_LEFT
+	check_near(SimTouch.foot_cost(p, right), 0.0, 0.01, "and a left-footer is the mirror of him")
+	check_greater(SimTouch.foot_cost(p, left), 0.4, "in both directions")
+
+	# The dial has to reach both ends. A genuinely two-footed player pays
+	# nothing either way, which is what stops this being a flat tax on everyone.
+	p.attrs.weak_foot = 1.0
+	check_near(SimTouch.foot_cost(p, right), 0.0, 0.01, "a two-footed man has no wrong side")
+	check_near(SimTouch.foot_cost(p, left), 0.0, 0.01, "on either flank")
+
+
+## `docs/THE_FOOTBALL.md` 36. The sign is the point: the curl used to be
+## zero-mean, so this asserts which way the ball goes and not how far.
+func _the_curl_comes_off_the_striking_foot() -> void:
+	var ctx := _drill_context()
+	var p := ctx.players[9]
+	p.pos = Vector3.ZERO
+	p.vel = Vector3.ZERO
+	p.facing = 0.0
+	p.attrs.technique = 0.9
+	p.attrs.weak_foot = 0.05  # One-footed, so the strong foot strikes everything.
+	var ahead := Vector3(1, 0, 0)
+
+	# Spin about +UP deflects the ball toward UP.cross(vel), which is the
+	# striker`s left. The inside of the right boot turns it that way.
+	p.attrs.foot = SimAttributes.FOOT_RIGHT
+	var mean_right := 0.0
+	for i in 200:
+		mean_right += SimTouch.curl_for(ctx, p, ahead, SimTouch.CROSS_CURL, SimTouch.CROSS_CURL_SIGMA)
+	check_greater(mean_right / 200.0, 0.5, "a right-footed strike bends to his left")
+
+	p.attrs.foot = SimAttributes.FOOT_LEFT
+	var mean_left := 0.0
+	for i in 200:
+		mean_left += SimTouch.curl_for(ctx, p, ahead, SimTouch.CROSS_CURL, SimTouch.CROSS_CURL_SIGMA)
+	check_less(mean_left / 200.0, -0.5, "and a left-footed one to his right")
+
+	# And the bend a viewer would actually name: a right-footed corner from the
+	# left flag swings in. The taker stands at the corner facing the goalmouth,
+	# which is what `SimSetPiece` sets his body to before he strikes it.
+	var goal := ctx.pitch.target_goal(p.team)
+	var flag := Vector3(goal.x, 0.0, -ctx.pitch.half_width)
+	p.pos = flag
+	p.attrs.foot = SimAttributes.FOOT_RIGHT
+	var upfield := SimConsts.horizontal(goal - flag)
+	p.facing = atan2(upfield.z, upfield.x)
+	var aim := goal + Vector3(-6.5 * ctx.pitch.attack_dir(p.team), 2.1, 0.0)
+	var curl := SimTouch.curl_for(ctx, p, aim - flag, SimTouch.CROSS_CURL, 0.0)
+	# Positive yaw sends it to his left, and facing the goalmouth from that flag
+	# his left is the goal.
+	var bend := Vector3.UP.cross(SimConsts.horizontal(aim - flag).normalized()) * curl
+	check_greater(bend.dot(SimConsts.horizontal(goal - aim).normalized()), 0.0,
+		"a right-footed corner from the left flag swings toward the goal")

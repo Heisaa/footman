@@ -139,6 +139,39 @@ const FACING_COST := 3.6
 ## of the second he does not spend.
 const FACING_STATIC_SHARE := 0.5
 
+## The same statement about the other axis of the body: which foot the ball is
+## on.
+##
+## `FACING_COST` prices playing the ball somewhere the body is not pointing.
+## This prices playing it to the side the body cannot open onto, and it is the
+## half of a footballer's shape that was missing entirely: before this every man
+## in the game struck the ball equally well in every direction, so no winger ever
+## cut inside, nobody was ever shown onto a foot he could not use, and a full-back
+## overlapped for reasons that had nothing to do with which foot he crossed with.
+##
+## The geometry is the inside of the boot. A right-footer's natural ball goes to
+## his *left*, across his body -- which is why a right-footed corner from the left
+## flag swings in, and why the inverted winger cutting onto his stronger foot is
+## a shape and not a quirk. So the cost rises as the ball is played to the same
+## side as the striking foot, and squared, for the reason `facing_penalty` squares
+## its own: opening up a little is ordinary football and reaching right across
+## yourself is not.
+const FOOT_COST := 0.85
+## What is left of a full-blooded strike played off the weaker foot, as a
+## fraction of range -- the same currency `STRIKE_BEHIND` is in, and for the same
+## reason. Nobody hits a forty-metre diagonal with his wrong foot; he hits a
+## fifteen-metre one and looks for someone closer.
+const FOOT_STRIKE := 0.62
+## How far behind his good foot a one-footed player's other foot is, in the units
+## `foot_cost` is measured in.
+##
+## Above 1.0 on purpose. At exactly 1.0 the worst angle for the strong foot and
+## the best angle for a useless weak foot cost the same, so the man would swap
+## feet rather than contort -- and the thing everyone has watched a one-footed
+## player do is contort. Over 1.0, he wraps his good foot round it and pays for
+## that instead, and only a player with a genuine other foot switches.
+const WEAK_FOOT_GAP := 1.3
+
 ## What striking a moving ball first-time costs in aim error, from the easiest
 ## first-time ball there is to the hardest.
 ##
@@ -162,12 +195,41 @@ const REDIRECT_ARC := 1.75
 static var ft_played := 0
 static var ft_layoff := 0
 
+## Whether the foot reaches the strike at all.
+##
+## The first thing to know about a body term added after the fact, and the one
+## this project keeps being caught not asking: a factor that never varies cannot
+## be the cause of anything, whatever it is worth. `lateral_of` is zero for a man
+## playing the ball straight down the line he is facing, and if a carrier always
+## faces where he is about to play it then the whole of `foot_cost` is dead code
+## with a comment on it. These say otherwise or they do not.
+##
+## Boots only -- headers, chests and the keeper's hands are struck with things
+## that have no handedness here.
+static var foot_strikes := 0
+static var foot_off_foot := 0
+static var foot_cost_sum := 0.0
+static var foot_across_sum := 0.0
+
+
+## Kinds struck with a foot, which are the only ones a foot model applies to.
+static func is_footed(kind: int) -> bool:
+	return not is_thrown(kind) \
+		and kind != SimTelemetry.Touch.HEADER \
+		and kind != SimTelemetry.Touch.CHEST \
+		and kind != SimTelemetry.Touch.KEEPER_CATCH \
+		and kind != SimTelemetry.Touch.KEEPER_PARRY
+
 
 static func reset_tallies() -> void:
 	ft_played = 0
 	ft_layoff = 0
 	chips_played = 0
 	volleys_struck = 0
+	foot_strikes = 0
+	foot_off_foot = 0
+	foot_cost_sum = 0.0
+	foot_across_sum = 0.0
 
 
 ## How much of the first-time penalty a ball played along `dir` keeps, given the
@@ -211,6 +273,14 @@ static func apply(ctx: SimContext, player: SimPlayer, kind: int, vel: Vector3, s
 		player.spell_prep_seconds = 0.0
 		if ctx.ball.last_touch_tick >= 0:
 			player.spell_prep_seconds = float(ctx.tick_index - ctx.ball.last_touch_tick) * SimConsts.DT
+	# Counted before the launch, because it is a fact about the man striking it.
+	if is_footed(kind):
+		var line := SimConsts.horizontal(vel)
+		foot_strikes += 1
+		foot_cost_sum += foot_cost(player, line)
+		foot_across_sum += absf(lateral_of(player, line))
+		if striking_foot(player, line) != player.attrs.foot:
+			foot_off_foot += 1
 	ctx.ball.launch(vel, spin)
 	ctx.ball.last_touch_player = player.id
 	ctx.ball.last_touch_team = player.team
@@ -298,7 +368,7 @@ static func aim_sigma(ctx: SimContext, player: SimPlayer, skill: float, distance
 	sigma *= 1.0 + 0.35 * speed_ratio * speed_ratio
 	sigma *= 1.0 + 0.012 * maxf(distance - 12.0, 0.0)
 	sigma *= lerpf(1.25, 0.9, player.attrs.composure)
-	sigma *= facing_penalty(player, dir)
+	sigma *= body_penalty(player, dir)
 	sigma /= maxf(player.fatigue_factor(), 0.5)
 	return sigma
 
@@ -349,6 +419,129 @@ static func momentum_of(player: SimPlayer) -> float:
 	return lerpf(FACING_STATIC_SHARE, 1.0, speed_ratio)
 
 
+## Which side of the body the ball is being played to: -1 hard to his left, 0
+## straight ahead or straight behind, +1 hard to his right.
+##
+## The companion of `off_axis`, which measures the same line in the other plane,
+## and it is one function for the same reason that one is: the aim error, the
+## range, the decision layer's estimate of both and the direction the ball bends
+## all have to be reading the same angle.
+##
+## `heading_dir` is `(cos, 0, sin)`, so a man facing +X has +Z on his right.
+static func lateral_of(player: SimPlayer, dir: Vector3) -> float:
+	var d := SimConsts.horizontal(dir)
+	var length := d.length()
+	if length < 1e-6:
+		return 0.0
+	return clampf(player.heading_dir().cross(Vector3.UP).dot(d / length), -1.0, 1.0)
+
+
+## How awkward this foot finds a ball played along `dir`: 0 natural, 1 at full
+## stretch across himself.
+##
+## Zero on the whole of the side the boot opens onto, because the inside of the
+## foot plays that ball and there is no cost to it, and rising into the side the
+## foot is on, where he has to use the outside of it or reach across.
+static func foot_awkwardness(player: SimPlayer, dir: Vector3, foot: int) -> float:
+	var lateral := lateral_of(player, dir)
+	var across: float = maxf(lateral if foot == SimAttributes.FOOT_RIGHT else -lateral, 0.0)
+	return across * across
+
+
+## Which foot he strikes this ball with and what it costs him, as
+## `(foot, cost)` -- the cheaper of his two, once the weak one is charged for
+## being the weak one.
+##
+## The two answers come out of one comparison on purpose. The foot the ball bends
+## off has to be the foot he was charged for using, and computing them apart is
+## the way that stops being true after the next edit to either.
+##
+## Note what is *not* here. `facing_penalty` lets technique buy back some of its
+## cost, and this does not, because `weak_foot` is already the per-player dial and
+## charging technique on top of it would be two attributes answering one
+## question. A gifted one-footed player is a real thing and the engine should be
+## able to produce him.
+static func foot_choice(player: SimPlayer, dir: Vector3) -> Vector2:
+	var strong := foot_awkwardness(player, dir, player.attrs.foot)
+	var other := SimAttributes.other_foot(player.attrs.foot)
+	var weak := foot_awkwardness(player, dir, other) \
+		+ WEAK_FOOT_GAP * (1.0 - clampf(player.attrs.weak_foot, 0.0, 1.0))
+	if strong <= weak:
+		return Vector2(float(player.attrs.foot), clampf(strong, 0.0, 1.0))
+	return Vector2(float(other), clampf(weak, 0.0, 1.0))
+
+
+## What the ball being on the wrong side costs this player, 0 to 1.
+static func foot_cost(player: SimPlayer, dir: Vector3) -> float:
+	return foot_choice(player, dir).y
+
+
+## Which foot actually strikes this ball.
+static func striking_foot(player: SimPlayer, dir: Vector3) -> int:
+	return int(foot_choice(player, dir).x)
+
+
+## Multiplier on aim error for the ball being on the wrong foot.
+static func foot_penalty(player: SimPlayer, dir: Vector3) -> float:
+	return 1.0 + FOOT_COST * foot_cost(player, dir)
+
+
+## Everything the body costs an action played along `dir`: which way he is
+## pointing, and which foot it is on.
+##
+## One function, because `aim_sigma` charges it and `facing_control` refunds it,
+## and a strike priced by one and executed under the other is the bug the
+## reciprocal exists to prevent.
+static func body_penalty(player: SimPlayer, dir: Vector3) -> float:
+	return facing_penalty(player, dir) * foot_penalty(player, dir)
+
+
+## The sidespin a strike is *meant* to have, in rad/s of yaw.
+##
+## The engine has always been able to bend a ball -- `SimBall` carries a
+## three-axis spin and a Magnus term that is `spin.cross(vel)` -- and no strike
+## in open play has ever meant to. Every curl was zero-mean noise scaled by
+## technique, so the better a player was the harder he bent it in a direction
+## `ctx.rng` chose, and half of every cross in the game curled into the keeper's
+## hands. The physics was free and the intention was missing.
+##
+## The intention is the foot. The inside of the boot turns the ball away from the
+## foot that struck it: right-footed it bends to his left, left-footed to his
+## right. That single sign is the inswinging corner, the whipped cross from the
+## wrong flank and the finish bent round the far post, and it is why an inverted
+## winger is a shape somebody chose rather than a player standing on the wrong
+## side.
+##
+## `mean` is the intended bend and `sigma` the part he does not control, so a man
+## still occasionally steers one the other way with the outside of the foot --
+## which is what the old comment here described and the old code could not tell
+## apart from the ball he meant to whip.
+##
+## `spin` along +UP deflects the ball toward `UP.cross(vel)`, which is the
+## striker's left when he is facing down the line of the ball. Only worth putting
+## on a ball whose launch is *solved* with the spin in hand: the shot, the lofted
+## pass and the cross all are, and the driven ground pass is not -- see
+## `ground_pass`.
+static func curl_for(ctx: SimContext, player: SimPlayer, dir: Vector3, mean: float, sigma: float) -> float:
+	var sign: float = 1.0 if striking_foot(player, dir) == SimAttributes.FOOT_RIGHT else -1.0
+	return (sign * mean + ctx.rng.gauss_clamped(0.0, sigma, 2.0)) \
+		* clampf(player.attrs.technique, 0.0, 1.0)
+
+
+## How much bend each struck ball is meant to have, and how much of it is noise.
+##
+## The cross is the biggest because whipping one is the whole act; the shot bends
+## less because it is hit harder and travels less far; the lofted pass least,
+## because a ball clipped over a line into space is not trying to curve round
+## anything.
+const CROSS_CURL := 3.4
+const CROSS_CURL_SIGMA := 1.6
+const SHOT_CURL := 1.9
+const SHOT_CURL_SIGMA := 1.3
+const LOFT_CURL := 1.2
+const LOFT_CURL_SIGMA := 1.2
+
+
 ## What is left of a full-blooded strike when the ball has to be played along
 ## `dir` rather than out in front of the body, as a fraction.
 ##
@@ -381,12 +574,16 @@ const STRIKE_BEHIND := 0.22
 const STRIKE_STATIC_SHARE := 0.75
 
 
+## The two costs are separate factors rather than one blended one, because they
+## are different sentences about the strike. Behind him there is no backlift;
+## on the wrong foot there is a backlift and no boot worth swinging. A man
+## turning to hit one off his weaker foot is charged both, and should be.
 static func strike_scale(player: SimPlayer, dir: Vector3) -> float:
 	var off := off_axis(player, dir)
 	var speed_ratio: float = clampf(player.speed() / maxf(player.nominal_max_speed(), 1e-3), 0.0, 1.0)
 	var momentum: float = lerpf(STRIKE_STATIC_SHARE, 1.0, speed_ratio)
 	var cost: float = clampf(off * off * lerpf(1.0, 0.75, deftness_of(player)) * momentum, 0.0, 1.0)
-	return lerpf(1.0, STRIKE_BEHIND, cost)
+	return lerpf(1.0, STRIKE_BEHIND, cost) * lerpf(1.0, FOOT_STRIKE, foot_cost(player, dir))
 
 
 ## The longest ball this player can strike along `dir`, given that he could hit
@@ -411,12 +608,16 @@ static func clamp_to_reach(player: SimPlayer, from: Vector3, target: Vector3, fu
 ## The share of a touch's control that survives being played along `dir`: 1.0
 ## straight ahead, falling away behind.
 ##
-## The reciprocal of `facing_penalty`, and it exists so that a candidate priced
+## The reciprocal of `body_penalty`, and it exists so that a candidate priced
 ## with this and a touch struck with `aim_sigma` are talking about the same
 ## thing. A decision layer that scores a turn it cannot execute is the same bug
 ## as one that scores a nine-metre knock and then plays a four-metre touch.
+##
+## The name is still the facing's because that is what its one caller is asking
+## about; what it refunds is everything the body costs, the foot included, which
+## is what `aim_sigma` charges.
 static func facing_control(player: SimPlayer, dir: Vector3) -> float:
-	return 1.0 / facing_penalty(player, dir)
+	return 1.0 / body_penalty(player, dir)
 
 
 ## Multiplicative weight error on a struck ball.
@@ -800,8 +1001,15 @@ static func ground_pass(ctx: SimContext, player: SimPlayer, target: Vector3, arr
 	var roll_rate := SimConsts.horizontal_length(vel) / SimConsts.BALL_RADIUS
 	var spin := -Vector3.UP.cross(SimConsts.horizontal(vel).normalized()) \
 		* (roll_rate * SimBallistics.drive_backspin(drive))
-	# And the curl that rides on the driven ball. Zero-mean: one man wraps it
-	# with the inside of the boot, the next steers it with the outside.
+	# And the curl that rides on the driven ball. **Zero-mean, and the only one
+	# left that is** -- see `curl_for`, which signs the shot, the cross and the
+	# lofted ball by the foot that struck them. This one cannot be signed as it
+	# stands: the spin is stapled on after `ground_launch` has solved the speed,
+	# so it is an error the solution never saw, and a signed mean would simply
+	# bend every driven pass in the game consistently off its target. Signing it
+	# means solving the launch with the spin in hand, which is a change to the
+	# most-used strike in the engine for a ball that spends most of its life on
+	# the grass, where Magnus does nothing.
 	if drive > 0.0:
 		spin += Vector3.UP * (ctx.rng.gauss_clamped(0.0, PASS_CURL_SIGMA, PASS_CURL_CLAMP)
 			* player.attrs.technique)
@@ -876,7 +1084,7 @@ static func shot(ctx: SimContext, player: SimPlayer, aim_point: Vector3, power: 
 	# takes is the shot it scored.
 	speed *= strike_scale(player, line)
 	var distance := SimConsts.horizontal_length(line)
-	var curl: float = ctx.rng.gauss_clamped(0.0, 2.2, 2.0) * player.attrs.technique
+	var curl := curl_for(ctx, player, line, SHOT_CURL, SHOT_CURL_SIGMA)
 	var spin := Vector3.UP * curl
 	var vel: Vector3
 	if chip:
