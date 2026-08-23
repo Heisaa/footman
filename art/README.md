@@ -74,6 +74,8 @@ contrast is most of what reads as a football kit.
 | `build.py` | The command line. |
 | `measure_reference.py` | Measures the reference **photograph's** silhouette, flood-filling from the border, and prints it in fractions of figure height. Proportions get read rather than remembered. |
 | `silhouette.py` | The same measurement of our own figure, in the same units, printed against the reference's numbers. |
+| `crop_reference.py` | Saves a close crop of a reference photograph, in fractions of the *figure's* height. Details that a full-length view cannot show — the studs under a boot, the thumb on a hand — get looked at rather than assumed. |
+| `crop_render.py` | The same for one of our own renders, so the two can be set side by side. |
 | `outline.py` | Measures a moulding's plan outline for **creases**, without Blender. A crease is a concavity -- the silhouette stepping inwards as it goes round -- and finding one this way is a second's work against twenty for a render. |
 | `reference/` | The owner's four reference images and what was measured off them. |
 
@@ -155,6 +157,14 @@ contrast is most of what reads as a football kit.
   to the sleeve, and the sleeve then hangs at about seventy. Vertical sides and
   a domed lid is a postbox whatever the radius; that slope is most of the
   silhouette.
+- **A wide smooth union inflates the surface wherever the two fields are
+  equidistant.** Across a chest that is a broad band, so a shoulder blended on
+  at h*0.075 printed a **flat plateau** on the shirt — 24cm of it at a constant
+  depth, reading as a rectangular panel stuck to the front. The blend has to be
+  small; if a step needs hiding, change the shapes, not the fillet.
+- **A slab crossed with a solid gives a whole cross-section**, which closes into
+  a ring. Four rings round a boot are a bandage, not stripes: the band has to be
+  cut off below the instep as well.
 - **Gaps are a measurement.** The reference's arms show as **separate runs** in
   the silhouette, clear of the body by .006–.008 of figure height. Ours were one
   run with the body, and three different things were welding them: the arm sat

@@ -119,6 +119,7 @@ def build(look: Look):
     socks = Solid("socks")
     boots = Solid("boots")
     collar = Solid("collar")
+    stripes = Solid("stripes")
 
     _body(skin, look, h)
     # The hair shell and its hairline are cut first: the cut takes a bite out of
@@ -126,7 +127,7 @@ def build(look: Look):
     # squarely inside the bite.
     _hair(hair, look, h)
     _head(skin, ink, hair, look, h)
-    _kit(shirt, trim, collar, shorts, socks, boots, look, h)
+    _kit(shirt, trim, collar, shorts, socks, boots, stripes, look, h)
 
     parts.append((skin, look.skin))
     parts.append((shirt, look.shirt_colour))
@@ -135,6 +136,7 @@ def build(look: Look):
     parts.append((shorts, look.shorts_colour))
     parts.append((socks, look.sock_colour))
     parts.append((boots, look.boot_colour))
+    parts.append((stripes, look.trim_colour))
     # Always: a bald man still has brows, and they live in the hair solid
     # because they are moulded in his hair colour. Gating this on the cut left
     # one man in six with no brows at all.
@@ -186,8 +188,15 @@ def _body(skin, look, h):
         skin.add(Capsule(top, wrist, limb * 0.92, limb * 0.80), k=h * 0.004)
         # A mitten: one rounded end, no fingers, and only a little wider than
         # the wrist. Any bigger and it is a boxing glove.
-        skin.add(Ellipsoid((side * w * 0.92, 0.0, h * 0.258),
-                           (limb * 1.14, limb * 1.06, limb * 1.26)), k=h * 0.014)
+        # A mitten with a **thumb**: one lobe on the inside of the hand, joined
+        # with a small enough fillet to leave a crease between the two. No
+        # fingers -- the reference has none either, and the thumb is the whole
+        # of what says hand rather than the end of an arm.
+        hand = (side * w * 0.92, 0.0, h * 0.258)
+        skin.add(Ellipsoid(hand, (limb * 1.12, limb * 1.02, limb * 1.30)),
+                 k=h * 0.014)
+        skin.add(Ellipsoid((hand[0] - side * limb * 0.72, -limb * 0.34, h * 0.276),
+                           (limb * 0.46, limb * 0.52, limb * 0.78)), k=h * 0.005)
 
         # Legs. Thicker than the arms, which is the way round the references
         # have it and the opposite of what a constant limb radius gives.
@@ -453,7 +462,7 @@ def _hair(hair, look, h):
 # --- The kit ----------------------------------------------------------------
 
 
-def _kit(shirt, trim, collar, shorts, socks, boots, look, h):
+def _kit(shirt, trim, collar, shorts, socks, boots, stripes, look, h):
     w = look.width() * h
     limb = look.limb() * h
 
@@ -517,7 +526,7 @@ def _kit(shirt, trim, collar, shorts, socks, boots, look, h):
         # the chest.
         shirt.add(Capsule((side * w * 0.10, 0.0, h * 0.575),
                           (side * w * 0.56, 0.0, h * 0.545),
-                          h * 0.078, h * 0.070), k=h * 0.060)
+                          h * 0.084, h * 0.078), k=h * 0.028)
         # The sleeve hangs off that, angled out as it falls. Started further in
         # than the arm it would be narrower at the top than the arm inside it,
         # and the bare arm breaks out through it.
@@ -614,22 +623,67 @@ def _kit(shirt, trim, collar, shorts, socks, boots, look, h):
     socks.cut(Plane((0.0, 0.0, h * SOCK_TOP), (0.0, 0.0, -1.0)), k=h * 0.004)
 
     # --- Boots ---------------------------------------------------------------
-    # A rounded wedge with the toe forward and the heel under the ankle, cut
-    # flat underneath so the figure stands on a sole rather than balancing on a
-    # curve.
+    # A rounded wedge with the toe forward and the heel under the ankle, plus
+    # three things off the reference that a plain wedge has not got: a **tongue**
+    # standing proud of the instep, **stripes** laid across it, and **studs**
+    # holding the sole clear of the ground.
+    #
+    # The studs matter more than they sound. Cut flat at zero the boot sits on
+    # the floor like a clog; on studs it stands on six little feet with daylight
+    # and a shadow under the sole, and that is most of what says football boot.
+    sole = h * 0.017
     for side in (-1.0, 1.0):
         x = side * w * 0.44
         # The last: heel under the ankle, toe forward and lower, so the boot is
-        # a wedge rather than a sausage lying down. It wants real length -- a
-        # boot as long as it is wide is a shoe on a snowman.
-        boots.add(Capsule((x, h * 0.040, h * 0.046), (x, -h * 0.130, h * 0.022),
-                          limb * 1.38, limb * 0.86))
+        # a wedge rather than a sausage lying down. A broad round toe -- the
+        # reference boot is wide and blunt at the front, never pointed.
+        boots.add(Capsule((x, h * 0.040, h * 0.046), (x, -h * 0.122, h * 0.026),
+                          limb * 1.38, limb * 1.02))
         # The ankle collar, kept low: the boot finishes below the sock top on
         # every one of the references, and a collar that reaches it is a
         # wellington.
         boots.add(Ellipsoid((x, h * 0.020, h * 0.046),
                             (limb * 1.30, limb * 1.10, limb * 1.05)), k=h * 0.024)
-    boots.cut(Plane((0.0, 0.0, 0.0), (0.0, 0.0, 1.0)), k=h * 0.004)
+        # The tongue, rising off the instep towards the ankle. It is what the
+        # stripes are laid over, and it is the part of a boot that reads first.
+        boots.add(Ellipsoid((x, h * 0.012, h * 0.074),
+                            (limb * 0.80, limb * 0.72, limb * 0.52)), k=h * 0.012)
+    boots.cut(Plane((0.0, 0.0, sole), (0.0, 0.0, 1.0)), k=h * 0.005)
+
+    # Studs, added after the sole is cut so the cut does not take them off with
+    # it -- ops run in order, and a plane cut applies to the whole solid.
+    for side in (-1.0, 1.0):
+        x = side * w * 0.44
+        for at_y, spread in ((-h * 0.104, 0.52), (-h * 0.058, 0.62),
+                             (h * 0.030, 0.42)):
+            for out in (-1.0, 1.0):
+                foot = (x + out * limb * spread, at_y, sole)
+                boots.add(Capsule(foot, (foot[0], at_y, h * 0.004), limb * 0.30))
+    boots.cut(Plane((0.0, 0.0, 0.0), (0.0, 0.0, 1.0)), k=h * 0.002)
+
+    # The stripes: **a slab crossed with the boot's own shell**, the same trick
+    # as the neckline insert. Laid on as free-standing bars they float off a
+    # curved instep at their ends, and no amount of placing them by hand fixes
+    # that on a surface this round.
+    for side in (-1.0, 1.0):
+        x = side * w * 0.44
+        for i in range(4):
+            # On the **instep**, well in front of the ankle collar. The slab
+            # runs across the whole boot, so any of it that reaches back as far
+            # as the collar wraps round that too -- and four bands round a man's
+            # ankle read as a bandage, not as stripes on a boot.
+            t = 0.44 + i * 0.105
+            stripes.add(RoundBox(
+                (x, h * (0.040 - 0.162 * t),
+                 h * (0.046 - 0.020 * t) + limb * 0.78),
+                (limb * 2.0, h * 0.0030, limb * 0.72),
+                radius=h * 0.0026,
+                rotation=(0.140, side * 0.16, 0.0)))
+    stripes.keep_inside(boots, -h * 0.0018)
+    # And taken off below the instep. A slab crossed with the boot gives a whole
+    # cross-section, which closes into a **ring** round the foot -- four of them
+    # read as a bandage. A stripe stops at the sides.
+    stripes.cut(Plane((0.0, 0.0, h * 0.050), (0.0, 0.0, 1.0)), k=h * 0.004)
 
 
 def _vee_slabs(w, h, y_front, y_back, steps=14):
