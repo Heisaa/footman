@@ -106,7 +106,7 @@ static func _trait_labels(traits: PackedStringArray) -> PackedStringArray:
 static func _noted(squad: Array[WorldPlayer]) -> Array[WorldPlayer]:
 	var out: Array[WorldPlayer] = []
 	for p in squad:
-		if p.archetype != WorldNickname.NONE:
+		if p.epithet != "":
 			out.append(p)
 	return out
 

@@ -123,6 +123,14 @@ static func player(
 	# for both. Give him the trait if the draw did not.
 	if tail_kind == WorldNickname.FIREBRAND and not p.traits.has(WorldTraits.HOTHEAD):
 		p.traits.append(WorldTraits.HOTHEAD)
+	# "Local. The crowd knew his name before he made the bench" is not a thing
+	# anybody says about a Dutchman the club signed at twenty-three.
+	if nation == WorldNames.FOREIGN and p.traits.has(WorldTraits.ACADEMY):
+		var without := PackedStringArray()
+		for trait_id in p.traits:
+			if trait_id != WorldTraits.ACADEMY:
+				without.append(trait_id)
+		p.traits = without
 
 	p.archetype = WorldNickname.archetype(p.attrs, p.height, p.age, p.traits, role == SimRole.GK)
 	p.epithet = WorldNickname.epithet(rng, p.archetype)
@@ -203,7 +211,46 @@ static func squad(
 		p.shirt = i + 1
 		p.seed_knowledge(rng, rng.range_float(0.55, 0.80))
 		players.append(p)
+	_cap_epithets(players, tail_at.values())
 	return players
+
+
+## How many men in one squad may be called something other than their surname.
+## An epithet everybody has is a surname (§9.7), and the natural draw hands one
+## out oftener than the forcing does -- a weak side came out with five.
+const EPITHETS_PER_SQUAD_MAX := 3
+
+
+## Keeps the epithets that were built on purpose, drops the surplus the draw
+## threw up, and never lets one squad hold two of the same kind.
+##
+## `archetype` is left alone: it is the truth about the man and the run layer may
+## want it. What is taken away is only what he is *called*.
+static func _cap_epithets(players: Array[WorldPlayer], forced: Array) -> void:
+	var wanted := forced.duplicate()
+	var kept := {}
+	var settled := {}
+	var count := 0
+	# Two passes: the forced tails first, so a natural whippet never takes the
+	# place of the one the squad was built around. A man settled in the first
+	# pass is skipped in the second -- without that he is looked at twice, and
+	# the second look sees his own archetype already taken and rubs his name
+	# out, which left whole squads with nobody called anything.
+	for pass_forced in [true, false]:
+		for p in players:
+			if p.epithet == "" or settled.has(p.id):
+				continue
+			var is_forced: bool = wanted.has(p.archetype)
+			if is_forced != pass_forced:
+				continue
+			settled[p.id] = true
+			if kept.has(p.archetype) or count >= EPITHETS_PER_SQUAD_MAX:
+				p.epithet = ""
+				continue
+			kept[p.archetype] = true
+			count += 1
+			if is_forced:
+				wanted.erase(p.archetype)
 
 
 ## A club, squad and all. `reputation` is the club's level, 0..1.
@@ -383,7 +430,10 @@ static func _force_tail(rng: SimRng, p: WorldPlayer, kind: String) -> void:
 			_raise(rng, p.attrs, ["reflexes", "handling", "command"], 0.90)
 			_lower(p.attrs, ["distribution"], 0.40)
 		WorldNickname.CALAMITY:
-			_lower(p.attrs, ["first_touch", "composure"], 0.16)
+			# Under the bar `WorldNickname.archetype` sets, and under the
+			# keeper's as well, because a calamity in goal is a calamity with
+			# his hands rather than with his feet.
+			_lower(p.attrs, ["first_touch", "composure", "handling", "command"], 0.11)
 		_:
 			pass
 

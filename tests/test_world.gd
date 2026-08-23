@@ -140,14 +140,24 @@ func _test_reputation_moves_the_mean() -> void:
 
 
 func _test_epithets_only_on_tails() -> void:
-	for seed_value in 6:
-		for p in WorldGen.squad(SimRng.new(seed_value), 0.45, WorldNames.ENG, 0):
-			if p.archetype == WorldNickname.NONE:
-				check_equal(p.epithet, "", "%s has an epithet and no tail" % p.full_name())
-				check_equal(p.display_name(), p.surname, "an ordinary man is his surname")
-			else:
-				check(p.epithet != "", "%s is a %s with no epithet" % [p.full_name(), p.archetype])
-				check(p.display_name().contains(p.surname), "the epithet goes in front of the surname")
+	# An epithet implies a tail, but a tail does not imply an epithet: a squad
+	# carries at most `EPITHETS_PER_SQUAD_MAX` of them and never two of a kind,
+	# because a bad side otherwise came out with three calamities in it.
+	for seed_value in 10:
+		var named := 0
+		var kinds := {}
+		for p in WorldGen.squad(SimRng.new(seed_value), 0.20, WorldNames.ENG, 0):
+			if p.epithet == "":
+				check_equal(p.display_name(), p.surname, "a man with no epithet is his surname")
+				continue
+			named += 1
+			check(p.archetype != WorldNickname.NONE, "%s has an epithet and no tail" % p.full_name())
+			check(not kinds.has(p.archetype), "two %ss in one squad" % p.archetype)
+			kinds[p.archetype] = true
+			check(p.display_name().contains(p.surname), "the epithet goes in front of the surname")
+		check(named <= WorldGen.EPITHETS_PER_SQUAD_MAX,
+			"seed %d: %d men in one squad are called something other than their name" % [seed_value, named])
+		check(named >= 1, "seed %d: nobody in the squad is called anything" % seed_value)
 
 	# How an epithet is written, and it has to read as a nickname rather than as
 	# a middle name.

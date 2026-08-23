@@ -56,7 +56,7 @@ static func archetype(attrs: SimAttributes, height: float, age: int, traits: Pac
 	if is_keeper:
 		if attrs.reflexes >= TAIL and attrs.handling >= 0.78:
 			return GLOVES
-		if attrs.handling <= 0.30 or attrs.command <= 0.25:
+		if attrs.handling <= 0.22 or attrs.command <= 0.18:
 			return CALAMITY
 		return NONE
 
@@ -78,7 +78,12 @@ static func archetype(attrs: SimAttributes, height: float, age: int, traits: Pac
 		return VETERAN
 	# The other tail: hopeless at the thing his shirt is for. Kept last so a man
 	# with anything to be known for is known for that instead.
-	if attrs.first_touch <= 0.18 or attrs.passing <= 0.16:
+	#
+	# The bar is deep because it is an *absolute* one and the rest are too: at a
+	# club near the bottom the whole squad sits low, and at 0.18 a bad side came
+	# out with three calamities in it, which reads as a joke rather than as a
+	# club. A man this side of 0.13 is hopeless in any division.
+	if attrs.first_touch <= 0.13 or attrs.passing <= 0.12:
 		return CALAMITY
 	return NONE
 

@@ -111,7 +111,7 @@ const CATALOGUE := {
 	},
 	LOYAL: {
 		"label": "Club man",
-		"scout": "He signed here at sixteen and would take a pay cut to stay.",
+		"scout": "He would take a pay cut to stay here, and he has said so out loud.",
 		"sim_note": "Trust decays slowly; refuses moves; wage demands lower.",
 		"wants": {},
 		"conflicts": [MERCENARY, JOURNEYMAN],
@@ -241,8 +241,11 @@ static func draw(rng: SimRng, attrs: SimAttributes, age: int, count: int, alread
 			if _conflicts(trait_id, chosen):
 				continue
 			var f := fit(trait_id, attrs, age)
-			# Each man who already has it halves the next man's chance of it.
-			f /= pow(2.0, float(already.get(trait_id, 0)))
+			# Each man who already has it cuts the next man's chance to a third.
+			# Halving was not enough: a strong squad still came out with four
+			# men who had ice in the veins and four who ran all day, because at
+			# a good club a great many men fit those two.
+			f /= pow(3.0, float(already.get(trait_id, 0)))
 			if f <= 0.02:
 				continue
 			candidates.append(trait_id)
