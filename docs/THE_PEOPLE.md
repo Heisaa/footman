@@ -100,9 +100,21 @@ much of it the club would stand behind. Flat voice, no winking.
 
 ## The season
 
-`WorldSeason` is the fixture list, the results and the table: a double
-round-robin by the circle method, everybody home and away, a bye slot when the
-club count is odd. Three points for a win, goal difference then goals scored.
+`WorldSeason` is the fixture list, the results and the table: a round-robin by
+the circle method, everybody playing everybody `rounds` times, a bye slot when
+the club count is odd. Three points for a win, goal difference then goals
+scored.
+
+**Nine clubs, home and away: sixteen games each over eighteen weeks**, one of
+them blank for every club. That number is a wall-clock decision rather than a
+football one — only the player's own fixture is simulated by `sim/`, about nine
+minutes watched or seconds skipped, and the other four each week go through the
+abstract model of §2.5 and cost nothing. Sixteen watched matches is a couple of
+hours for a season, which is a season somebody can finish.
+
+Both numbers are parameters (`WorldSeason.DEFAULT_CLUBS`, `DEFAULT_ROUNDS`), so
+a later difficulty tier can lengthen or shorten a run's seasons without touching
+the layer.
 
 **It decides nothing.** The player's own fixture is simulated by `sim/`; the rest
 of the division is the abstract model of `PLAN.md` §2.5, which is a later pass.
@@ -111,7 +123,7 @@ This is what both write into.
 ## Looking at it
 
     ./run.sh world --seed 3            one club: squad, tails, scout reports
-    ./run.sh world --clubs 12          a division and its first week
+    ./run.sh world --league            the nine-club division and its first week
 
 No match runs, so it is instant. A squad is judged the way the match is judged —
 by looking at it — and twenty names read aloud say more about the register than

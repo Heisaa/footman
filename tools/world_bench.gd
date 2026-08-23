@@ -11,11 +11,12 @@ static func run(flags: Dictionary) -> void:
 	var seed_value := int(flags.get("seed", "1"))
 	var reputation := float(flags.get("reputation", "0.35"))
 	var club_count := int(flags.get("clubs", "0"))
+	var rounds := int(flags.get("rounds", str(WorldSeason.DEFAULT_ROUNDS)))
 	var reports := int(flags.get("reports", "3"))
 	var rng := SimRng.new(seed_value)
 
-	if club_count > 0:
-		_print_league(rng, club_count, reputation)
+	if club_count > 0 or flags.has("league"):
+		_print_league(rng, club_count if club_count > 0 else WorldSeason.DEFAULT_CLUBS, reputation, rounds)
 		return
 
 	var club := WorldGen.club(rng, 0, reputation)
@@ -71,14 +72,15 @@ static func _print_club(club: WorldClub, reports: int) -> void:
 			shown += 1
 
 
-static func _print_league(rng: SimRng, club_count: int, centre: float) -> void:
+static func _print_league(rng: SimRng, club_count: int, centre: float, rounds: int) -> void:
 	var clubs := WorldGen.league(rng, club_count, centre)
 	var ids := PackedInt32Array()
 	for c in clubs:
 		ids.append(c.id)
-	var season := WorldSeason.create(rng, ids)
+	var season := WorldSeason.create(rng, ids, 1985, rounds)
 
-	print("%d clubs, %d fixtures over %d weeks" % [clubs.size(), season.fixtures.size(), season.round_count()])
+	print("%d clubs, %d games each, %d fixtures over %d weeks" % [
+		clubs.size(), season.games_per_club(), season.fixtures.size(), season.round_count()])
 	print("")
 	print("  club                        short  nickname          rep   ground")
 	for c in clubs:

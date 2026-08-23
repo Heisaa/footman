@@ -20,6 +20,7 @@ func run() -> void:
 	_test_knowledge_starts_vague_and_sharpens()
 	_test_best_eleven_fills_the_shape()
 	_test_sim_team_is_complete()
+	_test_season_is_the_length_it_says()
 	_test_fixture_list_is_a_double_round_robin()
 	_test_table_arithmetic()
 	_test_wage_rises_with_quality()
@@ -225,8 +226,33 @@ func _test_sim_team_is_complete() -> void:
 		check(p.player_name != "", "every man on the team sheet has a name")
 
 
+func _test_season_is_the_length_it_says() -> void:
+	# The division the game ships with: nine clubs, home and away, sixteen games
+	# each. The number is a wall-clock decision (`WorldSeason.DEFAULT_CLUBS`),
+	# so it is checked rather than assumed.
+	var ids := PackedInt32Array()
+	for i in WorldSeason.DEFAULT_CLUBS:
+		ids.append(i)
+	var season := WorldSeason.create(SimRng.new(1), ids)
+	check_equal(season.games_per_club(), 16, "nine clubs home and away is sixteen games each")
+	check_equal(season.round_count(), 18, "and eighteen weeks, one of them blank for each club")
+	check_equal(season.fixtures.size(), 72, "which is seventy-two fixtures")
+
+	var played := {}
+	for f in season.fixtures:
+		for id in [int(f["home"]), int(f["away"])]:
+			played[id] = int(played.get(id, 0)) + 1
+	for id in ids:
+		check_equal(int(played.get(id, 0)), 16, "club %d plays sixteen" % id)
+
+	# A single pass is the same list with one leg: half the games, half the year.
+	var single := WorldSeason.create(SimRng.new(1), ids, 1985, 1)
+	check_equal(single.games_per_club(), 8, "one pass is eight games each")
+	check_equal(single.round_count(), 9, "over nine weeks")
+
+
 func _test_fixture_list_is_a_double_round_robin() -> void:
-	for club_count in [4, 10, 15]:
+	for club_count in [4, 9, 10, 15]:
 		var ids := PackedInt32Array()
 		for i in club_count:
 			ids.append(i)

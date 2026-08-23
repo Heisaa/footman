@@ -63,9 +63,11 @@ usage: ./run.sh <command> [args]
                             fails. --trace N prints trial N's event log in order
   world [--seed N]          print a generated club: the squad with names, ages,
       [--reputation Q]      wages and traits, who the tails are, and a scout
-      [--clubs N]           report on the first few. --clubs N prints a division
-      [--reports N]         and its first week of fixtures instead. No match
-                            runs; it is instant
+      [--reports N]         report on the first few. --league prints the
+      [--league]            division instead -- nine clubs, sixteen games each
+      [--clubs N]           over eighteen weeks -- with its first week of
+      [--rounds N]          fixtures. --clubs and --rounds change that shape.
+                            No match runs; it is instant
   strike [--seed N]         where a struck ball actually lands, against where
                             execution_accuracy told the decision layer it would.
                             The two share one error model or they do not. Instant

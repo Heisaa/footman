@@ -13,9 +13,25 @@ extends RefCounted
 const WIN_POINTS := 3
 const DRAW_POINTS := 1
 
+## The division, and how long a season is.
+##
+## Nine clubs home and away is sixteen games each over eighteen weeks. The
+## constraint is the owner's wall clock rather than football: only the player's
+## own fixture is simulated by `sim/` -- about nine minutes watched, or seconds
+## skipped -- and the other four fixtures each week go through the abstract
+## model of §2.5, which costs nothing. Sixteen watched matches is a couple of
+## hours of football for a season, which is a season somebody can finish.
+##
+## Both are parameters everywhere they are used, so a later difficulty tier can
+## lengthen or shorten a run's seasons without touching this file.
+const DEFAULT_CLUBS := 9
+const DEFAULT_ROUNDS := 2
+
 var year := 1985
 ## Club ids, in the order the fixture list was built from.
 var club_ids := PackedInt32Array()
+## How many times everybody plays everybody: 2 is home and away.
+var rounds := DEFAULT_ROUNDS
 ## One entry per match: {"round": r, "home": id, "away": id, "played": bool,
 ## "home_goals": int, "away_goals": int}
 var fixtures: Array[Dictionary] = []
@@ -23,21 +39,29 @@ var fixtures: Array[Dictionary] = []
 var week := 0
 
 
+## Weeks in the season. An odd division needs a blank week per club, so it runs
+## one week longer per pass than an even one.
 func round_count() -> int:
 	var n := club_ids.size()
 	if n < 2:
 		return 0
-	return (n - 1) * 2 if n % 2 == 0 else n * 2
+	return (n - 1 if n % 2 == 0 else n) * rounds
 
 
-## Builds a double round-robin: everybody home and away, one round per week.
+## Matches each club plays. What the wall-clock question is actually about.
+func games_per_club() -> int:
+	return maxi(club_ids.size() - 1, 0) * rounds
+
+
+## Builds the fixture list: everybody plays everybody `rounds` times, one round
+## per week, grounds swapped on the second pass.
 ##
-## The circle method, with a bye slot when the club count is odd so a division
-## of fifteen still works. The second half of the season is the first half with
-## the grounds swapped, which is how a real fixture list is built too.
-static func create(rng: SimRng, ids: PackedInt32Array, year: int = 1985) -> WorldSeason:
+## The circle method, with a bye slot when the club count is odd -- which nine
+## is, so one club sits out each week.
+static func create(rng: SimRng, ids: PackedInt32Array, year: int = 1985, rounds: int = DEFAULT_ROUNDS) -> WorldSeason:
 	var season := WorldSeason.new()
 	season.year = year
+	season.rounds = maxi(rounds, 1)
 	season.club_ids = ids.duplicate()
 
 	var wheel := PackedInt32Array(ids)
@@ -51,19 +75,25 @@ static func create(rng: SimRng, ids: PackedInt32Array, year: int = 1985) -> Worl
 		wheel.append(-1)
 
 	var half := wheel.size() / 2
-	var rounds := wheel.size() - 1
-	for r in rounds:
+	var weeks_per_pass := wheel.size() - 1
+	for r in weeks_per_pass:
 		for i in half:
 			var a := wheel[i]
 			var b := wheel[wheel.size() - 1 - i]
 			if a == -1 or b == -1:
 				continue
 			# Alternate who is at home round by round, or the same club is home
-			# every week of the first half.
+			# every week of the first pass.
 			var home := a if (r + i) % 2 == 0 else b
 			var away := b if home == a else a
-			season.fixtures.append(_fixture(r, home, away))
-			season.fixtures.append(_fixture(r + rounds, away, home))
+			for pass_index in season.rounds:
+				# Odd passes swap the ground, so two passes are home and away
+				# and a third would start the cycle again.
+				var swapped := pass_index % 2 == 1
+				season.fixtures.append(_fixture(
+					r + pass_index * weeks_per_pass,
+					away if swapped else home,
+					home if swapped else away))
 		# Rotate all but the first.
 		var last := wheel[wheel.size() - 1]
 		for i in range(wheel.size() - 1, 1, -1):
