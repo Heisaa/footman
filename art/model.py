@@ -63,9 +63,15 @@ def parse_args(argv):
                    help="segments round a part; the triangle count scales with it")
     p.add_argument("--out", default=DEFAULT_OUT)
     p.add_argument("--name", default="")
+    p.add_argument("--extra", type=int, default=-1,
+                   help="which accessory a --shot shows: 0 headband, 1 cap, -1 none")
+    p.add_argument("--tache", type=int, default=1,
+                   help="whether a --shot wears the moustache")
     p.add_argument("--hair", type=int, default=7,
                    help="which cut a --shot shows; the file always holds them all")
     p.add_argument("--shot", default="", help="render the figure as well")
+    p.add_argument("--sheet", default="",
+                   help="render every hair cut side by side instead of a figure")
     p.add_argument("--blend", default="")
     argv = argv[argv.index("--") + 1:] if "--" in argv else []
     return p.parse_args(argv)
@@ -148,7 +154,8 @@ def upload(part, parent, pivot, slots, recalc=True):
 
     obj = bpy.data.objects.new(part.name, mesh)
     bpy.context.collection.objects.link(obj)
-    obj.parent = parent
+    if parent is not None:
+        obj.parent = parent
     return obj
 
 
@@ -197,6 +204,11 @@ def main():
         stem = args.name or ("body_" + args.body)
     look.height = REFERENCE_HEIGHT
 
+    if args.sheet:
+        clear()
+        sheet(args.sheet, look, args.quality)
+        return
+
     slots = materials()
     skeleton = rig.skeleton(look, look.height)
     nodes, pivots = joints(skeleton)
@@ -216,13 +228,22 @@ def main():
     # rest are hidden, which is why they all have to be here.
     cuts = 0
     for name, part in toy_hair.cuts(look, look.height,
-                                    max(8, int(round(toy.FINE * args.quality))),
+                                    max(10, int(round(toy.HAIR_SEGMENTS * args.quality))),
                                     max(6, int(round(toy.COARSE * args.quality)))):
         node = upload(part, nodes["Head"], pivots["Head"], slots)
         node.name = name
         cuts += 1
         total += part.tris()
     print("  %-10s %2d cuts" % ("Hair", cuts))
+
+    # The moustache and the two accessories, all switched by the seed.
+    for name, part in toy.extras(look, look.height,
+                                 max(8, int(round(toy.FINE * args.quality))),
+                                 max(6, int(round(toy.COARSE * args.quality)))):
+        node = upload(part, nodes["Head"], pivots["Head"], slots)
+        node.name = name
+        total += part.tris()
+    print("  %-10s %s" % ("extras", "Moustache Accessory0 Accessory1"))
 
     eye_z = look.height * (toy.CHIN + toy.CROWN) * 0.5 \
         - look.head_h * look.height * 0.06
@@ -242,6 +263,15 @@ def main():
         face = bpy.data.objects.get("Face")
         if face is not None:
             face.hide_render = True
+        # The accessories are one-of, and the moustache is a coin toss. Showing
+        # them all at once is a man in a cap under a headband.
+        for i in (0, 1):
+            obj = bpy.data.objects.get("Accessory%d" % i)
+            if obj is not None:
+                obj.hide_render = i != args.extra
+        tache = bpy.data.objects.get("Moustache")
+        if tache is not None:
+            tache.hide_render = not args.tache
         shot(args.shot, look)
     if args.blend:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(args.blend))
@@ -257,6 +287,48 @@ def main():
         export_apply=True, export_yup=True, export_cameras=False,
         export_lights=False, export_animations=False)
     print("wrote " + path)
+
+
+def sheet(path, look, quality):
+    """Every cut, one head each, in a grid. The only way to tune seventeen.
+
+    Heads only: a rank of whole figures at this count is a row of thumbnails,
+    and hair is judged at the size a face is judged at. Built as bare meshes
+    side by side rather than as duplicated hierarchies -- nothing here is posed,
+    so none of the rig is needed.
+    """
+    from toy import mesh as M
+    h = look.height
+    slots = materials()
+    cuts = toy_hair.cuts(look, h, max(10, int(round(toy.HAIR_SEGMENTS * quality))),
+                         max(6, int(round(toy.COARSE * quality))))
+    columns = 6
+    gap_x, gap_z = look.head_w * h * 2.9, look.head_h * h * 2.5
+    rows = (len(cuts) + columns) // columns
+    for i, (name, cut) in enumerate([("Hair00", None)] + cuts):
+        col, row = i % columns, i // columns
+        at = ((col - (columns - 1) * 0.5) * gap_x, 0.0,
+              -(row - (rows - 1) * 0.5) * gap_z)
+        head = M.Mesh(name)
+        head.merge(M.tube(toy.skull_rings(look, h), 20, toy.SKIN,
+                          power=toy.HEAD_POWER, name="skull"))
+        if cut is not None:
+            head.merge(cut)
+        head.translate((at[0], 0.0, at[2]))
+        upload(head, None, (0.0, 0.0, 0.0), slots)
+
+    studio.cyclorama()
+    studio.lights()
+    span_x = gap_x * columns
+    span_z = gap_z * rows
+    target = (0.0, 0.0, h * (toy.CHIN + toy.CROWN) * 0.5)
+    lens = 85.0
+    width, height = 1600, 1000
+    distance = studio.fit_distance(span_x * 0.5, span_z * 0.5, lens, width, height)
+    studio.camera(target, distance, 0.0, 0.0, lens)
+    studio.render_settings(64, width, height, "CYCLES")
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    print("sheet " + studio.render_to(os.path.abspath(path)))
 
 
 def shot(path, look):

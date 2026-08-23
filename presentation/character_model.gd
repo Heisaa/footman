@@ -33,6 +33,10 @@ const REFERENCE_HEIGHT := 1.78
 ## on every export. If the two ever drift the brows drift off the face with them.
 const MODEL_HEAD_R := 0.2869
 
+## What fraction of its height the model's own bare skull is, chin to crown.
+## `art/toy/figure.py:SKULL` is where it comes from: 0.630 to 0.950.
+const MODEL_HEAD_FRACTION := 0.32
+
 ## Material slots, in the order the Blender file has to declare them. Index is
 ## the slot; a model with fewer slots keeps its authored colours for the rest.
 const SLOT_SHIRT := 0
@@ -79,7 +83,16 @@ static func has_model(body_type: int) -> bool:
 	if not models_enabled:
 		return false
 	if not _model_cache.has(body_type):
-		_model_cache[body_type] = ResourceLoader.exists(model_path(body_type))
+		var found := ResourceLoader.exists(model_path(body_type))
+		_model_cache[body_type] = found
+		if not found:
+			# **Said once, out loud.** The fallback is the right behaviour and it
+			# is completely silent, which is how an afternoon goes on a figure
+			# nobody is actually looking at: a `.glb` that failed to export, or
+			# one Godot has not imported yet, and the game draws the primitives
+			# and says nothing. `godot --headless --import` is usually the answer.
+			print("no model for %s at %s -- drawing the primitives" % [
+				WorldLook.type_name(body_type), model_path(body_type)])
 	return bool(_model_cache[body_type])
 
 
@@ -118,6 +131,11 @@ static func build(seed_value: int, appearance: SimAppearance, kit: PackedColorAr
 	_paint(root, appearance, kit)
 	_choose_variant(root, "Hair", appearance.hair_style)
 	_choose_variant(root, "Accessory", int(ACCESSORY_INDEX.get(appearance.accessory, -1)))
+	# One mesh, shown or hidden -- there is only ever one moustache, so it is not
+	# a variant set and `_choose_variant` would want it numbered.
+	var tache := root.find_child("Moustache", true, false) as Node3D
+	if tache != null:
+		tache.visible = appearance.moustache
 	# The face and the brows are the whole of a man's identity at this size, and
 	# they are the same code for a model as for the primitives: the metas below
 	# are what `SimCharacterBuilder.set_expression` and `_pose_brows` read.
@@ -125,9 +143,36 @@ static func build(seed_value: int, appearance: SimAppearance, kit: PackedColorAr
 	root.set_meta("eye_style", appearance.eye_style)
 	root.set_meta("mouth_style", appearance.mouth_style)
 	root.set_meta("head_r", MODEL_HEAD_R)
+	_shape_head(root, appearance)
 	_dress_face(root, appearance)
 	set_expression(root, appearance.face)
 	return root
+
+
+## The head a man was born with, on a model that only has one.
+##
+## `head_width`, `head_height` and `head_fraction` are drawn per player and the
+## model was ignoring all three, so five hundred men shared a head. It is the
+## largest single thing making a squad look like a squad of one: hair and a
+## drawn face vary, and a face is mostly its outline.
+##
+## The `Head` node's pivot is the chin, so this grows a head **upwards** and the
+## jaw stays where the neck is. Everything hanging off it -- hair, ears, nose,
+## the atlas patch and the brows -- stretches with it, which is the point: a long
+## face wants long features, and features that keep their own proportions on a
+## stretched skull are a mask.
+static func _shape_head(root: Node3D, appearance: SimAppearance) -> void:
+	var head := root.find_child("Head", true, false) as Node3D
+	if head == null:
+		return
+	# Clamped, and the clamp is not cosmetic: the model's own head is 0.32 of
+	# its height and `head_fraction` is drawn round 0.37, so an unclamped ratio
+	# would grow every head by a sixth before it varied any of them.
+	var size := clampf(appearance.head_fraction / MODEL_HEAD_FRACTION, 0.90, 1.14)
+	head.scale = Vector3(
+		appearance.head_width * size,
+		appearance.head_height * size,
+		appearance.head_width * size)
 
 
 ## Gives the model's face surface a material the atlas can be swapped into.

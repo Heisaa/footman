@@ -126,6 +126,19 @@ const TRUNK_DEPTH := 0.72
 ## keeps the old dead-flat material.
 const TOY_ROUGHNESS := 0.42
 const TOY_SPECULAR := 0.45
+## Broad rather than tight. At 0.28 over a 0.10 roughness the highlight was a
+## hot white blob on a dark forehead -- a wet figure, not a moulded one. The
+## reference's is a wide soft band you can see travel, which is a bigger
+## roughness and less of it.
+const TOY_CLEARCOAT := 0.20
+const TOY_CLEARCOAT_ROUGHNESS := 0.22
+
+## The fill light, and the colour is not white on purpose: a shadow side lit by
+## the same colour as the key is a grey copy of the lit side, and the reference's
+## is cooler than its highlights. A little blue in the fill is most of what makes
+## a white shirt look white rather than grey where the sun is not on it.
+const FILL_ENERGY := 0.34
+const FILL_COLOUR := Color(0.80, 0.86, 1.0)
 
 
 ## The crease shading that makes a figure read as a moulded object rather than a
@@ -181,7 +194,34 @@ static func toy_material(colour: Color) -> StandardMaterial3D:
 	m.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
 	m.metallic_specular = TOY_SPECULAR
 	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+	# The clear coat, and it is what the reference photographs have that a flat
+	# specular does not: a **second, tighter highlight** riding over the colour,
+	# travelling across the forehead and down the shin as the man turns. Moulded
+	# vinyl is pigment under a gloss, not pigment with a sheen mixed into it, and
+	# the two read differently -- one belongs to the surface and the other to the
+	# object. Kept small; at 0.5 the figures are wet.
+	m.clearcoat_enabled = true
+	m.clearcoat = TOY_CLEARCOAT
+	m.clearcoat_roughness = TOY_CLEARCOAT_ROUGHNESS
 	return m
+
+
+## A second light, opposite the sun and low, and the ambient comes down to pay
+## for it.
+##
+## Flat ambient fills the shadow side evenly, which is precisely what cancels
+## form: a sphere lit by one sun and a lot of flat ambient is a disc with a
+## bright edge. The reference photographs are lit through several broad sources,
+## and what that buys is a shadow side that is still *shaped*. No shadow on this
+## one -- it is fill, and a second set of shadows is a second sun.
+static func add_fill_light(parent: Node, sun_yaw: float) -> DirectionalLight3D:
+	var fill := DirectionalLight3D.new()
+	fill.rotation_degrees = Vector3(-24.0, sun_yaw + 150.0, 0.0)
+	fill.light_energy = FILL_ENERGY
+	fill.light_color = FILL_COLOUR
+	fill.shadow_enabled = false
+	parent.add_child(fill)
+	return fill
 
 
 ## `shirt_number` under 1 leaves the back blank.

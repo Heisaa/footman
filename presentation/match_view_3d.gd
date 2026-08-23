@@ -600,7 +600,10 @@ func _build_world() -> void:
 	# `SimCharacterBuilder.add_crease_shading` has the reasoning and the cost.
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(1, 1, 1)
-	env.ambient_light_energy = 0.55
+	# Down from 0.55, and the fill light below is what it paid for. Flat ambient
+	# is the thing that flattens: it lights the shadow side evenly and a figure
+	# stops being round.
+	env.ambient_light_energy = 0.30
 	SimCharacterBuilder.add_crease_shading(env)
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
@@ -613,6 +616,7 @@ func _build_world() -> void:
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
 	SimCharacterBuilder.soften_shadow(sun)
 	add_child(sun)
+	SimCharacterBuilder.add_fill_light(self, -35.0)
 
 	_camera = Camera3D.new()
 	add_child(_camera)
@@ -1365,7 +1369,10 @@ func _build_pose_sheet() -> void:
 	env.background_color = backdrop
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(1, 1, 1)
-	env.ambient_light_energy = 0.55
+	# Down from 0.55, and the fill light below is what it paid for. Flat ambient
+	# is the thing that flattens: it lights the shadow side evenly and a figure
+	# stops being round.
+	env.ambient_light_energy = 0.30
 	SimCharacterBuilder.add_crease_shading(env)
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env

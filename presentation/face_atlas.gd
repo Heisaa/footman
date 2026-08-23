@@ -45,6 +45,11 @@ const EYE_ROW := 14.6
 
 const INK := Color(0.13, 0.11, 0.15, 1.0)
 const WHITE := Color(1.0, 1.0, 1.0, 1.0)
+## The drawn recess round an eye, and the catch light in it. The socket is warm
+## rather than grey -- shadow on skin is skin with the light taken out of it, and
+## a neutral grey over a tan face reads as dirt.
+const SOCKET := Color(0.24, 0.13, 0.10, 0.58)
+const GLOSS := Color(1.0, 1.0, 1.0, 0.72)
 
 ## Eyes, and they are black shapes: `rx`/`ry` are the half-axes, `gap` half the
 ## distance between them, `y` how far down the face they sit. No whites, no
@@ -191,6 +196,18 @@ static func _draw_face(image: Image, face: int, eye_style: int, mouth_style: int
 	var rx: float = eye["rx"]
 	var ry: float = eye["ry"]
 
+	# The sockets go down first, under everything.
+	#
+	# On the reference the eye is a black dome **set into** the head, and what
+	# sells it is not the dome -- it is the soft dark rim the recess leaves round
+	# it. Ours is paint on a smooth cheek, and paint has no recess: the crease
+	# shading in `SimCharacterBuilder.add_crease_shading` finds every fold on the
+	# figure and can find nothing at all here, because geometrically there is
+	# nothing there. So the socket is drawn, which is the only place it can come
+	# from on a face that is a texture.
+	_socket(image, left, y, rx, ry)
+	_socket(image, right, y, rx, ry)
+
 	match face:
 		SimAppearance.Face.EFFORT:
 			# Screwed shut, whatever shape they are open.
@@ -203,13 +220,19 @@ static func _draw_face(image: Image, face: int, eye_style: int, mouth_style: int
 			# Wide open: the eyes grow rather than change shape.
 			_ellipse(image, left, y, rx + 0.5, ry + 0.7, INK)
 			_ellipse(image, right, y, rx + 0.5, ry + 0.7, INK)
+			_gloss(image, left, y, rx + 0.5, ry + 0.7)
+			_gloss(image, right, y, rx + 0.5, ry + 0.7)
 		SimAppearance.Face.ANGER:
 			# Narrowed, not shut: squashed to seven tenths they stop being ovals.
 			_ellipse(image, left, y + 0.4, rx, ry * 0.85, INK)
 			_ellipse(image, right, y + 0.4, rx, ry * 0.85, INK)
+			_gloss(image, left, y + 0.4, rx, ry * 0.85)
+			_gloss(image, right, y + 0.4, rx, ry * 0.85)
 		_:
 			_ellipse(image, left, y, rx, ry, INK)
 			_ellipse(image, right, y, rx, ry, INK)
+			_gloss(image, left, y, rx, ry)
+			_gloss(image, right, y, rx, ry)
 
 	match face:
 		SimAppearance.Face.EFFORT:
@@ -222,6 +245,44 @@ static func _draw_face(image: Image, face: int, eye_style: int, mouth_style: int
 			_line(image, 12.8, 23.6, 19.2, 23.6, 1.4)
 		_:
 			_mouth(image, mouth)
+
+
+## The shading a recess would have cast, drawn because there is no recess.
+##
+## A soft dark halo, densest just outside the eye and gone within about a third
+## of its width. It has to be *soft*: a hard rim is a drawn outline, which is the
+## register leaking into the art, and it was taken back out of this figure twice
+## before. Nobody should be able to point at this and say where it stops.
+static func _socket(image: Image, cx: float, cy: float, rx: float, ry: float) -> void:
+	var reach := 1.34
+	var pcx := cx * SCALE
+	var pcy := cy * SCALE
+	var prx: float = maxf(rx * SCALE, 0.5) * reach
+	var pry: float = maxf(ry * SCALE, 0.5) * reach
+	for y in range(int(floor(pcy - pry)) - 1, int(ceil(pcy + pry)) + 2):
+		for x in range(int(floor(pcx - prx)) - 1, int(ceil(pcx + prx)) + 2):
+			var dx := (float(x) + 0.5 - pcx) / prx
+			var dy := (float(y) + 0.5 - pcy) / pry
+			var d := sqrt(dx * dx + dy * dy)
+			if d >= 1.0:
+				continue
+			# Squared falloff, and lifted a little at the very centre so the
+			# darkest ring sits under the rim of the eye rather than under its
+			# middle, where the eye covers it anyway.
+			var fade := (1.0 - d) * (1.0 - d)
+			_blend(image, x, y, SOCKET, fade * SOCKET.a)
+
+
+## The wet highlight. One dot, up and inboard, the same on every eye.
+##
+## The reference eye is the glossiest thing on the whole figure and the catch
+## light is most of what makes it read as an eye rather than a hole. Ours is a
+## flat texture and cannot catch anything, so it is painted -- which fixes it
+## relative to the head instead of to the sun, and at this size nobody will ever
+## know. Small: at twice this it is a cartoon sparkle.
+static func _gloss(image: Image, cx: float, cy: float, rx: float, ry: float) -> void:
+	_ellipse(image, cx - rx * 0.36, cy - ry * 0.38,
+		maxf(rx * 0.21, 0.26), maxf(ry * 0.21, 0.26), GLOSS)
 
 
 ## One brow. `inner` is +1 for the left eye and -1 for the right, so a positive

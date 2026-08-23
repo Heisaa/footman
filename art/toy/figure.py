@@ -52,6 +52,18 @@ LIMB_POWER = 2.0
 FINE = 16
 COARSE = 10
 
+## Segments round a head of hair, and it is deliberately double the head's.
+##
+## The hairline rises and falls as it goes round the skull -- high at the brow,
+## low at the ears, lower at the nape -- so the bottom edge of a shell is a wavy
+## curve in three dimensions, and how finely that curve is sampled *is* how
+## clean the hairline looks. Sampled twenty times it comes out as teeth, which
+## reads exactly like a bad intersection and is not one: three goes at fixing
+## the crossing changed nothing, because the crossing was never the problem.
+##
+## Only one cut is ever drawn, so this is paid once and not seventeen times.
+HAIR_SEGMENTS = 32
+
 ## Where the game's face maths thinks the head is.
 ##
 ## `SimCharacterBuilder` lays the face atlas and poses the brows on a **sphere**
@@ -329,6 +341,64 @@ def _inside_skull(look, h, p):
         return False
     e = HEAD_POWER
     return (abs(p[0] / rx) ** e + abs((p[1] - cy) / ry) ** e) <= 1.0
+
+
+def extras(look, h, segs, coarse):
+    """[(name, Mesh)] for the parts the seed switches on and off.
+
+    `Moustache` is shown or hidden; `Accessory0` and `Accessory1` are the
+    headband and the cap, and `SimCharacterModel._choose_variant` picks between
+    them. All three hang off `Head`, so they turn with it.
+    """
+    hw = look.head_w * h
+    hd = look.head_d * h
+    hh = look.head_h * h
+    out = []
+
+    # **Two lobes, not a bar.** One shape under a nose is a moustache sticker;
+    # two with a dip between them has a shape. Wide and shallow: deeper than this
+    # a dark curved mass sits where a mouth belongs and the man is scowling
+    # whoever he is. And it has to stand *proud* -- set at the skull's own depth
+    # only its two widest points showed, as a pair of dark dots either side of
+    # the mouth, like a smirk drawn on.
+    tache = M.Mesh("Moustache")
+    for side in (-1.0, 1.0):
+        tache.merge(M.blob((side * hw * 0.105, -hd * 1.00, h * 0.729),
+                           (hw * 0.145, hd * 0.062, hh * 0.055),
+                           coarse, max(4, coarse // 2), HAIR, name="tache"))
+    out.append(("Moustache", tache))
+
+    # The headband, cut to the skull at the height it is worn. A ring of one
+    # radius round a head that is narrowing is a halo hanging off the forehead.
+    # **Above the brows and over the hairline**, which is where a headband is
+    # worn -- it pushes the hair up. Set at the skull's own mid-height it lands
+    # across the brows and the man is blindfolded.
+    # **Over the hair, not under it.** Both of these are worn on top of a head
+    # of hair and the shells are 1.10 of the skull, so anything sized to the
+    # skull is swallowed -- the cap vanished and left its peak poking out of the
+    # top of a man's head like a fin.
+    # Sized to sit just off the **skull**, and it follows the skull's own curve
+    # rather than running straight round. At 1.14, out where it would clear a
+    # head of hair, it is a plank laid across a bald man's forehead. Under the
+    # hair on a man who has some is the lesser wrong, and is also what a
+    # headband does.
+    band = M.tube([M.Ring(h * 0.822, hw * 1.055, hd * 1.055),
+                   M.Ring(h * 0.840, hw * 1.075, hd * 1.075),
+                   M.Ring(h * 0.858, hw * 1.060, hd * 1.060),
+                   M.Ring(h * 0.872, hw * 1.010, hd * 1.010)],
+                  segs, SHIRT, power=HEAD_POWER,
+                  cap_lo=False, cap_hi=False, name="Accessory0")
+    out.append(("Accessory0", band))
+
+    # The cap: a dome off the same skull, and a peak. Without the peak it is a
+    # swimming cap.
+    cap = M.tube(skull_rings(look, h, scale=1.155, lift=hh * 0.105, first=4),
+                 segs, SHIRT, power=HEAD_POWER, cap_lo=False, name="Accessory1")
+    cap.merge(M.blob((0.0, -hd * 1.05, h * 0.858),
+                     (hw * 0.66, hd * 0.50, hh * 0.052),
+                     segs, max(4, coarse // 2), SHIRT, name="peak"))
+    out.append(("Accessory1", cap))
+    return out
 
 
 # --- Arms --------------------------------------------------------------------

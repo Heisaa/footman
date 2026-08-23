@@ -142,7 +142,10 @@ func _build_world() -> void:
 	# Sun plus ambient just over one. This view is where colour is judged, so it
 	# has to be lit honestly: at 1.4 the pale end of the skin ladder clipped to
 	# white and every fair man looked like a ghost.
-	env.ambient_light_energy = 0.5
+	# Down from 0.5, with the fill light below taking up the slack. This view is
+	# where colour is judged and it has to stay honest: the total is about what
+	# it was, but a third of it now comes from a direction.
+	env.ambient_light_energy = 0.26
 	SimCharacterBuilder.add_crease_shading(env)
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
@@ -154,6 +157,7 @@ func _build_world() -> void:
 	sun.shadow_enabled = true
 	SimCharacterBuilder.soften_shadow(sun)
 	add_child(sun)
+	SimCharacterBuilder.add_fill_light(self, -30.0)
 
 	# The floor of a product photograph, not a pitch. The background above it was
 	# already paper for the reason in the comment there -- a green field competes

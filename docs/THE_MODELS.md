@@ -207,8 +207,9 @@ army the day those landed.
   A man with `brow_style` 0 still has none at rest, which is the design: a
   strong expression lends him a plain pair.
 
-- **No moustache, no accessories, no shirt number.** `Accessory0` and
-  `Accessory1` are in the contract and not in the file.
+- **Shirt numbers.** The only thing in the contract still missing. A model
+  probably wants a decal or a texture rather than the digits-as-geometry the
+  procedural figure builds, and nothing reads that yet.
 - **Five bodies, one shape.** Only `build` separates them -- wider trunk,
   thicker limbs -- and per the owner that is what a giant is: tall, which the
   game does by scaling, and bigger, which that does.

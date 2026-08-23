@@ -216,6 +216,32 @@ contrast is most of what reads as a football kit.
 - **Whatever is under a garment has to be inside it at every height**, not just
   at the widest one. The shirt rounds in towards the shoulder; the trunk did
   not, and its own square rim read as a hard line straight across the chest.
+- **A hairline is an edge you author, not a place two shells happen to meet.**
+  Every version of the hair let a smooth shell pass through the skull and called
+  the intersection the hairline. Two low-poly surfaces crossing at a shallow
+  angle do not make a line, they make a sawtooth, and seventeen cuts had one
+  across the forehead. Three goes at fixing the *crossing* — tucking the shell
+  in to steepen it, sizing the rim for the skull's widest point, matching the
+  rim's section to the skull's — changed nothing at all, because the crossing
+  was never the problem. The rim now sits **on** the skull, a millimetre out,
+  and the ring above steps straight to full size. Same lesson as the sock
+  hoops: stop laying one surface over another and make the edge yourself.
+- **What looked like a bad intersection was a sampling rate.** Once the rim was
+  authored the teeth were still there, and the reason is that a hairline is not
+  level — it is high at the brow, low over the ears, lower at the nape — so the
+  rim is a wavy curve in three dimensions. Sampled twenty times round the head
+  that curve *is* a row of teeth. Doubling the segments on the hair fixed in one
+  line what three geometric arguments had not.
+- **A push back has to fade out as the shell rises.** Applied to every ring
+  equally it does not make a hairline, it slides the whole cut backwards off the
+  skull: sixteen of seventeen came out as a dark rim round the ears with a bald
+  man inside it. On one head at a time that reads as a hairline that is merely a
+  bit high, which is why it survived so long — the contact sheet of all
+  seventeen is what showed it, in one look.
+- **Anything worn on a head has to clear the hair, not the skull.** The cap and
+  the headband were sized to the skull, the hair shells are a tenth larger than
+  it, and both accessories were swallowed whole — all that showed of the cap was
+  its peak, poking out of the top of a man's head like a fin.
 - **A collapse ratio is a request, not a result — measure.** `export.py`
   printed the triangle count it had *asked* for and wrote a thirteen-megabyte
   file of 677,000 triangles while claiming 8,000. Worse, a whole afternoon of
