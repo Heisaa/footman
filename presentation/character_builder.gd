@@ -76,6 +76,21 @@ const FACE_ROWS := 14
 ## to stay inside the nose: the nose reaches about 1.09 head-radii and a brow
 ## that stands further out than a man's nose is a brow ridge on a hominid.
 const BROW_DEPTH := 0.6
+## The shorts, as shares of the shoulder half-width so that every build keeps the
+## same shape.
+##
+## **The relationship is the point**: `HIP_SPREAD + SHORTS_LEG_RADIUS` equals
+## `SHORTS_SEAT_BOTTOM`, so the outside of each leg of the shorts lands exactly on
+## the side of the seat above it. The garment then has one straight line down its
+## outer edge, and the only thing cut into it is the notch between the legs --
+## which is what shorts look like. Left to drift apart, either the seat overhangs
+## the legs like a peplum or the legs bulge out of it like jodhpurs.
+##
+## Move one of these three and the other has to move with it.
+const HIP_SPREAD := 0.34
+const SHORTS_SEAT_TOP := 0.60
+const SHORTS_SEAT_BOTTOM := 0.64
+const SHORTS_LEG_RADIUS := SHORTS_SEAT_BOTTOM - HIP_SPREAD
 ## How deep the trunk is against its width. A body is an oval in plan, never a
 ## circle, and this one number is most of what stops the torso and the shorts
 ## reading as pipe. Anything laid on the front of the shirt -- the collar, the
@@ -216,7 +231,8 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	# Up under the shirt hem and down to about the crotch, which is where the
 	# reference puts them. They used to hang below the hip with the shirt over the
 	# top of the lot.
-	var hips := _taper(shoulder * 0.60, shoulder * 0.64, leg_h * 0.44, shorts)
+	var hips := _taper(
+		shoulder * SHORTS_SEAT_TOP, shoulder * SHORTS_SEAT_BOTTOM, leg_h * 0.44, shorts)
 	hips.position = Vector3(0.0, leg_h * 0.26, 0.0)
 	hips.scale = Vector3(1.0, 1.0, 0.90)
 	spine.add_child(hips)
@@ -373,7 +389,7 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		var tag2: String = "L" if side < 0.0 else "R"
 		var hip := Node3D.new()
 		hip.name = "Hip" + tag2
-		hip.position = Vector3(side * shoulder * 0.34, leg_h, 0.0)
+		hip.position = Vector3(side * shoulder * HIP_SPREAD, leg_h, 0.0)
 		root.add_child(hip)
 
 		# Bare thigh, with the shorts pulled over the top of it. The thigh used to
@@ -388,8 +404,18 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		# reason the seat is one -- it is the hem that reads.
 		# Hanging well below the seat, which is what a notch is. A seat that
 		# reaches as far down as these fills it in and the shorts are a skirt.
-		var short_leg := _taper(limb * 1.16, limb * 1.10, leg_h * 0.34, shorts)
+		#
+		# Wider than the leg inside it, and sized off the shoulder rather than off
+		# the limb so that its outer edge lands on the side of the seat -- see
+		# `SHORTS_LEG_RADIUS`. The floor is there because the two scale differently
+		# with build: a light man's shoulders narrow faster than his limbs thin,
+		# and at the bottom of the range the shorts would otherwise close on the
+		# thigh and disappear inside it.
+		var short_r: float = maxf(shoulder * SHORTS_LEG_RADIUS, limb * 1.12)
+		var short_leg := _taper(short_r, short_r * 0.97, leg_h * 0.34, shorts)
 		short_leg.position = Vector3(0.0, -leg_h * 0.06, 0.0)
+		# The same oval in plan as the seat it hangs off.
+		short_leg.scale = Vector3(1.0, 1.0, 0.90)
 		hip.add_child(short_leg)
 
 		var knee := Node3D.new()
