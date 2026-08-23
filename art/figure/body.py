@@ -167,25 +167,41 @@ def _body(skin, look, h):
     trunk_top = h * (SHOULDER - 0.055)
     skin.add(Barrel(
         (0.0, 0.0, (h * SHIRT_HEM + trunk_top) * 0.5),
-        (w * 0.62, h * 0.058), (trunk_top - h * SHIRT_HEM) * 0.5,
+        (w * 0.56, h * 0.058), (trunk_top - h * SHIRT_HEM) * 0.5,
         round=h * 0.072))
 
     for side in (-1.0, 1.0):
         # Arms hang almost straight, a few degrees out. Straight down and the
         # arm merges with the trunk in silhouette; that gap is cheap daylight.
-        top = (side * w * 0.62, 0.0, h * (SHOULDER - 0.090))
-        wrist = (side * w * 0.78, 0.0, h * 0.295)
-        skin.add(Capsule(top, wrist, limb * 1.10, limb * 0.94), k=h * 0.045)
+        # Outside the trunk, not inside it, with daylight between the two.
+        top = (side * w * 0.74, 0.0, h * (SHOULDER - 0.090))
+        wrist = (side * w * 0.90, 0.0, h * 0.295)
+        # Measured: the reference arm is .060 of figure height in radius where
+        # it passes the chest. Ours was .0706 -- and an arm that much thicker
+        # closes the gap to the body on its own, whatever its centre line does.
+        # **A small blend, not a big one.** At h*0.045 the fillet where the arm
+        # meets the trunk reaches eight centimetres, which webs the two together
+        # for a hand's width below the trunk's own bottom -- and that web is the
+        # torso running into the arm. The join is under the shirt anyway.
+        skin.add(Capsule(top, wrist, limb * 0.92, limb * 0.80), k=h * 0.004)
         # A mitten: one rounded end, no fingers, and only a little wider than
         # the wrist. Any bigger and it is a boxing glove.
-        skin.add(Ellipsoid((side * w * 0.79, 0.0, h * 0.258),
-                           (limb * 1.22, limb * 1.12, limb * 1.34)), k=h * 0.014)
+        skin.add(Ellipsoid((side * w * 0.92, 0.0, h * 0.258),
+                           (limb * 1.14, limb * 1.06, limb * 1.26)), k=h * 0.014)
 
         # Legs. Thicker than the arms, which is the way round the references
         # have it and the opposite of what a constant limb radius gives.
-        hip = (side * w * 0.42, 0.0, h * (SHORTS_HEM + 0.06))
+        # Inside the leg of the shorts, or the thigh comes through the front of
+        # them as a patch of bare skin.
+        hip = (side * w * 0.40, 0.0, h * (SHORTS_HEM + 0.06))
         ankle = (side * w * 0.44, 0.0, h * BOOT_TOP)
-        skin.add(Capsule(hip, ankle, limb * 1.42, limb * 1.20), k=h * 0.04)
+        # Small, for the same reason the arm's is: a fillet this wide blends the
+        # leg into everything already in the solid, the arm included, and welds
+        # the two together across a gap that should be daylight.
+        # A smooth union bridges any gap narrower than its own radius, so the
+        # fillet here has to be smaller than the daylight between the leg and
+        # the arm hanging beside it -- about two centimetres.
+        skin.add(Capsule(hip, ankle, limb * 1.32, limb * 1.16), k=h * 0.004)
 
 
 def _head(skin, ink, hair, look, h):
@@ -451,7 +467,7 @@ def _kit(shirt, trim, collar, shorts, socks, boots, look, h):
     # it out to full width. Built at full width it read as a barrel: the sleeve
     # then blends outwards from an already-wide shoulder and the arms arrive
     # somewhere under the armpit.
-    trunk = w * 0.72
+    trunk = w * 0.62
     # **A body tube and a sloping shoulder**, which is what a T-shirt is.
     #
     # One barrel for the whole shirt reads as a postbox and no amount of easing
@@ -478,11 +494,11 @@ def _kit(shirt, trim, collar, shorts, socks, boots, look, h):
     # simply added after it.
     shirt.cut(Plane((0.0, 0.0, h * SHIRT_HEM), (0.0, 0.0, 1.0)), k=h * 0.006)
 
-    sleeve_end = h * (0.472 if not look.sleeves_long else 0.300)
+    sleeve_end = h * (0.492 if not look.sleeves_long else 0.300)
     # A long sleeve has to arrive at the wrist about the width of the wrist. Run
     # down at the width it leaves the shoulder, it finishes in a cuff wider than
     # the hand below it, which reads as a bandage rather than a sleeve.
-    cuff_r = limb * (1.24 if not look.sleeves_long else 1.06)
+    cuff_r = limb * (1.15 if not look.sleeves_long else 1.00)
     for side in (-1.0, 1.0):
         # The shoulder: from beside the neck, out and **down**. Its top at the
         # neck end comes to the chin exactly, which is where the reference puts
@@ -491,8 +507,8 @@ def _kit(shirt, trim, collar, shorts, socks, boots, look, h):
         # Fat enough to *be* the top of the shirt. Thin, it is a strap laid
         # over a barrel and the barrel's own top still shows as a ledge across
         # the chest.
-        shirt.add(Capsule((side * w * 0.10, 0.0, h * 0.545),
-                          (side * w * 0.60, 0.0, h * 0.515),
+        shirt.add(Capsule((side * w * 0.10, 0.0, h * 0.575),
+                          (side * w * 0.56, 0.0, h * 0.545),
                           h * 0.078, h * 0.070), k=h * 0.060)
         # The sleeve hangs off that, angled out as it falls. Started further in
         # than the arm it would be narrower at the top than the arm inside it,
@@ -501,12 +517,15 @@ def _kit(shirt, trim, collar, shorts, socks, boots, look, h):
         # what the reference does. Thrown out at forty-five it reads as a stub
         # stuck on the side of the shirt, and the widest point of the figure
         # ends up being the cuff instead of the shoulder.
-        shirt.add(Capsule((side * w * 0.60, 0.0, h * 0.520),
-                          (side * w * 0.76, 0.0, sleeve_end),
-                          limb * 1.80, cuff_r), k=h * 0.050)
+        # About the arm's own thickness plus cloth. At limb*1.80 it was a puff
+        # sleeve: the widest thing on the figure was the shirt's sleeve rather
+        # than the man's arm, which is the wrong way round in every reference.
+        shirt.add(Capsule((side * w * 0.64, 0.0, h * 0.560),
+                          (side * w * 0.80, 0.0, sleeve_end),
+                          limb * 1.45, cuff_r), k=h * 0.050)
         # The cuff, in the trim colour, standing a little proud of the sleeve.
-        cuff_a = (side * w * 0.752, 0.0, sleeve_end + h * 0.018)
-        cuff_b = (side * w * 0.76, 0.0, sleeve_end - h * 0.001)
+        cuff_a = (side * w * 0.792, 0.0, sleeve_end + h * 0.018)
+        cuff_b = (side * w * 0.80, 0.0, sleeve_end - h * 0.001)
         trim.add(Capsule(cuff_a, cuff_b, cuff_r * 1.10, cuff_r * 1.09))
 
     # The collar: the head's own jaw, enlarged, taken out of the shirt, so the
@@ -561,7 +580,7 @@ def _kit(shirt, trim, collar, shorts, socks, boots, look, h):
         (0.0, 0.0, (crotch + shorts_high) * 0.5),
         (seat_half, h * 0.082), (shorts_high - crotch) * 0.5,
         round=shorts_round))
-    leg_r = w * 0.30
+    leg_r = w * 0.31
     for side in (-1.0, 1.0):
         leg_x = side * (seat_half - leg_r)
         shorts.add(Capsule((leg_x, 0.0, crotch + h * 0.030),

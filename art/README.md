@@ -59,6 +59,8 @@ contrast is most of what reads as a football kit.
 | `figure/studio.py` | The room: cyclorama, four soft lights, camera framing, render settings. |
 | `figure/palette.py` | The game's `Color`, and sRGB → linear on the way into a shader socket. |
 | `build.py` | The command line. |
+| `measure_reference.py` | Measures the reference **photograph's** silhouette, flood-filling from the border, and prints it in fractions of figure height. Proportions get read rather than remembered. |
+| `silhouette.py` | The same measurement of our own figure, in the same units, printed against the reference's numbers. |
 | `outline.py` | Measures a moulding's plan outline for **creases**, without Blender. A crease is a concavity -- the silhouette stepping inwards as it goes round -- and finding one this way is a second's work against twenty for a render. |
 | `reference/` | The owner's four reference images and what was measured off them. |
 
@@ -133,6 +135,16 @@ contrast is most of what reads as a football kit.
   to the sleeve, and the sleeve then hangs at about seventy. Vertical sides and
   a domed lid is a postbox whatever the radius; that slope is most of the
   silhouette.
+- **Gaps are a measurement.** The reference's arms show as **separate runs** in
+  the silhouette, clear of the body by .006–.008 of figure height. Ours were one
+  run with the body, and three different things were welding them: the arm sat
+  25% too far in, it was 18% too thick, and — the one that took longest to see —
+  the fillet joining it to the trunk was 81mm wide, which webs anything within
+  81mm of it. **A smooth union bridges any gap narrower than its own radius**,
+  so a fillet has to be smaller than the daylight you want to keep.
+- **The widest thing on the figure is the arm, not the sleeve.** Ours had a
+  sleeve at limb*1.80 over an arm at limb*0.92, which is a puff sleeve and the
+  wrong way round in every reference.
 - **Measure the reference, do not remember it.** The V was twice as wide as the
   reference's and half the chest deep — the real one is thirty per cent of the
   shirt's width and a fifth of its height. Two minutes with the picture open
