@@ -108,6 +108,24 @@ contrast is most of what reads as a football kit.
 - **Some seams are meant to be there.** A shirt has a shoulder seam. Chasing
   `outline.py` to zero cost the shoulder its shape three times over; the number
   is for finding a crease, not for deciding it must go.
+- **The offset of an ellipse is not an ellipse.** Shrinking a barrel's plan
+  section by its rim radius and inflating it back is the standard rounded-solid
+  trick and it is only correct for a *circle*. Push the rim radius near the
+  section's own depth and the shrunk ellipse collapses to a line — whose offset
+  is a **stadium**, dead flat front and back. That flat panel across the chest
+  is what made the torso read as a postbox, and easing the rim could never have
+  fixed it, because easing the rim was what caused it. `Barrel` keeps the
+  section exact now and rounds the rim in the 2D space of (distance to the
+  ellipse, height).
+- **A shirt is a body tube plus a sloping shoulder, not one barrel.** Measured
+  off the reference the shoulder falls about twenty degrees from the neck out
+  to the sleeve, and the sleeve then hangs at about seventy. Vertical sides and
+  a domed lid is a postbox whatever the radius; that slope is most of the
+  silhouette.
+- **Measure the reference, do not remember it.** The V was twice as wide as the
+  reference's and half the chest deep — the real one is thirty per cent of the
+  shirt's width and a fifth of its height. Two minutes with the picture open
+  beat an hour of adjusting it by eye.
 - **A distance field has to be a distance.** `(k - 1) * min(radii)` for an
   ellipse under-reports the distance along the wide axis by the whole aspect
   ratio, so a fillet comes out two and a half times smaller there than it was

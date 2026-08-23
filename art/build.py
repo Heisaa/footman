@@ -118,8 +118,8 @@ def main():
             look = cast.preset(name)
             looks.append(look)
             stand(look, (-span * 0.5 + i * spacing, 0.0, 0.0), args.cell, name, cache)
-        target = (0.0, 0.0, 0.90)
-        half_w, half_h = span * 0.5 + 0.42, 1.02
+        target = (0.0, 0.0, 0.86)
+        half_w, half_h = span * 0.5 + 0.42, 1.00
     elif args.mode == "squad":
         span = spacing * (args.count - 1)
         tallest = 0.0

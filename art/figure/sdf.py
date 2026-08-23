@@ -182,8 +182,9 @@ class Barrel(Prim):
         # crease-free and far too deep to look at from the side.
         self.top = self.radii if top is None else np.asarray(top, dtype=np.float64)
         self.half_height = float(half_height)
-        self.round = float(min(round, float(np.min(self.radii)),
-                               float(np.min(self.top)), self.half_height) * 0.999)
+        # Only the height is limited: the section is no longer shrunk by this,
+        # so a rim larger than the depth is merely a very round rim.
+        self.round = float(min(round, self.half_height) * 0.999)
 
     def reach(self):
         return np.array([max(self.radii[0], self.top[0]),
@@ -192,16 +193,25 @@ class Barrel(Prim):
     def distance(self, x, y, z):
         px, py, pz = self.local(x, y, z)
         rise = np.clip((pz + self.half_height) / (2.0 * self.half_height), 0.0, 1.0)
-        a = self.radii[0] + (self.top[0] - self.radii[0]) * rise - self.round
-        b = self.radii[1] + (self.top[1] - self.radii[1]) * rise - self.round
-        # Distance to the shrunken ellipse, then the whole thing is inflated
-        # back out by `round`. Approximate off-axis, exact for a circle, and
-        # wrong only by where a fillet sits.
+        a = self.radii[0] + (self.top[0] - self.radii[0]) * rise
+        b = self.radii[1] + (self.top[1] - self.radii[1]) * rise
+        # **The ellipse is not shrunk.** Shrinking the plan section by the rim
+        # radius and inflating it back is the standard trick and it is only
+        # right for a circle: the offset of an ellipse is not an ellipse. Push a
+        # rim radius near the section's own depth and the shrunk ellipse
+        # collapses to a line -- whose offset is a *stadium*, flat front and
+        # back. That flat panel across the chest is what made the torso read as
+        # a postbox, and no amount of easing the rim could have fixed it,
+        # because easing the rim was what caused it.
+        #
+        # Instead the section stays exactly elliptical and the rim is rounded in
+        # the two-dimensional space of (distance to that ellipse, height).
         flat = _ellipse_distance((px / a, py / b), (px / (a * a), py / (b * b)),
                                  float(np.min(np.minimum(a, b))))
+        near = flat + self.round
         tall = np.abs(pz) - (self.half_height - self.round)
-        outside = np.sqrt(np.maximum(flat, 0.0) ** 2 + np.maximum(tall, 0.0) ** 2)
-        inside = np.minimum(np.maximum(flat, tall), 0.0)
+        outside = np.sqrt(np.maximum(near, 0.0) ** 2 + np.maximum(tall, 0.0) ** 2)
+        inside = np.minimum(np.maximum(near, tall), 0.0)
         return (outside + inside - self.round).astype(np.float32)
 
 
@@ -293,6 +303,25 @@ class Solid:
         self.ops.append(("keep", prim, float(k)))
         return self
 
+    def keep_inside(self, other, offset=0.0, k=0.0):
+        """Clip to another solid's outer form, `offset` metres in from it.
+
+        For a garment made of more than one shape -- and a shirt is a body tube
+        plus a shoulder plus a sleeve -- an insert clipped to any single one of
+        them sits in a box-shaped recess wherever the others are what is
+        actually there. Clipping to the garment itself is the only thing that
+        follows it.
+
+        Only the other solid's **added** shapes are sampled, never its cuts:
+        the hole the insert is filling is one of those cuts, and honouring it
+        would clip the insert straight back out of the hole.
+
+        Adding a constant to a distance field moves its surface inwards by that
+        much, so `offset` is an exact inset and costs nothing.
+        """
+        self.ops.append(("keep_inside", (other, float(offset)), float(k)))
+        return self
+
     def bounds(self, pad=0.0):
         los, his = [], []
         for kind, prim, k in self.ops:
@@ -305,6 +334,17 @@ class Solid:
             raise ValueError(f"solid {self.name!r} has nothing in it")
         return np.min(los, axis=0), np.max(his, axis=0)
 
+    def sample(self, axes, shape):
+        """This solid's outer form on someone else's grid: added shapes only."""
+        grid = np.full(shape, FAR, dtype=np.float32)
+        x = axes[0][:, None, None]
+        y = axes[1][None, :, None]
+        z = axes[2][None, None, :]
+        for kind, prim, k in self.ops:
+            if kind == "add":
+                grid = smin(grid, prim.distance(x, y, z), k)
+        return grid
+
     def field(self, cell: float):
         """Samples the solid on its own grid. Returns (distances, origin, cell)."""
         lo, hi = self.bounds(pad=3.0 * cell)
@@ -313,6 +353,10 @@ class Solid:
         grid = np.full(tuple(counts), FAR, dtype=np.float32)
 
         for kind, prim, k in self.ops:
+            if kind == "keep_inside":
+                other, offset = prim
+                grid = smax(grid, other.sample(axes, grid.shape) + np.float32(offset), k)
+                continue
             plo, phi = prim.bounds()
             pad = k + 2.0 * cell
             i0 = np.maximum(np.floor((plo - pad - lo) / cell).astype(int), 0)

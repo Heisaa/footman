@@ -173,12 +173,12 @@ def _body(skin, look, h):
     for side in (-1.0, 1.0):
         # Arms hang almost straight, a few degrees out. Straight down and the
         # arm merges with the trunk in silhouette; that gap is cheap daylight.
-        top = (side * w * 0.66, 0.0, h * (SHOULDER - 0.075))
-        wrist = (side * w * 0.88, 0.0, h * 0.295)
+        top = (side * w * 0.62, 0.0, h * (SHOULDER - 0.090))
+        wrist = (side * w * 0.78, 0.0, h * 0.295)
         skin.add(Capsule(top, wrist, limb * 1.10, limb * 0.94), k=h * 0.045)
         # A mitten: one rounded end, no fingers, and only a little wider than
         # the wrist. Any bigger and it is a boxing glove.
-        skin.add(Ellipsoid((side * w * 0.89, 0.0, h * 0.258),
+        skin.add(Ellipsoid((side * w * 0.79, 0.0, h * 0.258),
                            (limb * 1.22, limb * 1.12, limb * 1.34)), k=h * 0.014)
 
         # Legs. Thicker than the arms, which is the way round the references
@@ -445,46 +445,51 @@ def _kit(shirt, trim, collar, shorts, socks, boots, look, h):
     # then blends outwards from an already-wide shoulder and the arms arrive
     # somewhere under the armpit.
     trunk = w * 0.72
-    # **The rim radius is the shoulder, and the taper is the side view.** One
-    # barrel does the whole shirt: an oval in plan, so there are no flat faces
-    # to catch the light as a slab; a generous rim where the side turns over
-    # into the top, which is the shoulder line; and a section that draws in
-    # front-to-back as it rises, which is what a shoulder does.
+    # **A body tube and a sloping shoulder**, which is what a T-shirt is.
     #
-    # The taper is also half of closing the seam where the sleeve joins, which
-    # is a step in **depth**: a deep trunk meeting a sleeve at arm thickness.
-    # There are two ways to shut it and only one is any good. Pushing the
-    # shoulder out to meet the trunk works and leaves a figure far too deep to
-    # look at from the side; bringing the trunk in to meet the sleeve works and
-    # does not. The other shapes tried on top -- a flattened ball, a capsule
-    # laid across, a wide shallow bar -- each left a seam of their own, because
-    # a second surface as wide as the barrel gives a fillet nothing to bridge.
-    shirt_round = h * 0.098
+    # One barrel for the whole shirt reads as a postbox and no amount of easing
+    # its rim fixes that: vertical sides and a domed lid is a postbox whatever
+    # the radius. Measured off the reference the shoulder falls about twenty
+    # degrees from the neck out to the sleeve, and that slope is most of the
+    # silhouette -- it is the difference between a shirt on a man and a tube
+    # with a head on it.
+    #
+    # So the barrel stops at the armpit and two capsules per side carry the
+    # shape up and out: a shoulder that slopes, and a sleeve hung off it.
+    shirt_round = h * 0.075
     shirt_low = h * SHIRT_HEM - shirt_round
-    shirt_high = h * SHOULDER + h * 0.010
+    shirt_high = h * 0.500
     shirt.add(Barrel(
         (0.0, 0.0, (shirt_low + shirt_high) * 0.5),
         (trunk, h * 0.112), (shirt_high - shirt_low) * 0.5,
-        round=shirt_round, top=(trunk * 0.99, h * 0.084)))
+        round=shirt_round, top=(trunk * 0.99, h * 0.078)))
 
-    sleeve_end = h * (0.442 if not look.sleeves_long else 0.300)
+    sleeve_end = h * (0.472 if not look.sleeves_long else 0.300)
     for side in (-1.0, 1.0):
-        # The other half: a compact mass at the joint, the same depth as the
-        # shirt's own top, so the sleeve leaves a *shoulder* rather than the
-        # side of a trunk. It has to stay compact -- widened into a bar across
-        # the chest it stops being a shoulder and becomes a shoulder pad.
-        shirt.add(Ellipsoid((side * w * 0.68, 0.0, h * (SHOULDER - 0.070)),
-                            (h * 0.068, h * 0.084, h * 0.066)), k=h * 0.055)
-        # Fat where it leaves the shoulder and tapered to the cuff. Started
-        # further in than the arm it would be narrower at the top than the arm
-        # inside it, and the bare arm breaks out through it.
-        top = (side * w * 0.66, 0.0, h * (SHOULDER - 0.085))
-        end = (side * w * 0.86, 0.0, sleeve_end)
-        shirt.add(Capsule(top, end, limb * 1.88, limb * 1.16), k=h * 0.055)
+        # The shoulder: from beside the neck, out and **down**. Its top at the
+        # neck end comes to the chin exactly, which is where the reference puts
+        # the collar, and it has dropped a tenth of a metre by the time it
+        # reaches the sleeve.
+        # Fat enough to *be* the top of the shirt. Thin, it is a strap laid
+        # over a barrel and the barrel's own top still shows as a ledge across
+        # the chest.
+        shirt.add(Capsule((side * w * 0.10, 0.0, h * 0.545),
+                          (side * w * 0.60, 0.0, h * 0.515),
+                          h * 0.078, h * 0.070), k=h * 0.060)
+        # The sleeve hangs off that, angled out as it falls. Started further in
+        # than the arm it would be narrower at the top than the arm inside it,
+        # and the bare arm breaks out through it.
+        # It **hangs**, at about seventy degrees off the horizontal, which is
+        # what the reference does. Thrown out at forty-five it reads as a stub
+        # stuck on the side of the shirt, and the widest point of the figure
+        # ends up being the cuff instead of the shoulder.
+        shirt.add(Capsule((side * w * 0.60, 0.0, h * 0.520),
+                          (side * w * 0.76, 0.0, sleeve_end),
+                          limb * 1.80, limb * 1.24), k=h * 0.050)
         # The cuff, in the trim colour, standing a little proud of the sleeve.
-        cuff_a = (side * w * 0.845, 0.0, sleeve_end + h * 0.016)
-        cuff_b = (side * w * 0.86, 0.0, sleeve_end - h * 0.001)
-        trim.add(Capsule(cuff_a, cuff_b, limb * 1.205, limb * 1.195))
+        cuff_a = (side * w * 0.752, 0.0, sleeve_end + h * 0.018)
+        cuff_b = (side * w * 0.76, 0.0, sleeve_end - h * 0.001)
+        trim.add(Capsule(cuff_a, cuff_b, limb * 1.285, limb * 1.275))
 
     shirt.cut(Plane((0.0, 0.0, h * SHIRT_HEM), (0.0, 0.0, 1.0)), k=h * 0.006)
     # The collar: the head's own jaw, enlarged, taken out of the shirt, so the
@@ -517,11 +522,8 @@ def _kit(shirt, trim, collar, shorts, socks, boots, look, h):
     # buried and at the ends of the V it stands a centimetre out in front, which
     # is a badge, not a neckline. Following the curve is what `keep` is for.
     inset = h * 0.003
-    collar.keep(Barrel(
-        (0.0, 0.0, (shirt_low + shirt_high) * 0.5),
-        (trunk - inset, face - inset),
-        (shirt_high - shirt_low) * 0.5 - inset, round=shirt_round,
-        top=(trunk * 0.99 - inset, h * 0.084 - inset)))
+    # Clipped to the body tube and the shoulder both, because the V spans them.
+    collar.keep_inside(shirt, inset)
     # And out of the collar hole, or the white shows round the back of the neck.
     collar.cut(neck, k=h * 0.006)
 
@@ -598,9 +600,12 @@ def _vee_slabs(w, h, y_front, y_back, steps=14):
     each bar has to be about as thick as the V is deep before the two meet in
     the middle, and by then both ends are standing past the collar.
     """
-    top = h * (SHOULDER - 0.030)
-    point = h * 0.500
-    reach = w * 0.35
+    # Measured off reference 1: the white V is about **thirty per cent** of the
+    # shirt's width and only a fifth of its height. Ours was twice that across
+    # and half the chest deep, which is a bib.
+    top = h * 0.600
+    point = h * 0.548
+    reach = w * 0.23
     rise = top - point
     band = rise / steps
     slabs = []
