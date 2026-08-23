@@ -128,8 +128,10 @@ def build(look: Look):
     parts.append((shorts, look.shorts_colour))
     parts.append((socks, look.sock_colour))
     parts.append((boots, look.boot_colour))
-    if look.hair_style != "bald" or look.moustache:
-        parts.append((hair, look.hair_colour))
+    # Always: a bald man still has brows, and they live in the hair solid
+    # because they are moulded in his hair colour. Gating this on the cut left
+    # one man in six with no brows at all.
+    parts.append((hair, look.hair_colour))
     parts.append((ink, Color("14141a")))
     return [(solid, colour) for solid, colour in parts if solid.ops]
 
