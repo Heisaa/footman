@@ -91,11 +91,23 @@ const HIP_SPREAD := 0.34
 const SHORTS_SEAT_TOP := 0.60
 const SHORTS_SEAT_BOTTOM := 0.64
 const SHORTS_LEG_RADIUS := SHORTS_SEAT_BOTTOM - HIP_SPREAD
+## How deep the shorts are against their width, seen from above.
+##
+## They wrap two legs side by side and nothing else, so the footprint wants to be
+## a wide shallow oval -- near enough the pair of thighs and not much more. At the
+## trunk's own 0.84 the seat came out 0.64 across by 0.58 deep, which is a circle
+## in all but name and reads as a barrel strapped round the hips. The legs
+## themselves stay round in plan, because a thigh is.
+const SHORTS_DEPTH := 0.52
 ## How deep the trunk is against its width. A body is an oval in plan, never a
 ## circle, and this one number is most of what stops the torso and the shorts
 ## reading as pipe. Anything laid on the front of the shirt -- the collar, the
 ## number -- has to be moved in by the same factor or it floats off the surface.
-const TRUNK_DEPTH := 0.84
+##
+## Read it against `SHORTS_DEPTH`. At 0.84 the shirt was very nearly twice as deep
+## as the hips under it and hung over them like a smock from the side -- which
+## only became visible once the shorts were cut down to the width of the legs.
+const TRUNK_DEPTH := 0.72
 ## Moulded vinyl, not paper: the reference figures carry a soft highlight and it
 ## is most of what makes them read as objects rather than flat shapes. Scenery
 ## keeps the old dead-flat material.
@@ -234,7 +246,7 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	var hips := _taper(
 		shoulder * SHORTS_SEAT_TOP, shoulder * SHORTS_SEAT_BOTTOM, leg_h * 0.44, shorts)
 	hips.position = Vector3(0.0, leg_h * 0.26, 0.0)
-	hips.scale = Vector3(1.0, 1.0, 0.90)
+	hips.scale = Vector3(1.0, 1.0, SHORTS_DEPTH)
 	spine.add_child(hips)
 
 	_v_neck(spine, shoulder, torso_h, trim)
@@ -414,8 +426,7 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		var short_r: float = maxf(shoulder * SHORTS_LEG_RADIUS, limb * 1.12)
 		var short_leg := _taper(short_r, short_r * 0.97, leg_h * 0.34, shorts)
 		short_leg.position = Vector3(0.0, -leg_h * 0.06, 0.0)
-		# The same oval in plan as the seat it hangs off.
-		short_leg.scale = Vector3(1.0, 1.0, 0.90)
+		# Round in plan, unlike the seat: this one wraps a single thigh.
 		hip.add_child(short_leg)
 
 		var knee := Node3D.new()
