@@ -345,6 +345,30 @@ What looking found, none of which reading the code had:
 Every one of these is a placement or a primitive, not a value. None would have
 been found by reading, and none needed measuring -- they needed a picture.
 
+**Then they looked like cylinders running around**, which is the correction to
+the correction and is recorded because the first fix caused it. Straight sides
+cured the ball in a shirt and produced plumbing instead: nothing on a body is the
+same width all the way up, and a circular cross-section is the other half of it.
+Three things together, none of them a profile tweak:
+
+- **Taper.** One radius at each end. The shirt is widest at the chest and drawn
+  in slightly; the shorts are the opposite, narrow at the waist and widest at the
+  hem, which is the shape a leg opening makes.
+- **An oval in plan.** `TRUNK_DEPTH`, a flat 0.84 on the trunk and the shorts. A
+  body is never a circle seen from above, and this one number does more than any
+  amount of shaping the outline. Anything laid on the front of the shirt -- the
+  collar, the number -- moves in by the same factor or it floats.
+- **The shirt has to stop.** Measured off the reference the hem is at about 0.37
+  of total height and the crotch at 0.24, so a seventh of the figure is shorts.
+  Ours ran the shirt to the hip and left the shorts a sliver, which made the whole
+  trunk one tube from the collar down. This was the largest of the three.
+
+The trunk was widened with them, from 0.185 of height at the shoulder to 0.215.
+The reference shirt is about 0.15 half-width and ours was 0.124, and a narrow
+trunk is why the shorts kept having to be narrower still to avoid reading as a
+skirt -- which they did twice, in both directions, before the widths were made to
+agree.
+
 ## Design calls made during the build
 
 **Waiting is a first-class option: an unpressured man is not rushed** (2026-08-14,

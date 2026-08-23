@@ -39,7 +39,13 @@ const LEG_FRACTION := 0.26
 const TORSO_FRACTION := 0.37
 ## Shoulder half-width, as a fraction of height, before the build multiplier.
 ## Wider than it was: a head this size on the old narrow chest is a lollipop.
-const SHOULDER_FRACTION := 0.185
+##
+## Measured against the reference the shirt should be about 0.15 of total height
+## half-width; at 0.185 here it came out 0.124, and a narrow trunk is the reason
+## the shorts kept having to be narrower still to avoid reading as a skirt. It
+## also sets how far apart the legs hang, which is what a notch between them
+## needs.
+const SHOULDER_FRACTION := 0.215
 ## Limb thickness. Thin: this is the difference between the reference and a brick.
 const LIMB_RADIUS := 0.048
 ## How far the arms hang off the body, and how far the toes turn out. Both are
@@ -68,6 +74,11 @@ const FACE_COLUMNS := 14
 ## to stay inside the nose: the nose reaches about 1.09 head-radii and a brow
 ## that stands further out than a man's nose is a brow ridge on a hominid.
 const BROW_DEPTH := 0.6
+## How deep the trunk is against its width. A body is an oval in plan, never a
+## circle, and this one number is most of what stops the torso and the shorts
+## reading as pipe. Anything laid on the front of the shirt -- the collar, the
+## number -- has to be moved in by the same factor or it floats off the surface.
+const TRUNK_DEPTH := 0.84
 ## Moulded vinyl, not paper: the reference figures carry a soft highlight and it
 ## is most of what makes them read as objects rather than flat shapes. Scenery
 ## keeps the old dead-flat material.
@@ -169,11 +180,23 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	# capsule is two domes with almost no straight section between them -- a ball
 	# in a shirt. The reference shirt has straight sides and rounds over only at
 	# the shoulder, and the bottom hem is square because the shorts cover it.
-	var torso := _band(shoulder * 0.74, torso_h * 0.90, shirt)
-	torso.position = Vector3(0.0, torso_h * 0.45, 0.0)
+	# Widest at the chest and drawn in towards the hem, and an oval in plan. The
+	# straight-sided version fixed a ball in a shirt and produced a length of pipe
+	# instead.
+	#
+	# **The hem stops well above the hip.** Measured off the reference the shirt
+	# finishes at about 0.37 of total height and the crotch is at 0.24, so a
+	# seventh of the figure is shorts. Ours ran to the hip, which left the shorts
+	# a sliver under it and made the whole trunk one tube from the collar down --
+	# most of why the figures read as plumbing whatever shape the profile was.
+	var torso := _taper(shoulder * 0.80, shoulder * 0.755, torso_h * 0.60, shirt)
+	torso.position = Vector3(0.0, torso_h * 0.60, 0.0)
+	torso.scale = Vector3(1.0, 1.0, TRUNK_DEPTH)
 	spine.add_child(torso)
-	var shoulders := _sphere(shoulder * 0.74, shirt, true)
-	shoulders.scale = Vector3(1.0, 0.44, 1.0)
+	# The shoulder: a sphere meets a cylinder of its own radius tangentially at
+	# the equator, so a flattened one caps the tube without a crease.
+	var shoulders := _sphere(shoulder * 0.80, shirt, true)
+	shoulders.scale = Vector3(1.0, 0.44, TRUNK_DEPTH)
 	shoulders.position = Vector3(0.0, torso_h * 0.90, 0.0)
 	spine.add_child(shoulders)
 	# The shorts, in the kit's second colour, so the kit reads in two blocks.
@@ -183,8 +206,17 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	# both bulged wider than the hips and finished in a curved lower edge. That is
 	# an inner tube, and on a pale kit it is unmistakably a nappy. A garment has a
 	# flat hem; that one edge is most of what makes it read as clothing.
-	var hips := _band(shoulder * 0.66, leg_h * 0.46, shorts)
-	hips.position = Vector3(0.0, -leg_h * 0.06, 0.0)
+	# Flared the other way from the shirt -- shorts are narrow at the waist and
+	# widest at the hem -- but **narrower than the shirt hem throughout**, and
+	# short. Wider than the shirt and the two garments together are one flaring
+	# line from the armpit to the knee, which is a dress; the shirt has to be seen
+	# to finish and the shorts to start inside it.
+	# Up under the shirt hem and down to about the crotch, which is where the
+	# reference puts them. They used to hang below the hip with the shirt over the
+	# top of the lot.
+	var hips := _taper(shoulder * 0.64, shoulder * 0.70, leg_h * 0.54, shorts)
+	hips.position = Vector3(0.0, leg_h * 0.22, 0.0)
+	hips.scale = Vector3(1.0, 1.0, 0.90)
 	spine.add_child(hips)
 
 	_v_neck(spine, shoulder, torso_h, trim)
@@ -206,7 +238,8 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		digits.alpha_cut = Label3D.ALPHA_CUT_DISCARD
 		# Between the shoulder blades. At 0.68 the top of the digit ran into the
 		# collar and the shoulder took a bite out of it.
-		digits.position = Vector3(0.0, torso_h * 0.5, -shoulder * 0.78 - 0.01)
+		digits.position = Vector3(
+			0.0, torso_h * 0.5, -shoulder * 0.78 * TRUNK_DEPTH - 0.01)
 		spine.add_child(digits)
 
 	# --- Head, on a neck pivot ----------------------------------------------
@@ -349,8 +382,8 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		# notch between the legs; a seat that reaches further down than these fills
 		# the notch in and the shorts are one block again. A cylinder for the same
 		# reason the seat is one -- it is the hem that reads.
-		var short_leg := _band(limb * 1.4, leg_h * 0.42, shorts)
-		short_leg.position = Vector3(0.0, -leg_h * 0.21, 0.0)
+		var short_leg := _taper(limb * 1.20, limb * 1.14, leg_h * 0.30, shorts)
+		short_leg.position = Vector3(0.0, -leg_h * 0.02, 0.0)
 		hip.add_child(short_leg)
 
 		var knee := Node3D.new()
@@ -416,7 +449,8 @@ static func _v_neck(spine: Node3D, shoulder: float, torso_h: float, trim: Materi
 		# the two tips -- a small dark "w" printed mid-chest.
 		var bar := _box(
 			Vector3(torso_h * 0.040, torso_h * 0.19, shoulder * 0.30), trim)
-		bar.position = Vector3(side * shoulder * 0.17, torso_h * 0.86, shoulder * 0.70)
+		bar.position = Vector3(
+			side * shoulder * 0.17, torso_h * 0.86, shoulder * 0.79 * TRUNK_DEPTH)
 		# Pitched back at the top as well as leaned out, because the chest is a
 		# dome and a straight bar on a dome only touches it in the middle. Without
 		# this the top of each bar hangs off the front of the shoulder in the air.
@@ -425,8 +459,9 @@ static func _v_neck(spine: Node3D, shoulder: float, torso_h: float, trim: Materi
 	# Closed round the back of the neck. Just outside the shirt for the same
 	# reason the bars are: at 0.46 of the shoulder this ring was inside a 0.74
 	# cylinder and never appeared at all.
-	var back := _band(shoulder * 0.755, torso_h * 0.035, trim)
+	var back := _band(shoulder * 0.815, torso_h * 0.035, trim)
 	back.position = Vector3(0.0, torso_h * 0.90, 0.0)
+	back.scale = Vector3(1.0, 1.0, TRUNK_DEPTH)
 	spine.add_child(back)
 
 
@@ -913,6 +948,32 @@ static func _sphere(radius: float, material: Material, smooth := false) -> MeshI
 	mesh.height = radius * 2.0
 	mesh.radial_segments = HEAD_SEGMENTS if smooth else SEGMENTS
 	mesh.rings = HEAD_RINGS if smooth else RINGS
+	var node := MeshInstance3D.new()
+	node.mesh = mesh
+	node.material_override = material
+	return node
+
+
+## A tapered cylinder: the body shape a toy figure is actually made of.
+##
+## A cylinder is the wrong primitive for anything that is not a tube. Straight
+## sides fixed the ball-in-a-shirt problem and immediately created a worse one --
+## a figure assembled from constant-radius tubes reads as plumbing, because
+## nothing on a body is the same width all the way up. One radius at each end and
+## it is a torso again.
+##
+## Pair it with `DEPTH` on the mesh, below: a body is wider than it is deep, and
+## a circular cross-section is the other half of why a tube reads as a tube. Half
+## a centimetre of squash does more than any amount of shaping the profile.
+static func _taper(
+	top_radius: float, bottom_radius: float, height: float, material: Material
+) -> MeshInstance3D:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = top_radius
+	mesh.bottom_radius = bottom_radius
+	mesh.height = height
+	mesh.radial_segments = HEAD_SEGMENTS
+	mesh.rings = 1
 	var node := MeshInstance3D.new()
 	node.mesh = mesh
 	node.material_override = material
