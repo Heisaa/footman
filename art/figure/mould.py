@@ -112,7 +112,10 @@ def figure(parts, cell: float, name: str = "Player", cache=None):
         if solid.name == "skin":
             material = skin_material(colour, cache)
         else:
-            gloss = 0.9 if solid.name in ("boots", "ink") else 0.0
+            # Boots are polished leather, not chrome: at 0.9 the black went
+            # silver and read as metal. The eyes keep the high gloss --
+            # a wet-looking eye is most of what makes one.
+            gloss = 0.9 if solid.name == "ink" else (0.45 if solid.name == "boots" else 0.0)
             material = vinyl(colour, cache, gloss)
         to_object(solid, colour, cell, material, parent=root)
     return root
