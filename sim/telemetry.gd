@@ -60,12 +60,19 @@ enum Touch {
 	## "how much of this match is played in the air" is answered by counting
 	## these against headers, and a first touch on the floor is neither.
 	CHEST,
+	## Hooked away by a man who got to a loose ball first and could not take it
+	## cleanly. Separated from `BLOCK` because a block is a ball struck too hard
+	## to control, got in the way of, and this is the opposite fact -- nothing was
+	## struck at him and he beat everyone to it. Counted as a block, a defender
+	## jogging onto a ball nobody hit was a blocked shot in every instrument that
+	## counts them (`docs/THE_FOOTBALL.md` 45).
+	POKE,
 }
 
 const TOUCH_NAMES := [
 	"dribble", "ground_pass", "lofted_pass", "through_ball", "cross", "shot",
 	"first_touch", "clearance", "header", "tackle", "block", "keeper_catch",
-	"keeper_parry", "keeper_throw", "throw_in", "chest",
+	"keeper_parry", "keeper_throw", "throw_in", "chest", "poke",
 ]
 
 var events: Array[Dictionary] = []
@@ -202,6 +209,14 @@ static func ev_name(kind: int) -> String:
 
 static func touch_name(kind: int) -> String:
 	return TOUCH_NAMES[kind] if kind >= 0 and kind < TOUCH_NAMES.size() else "?"
+
+
+## Played by the man taking the ball off the other side rather than by the man
+## in possession. Asked here because there are three of them and every consumer
+## needs all three: a list naming two counted the third as a carrier's own
+## choice.
+static func is_defensive_kind(kind: int) -> bool:
+	return kind == Touch.TACKLE or kind == Touch.BLOCK or kind == Touch.POKE
 
 
 static func is_pass_kind(kind: int) -> bool:

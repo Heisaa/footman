@@ -305,15 +305,44 @@ of instruments here.
 - **Each trial is a different seed, so the squads differ.** The situation is fixed
   and the players in it are not: a scenario is a property of the rules, not of one
   striker.
-- **Twenty-five situations, in five families**, so a change can be asked which
+- **Thirty situations, in five families**, so a change can be asked which
   kind of football it moved:
   - **the one-on-one** — `1v1-clear`, `1v1-onrushing`, `1v1-angle`, `1v1-chased`
-  - **the cross** — `cross-right`, `cross-left`, `cross-byline`
+  - **the cross** — `cross-early`, `cross-right`, `cross-left`, `cross-loaded`,
+    `cross-byline`, `cross-deep`, `cross-pullback`, `cross-open`
   - **the pass** — `through-ball`, `switch`, `build-up`, `pocket`
   - **the shot** — `shot-edge`, `volley`, `long-range`
   - **the duel** — `race`, `aerial`, `hold-up`, `take-on`
   - **the restart** — `corner-right`, `corner-left`, `fk-shot`, `fk-wide`,
     `penalty`, `throw-in`, `goal-kick`
+- **The cross family varies two things and only two**, because a row that
+  differs from its neighbour in one thing is the only kind that answers
+  anything. **Depth**: `cross-early` at 24 m, `cross-right` at 30 and
+  `cross-deep` at 49, all on the right flank at the same width, plus the byline
+  pair. **Bodies**: `cross-loaded` is `cross-right` with three of ours already
+  attacking the box and nothing else changed, so the difference between the two
+  rows is what the runs are worth — which no match measurement has ever been
+  able to separate from the delivery (`docs/THE_FOOTBALL.md` 29).
+- **A loaded row starts its men short of the ball and moving**, twelve metres
+  off the point they are running at (`ARRIVAL_BACK`, about `SimOffBall.BOX_WINDOW`
+  of running). Men standing on the penalty spot when the ball is struck would
+  measure the delivery and nothing else, which is what the empty-box rows are
+  already for.
+- **`cross-open` is the control, and it is the only row with nobody defending.**
+  No back line, no goalkeeper, three of ours attacking the box, and the ball
+  already in the air. It asks what no other row can: **can the side finish a
+  cross at all**. A ball met in front of an empty net that does not go in is a
+  fault in the header or the first touch, and nothing to do with a defence the
+  attacking pass has not built yet. Two things about it are deliberate and both
+  were measured before they were chosen. **The ball starts struck**, because
+  given it at his feet in an unopposed box the engine does what a footballer
+  does -- walks it in, 0.05 crosses a trial -- and the finish stops being the
+  question. **And the ball starts a quarter-second into its flight**, past the
+  man who hit it: left on his boot, `SimDuel` hands it straight back to him and
+  it never leaves the flank.
+- **`cross-pullback` is a pass row, not a cross row.** From the goal line the
+  cut-back is the act and `cross` reads 0.25 a trial by construction; `--acts`
+  is where it is read, and the `shot m` column — 5.2 m — is what the act is for.
 - **`build-up` and `goal-kick` read backwards**, and they are the only two:
   `none` is the good outcome (the clock ran out and the ball is still ours) and
   `lost` the bad one. Playing out is the commonest thing a defence does with the

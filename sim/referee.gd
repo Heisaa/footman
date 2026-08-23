@@ -143,6 +143,8 @@ static func crosses_goal(ctx: SimContext, team: int) -> bool:
 ## X of the offside line for `team`, in world coordinates: the second-last
 ## opponent, or the halfway line, whichever is further forward.
 static func offside_line(ctx: SimContext, team: int) -> float:
+	if not ctx.offside_on:
+		return ctx.pitch.target_goal(team).x
 	var dir := ctx.pitch.attack_dir(team)
 	var first := -INF
 	var second := -INF
@@ -168,6 +170,8 @@ static func offside_line(ctx: SimContext, team: int) -> float:
 ## and noisy (PLAN.md §4.4). Using the true line here would mean forwards never
 ## stray, and a match would record no offsides at all.
 static func believed_offside_line(ctx: SimContext, observer: SimPlayer) -> float:
+	if not ctx.offside_on:
+		return ctx.pitch.target_goal(observer.team).x
 	var dir := ctx.pitch.attack_dir(observer.team)
 	var first := -INF
 	var second := -INF
@@ -188,6 +192,8 @@ static func believed_offside_line(ctx: SimContext, observer: SimPlayer) -> float
 
 ## True if a point would be an offside position for `team` right now.
 static func would_be_offside(ctx: SimContext, team: int, point: Vector3) -> bool:
+	if not ctx.offside_on:
+		return false
 	var dir := ctx.pitch.attack_dir(team)
 	var depth := point.x * dir
 	if depth <= 0.0:

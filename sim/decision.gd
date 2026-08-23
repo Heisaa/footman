@@ -669,7 +669,15 @@ const DRIVEN_PACE := 1.9
 const DRIVEN_TOUCH := 0.82
 const LOFTED_FROM := 24.0
 const MAX_GROUND_PASS := 32.0
-const MAX_LOFTED_PASS := 45.0
+## **45 to 55, 2026-08-23** (owner). The old ceiling was shorter than football's
+## own long ball: a switch from one touchline to the other on a 68 m pitch is
+## fifty-odd metres and a goalkeeper's kick is more, and `switch` measured what
+## that costs -- the free man on the far side was 54 m away, so the ball the
+## scenario is named for was never a candidate and the first decision of every
+## trial was twelve carries and a hold. `SimTouch.strike_range` still caps every
+## ball by the man striking it, so this is a ceiling on the act and not a promise
+## about anybody's leg.
+const MAX_LOFTED_PASS := 55.0
 ## How much grass a touch has to leave between the ball and the line. A ball
 ## that stops exactly on the paint is a ball nobody can do anything with.
 const LINE_MARGIN := 1.2
@@ -1690,21 +1698,28 @@ static func _add_crosses(ctx: SimContext, player: SimPlayer, uncontrolled: bool)
 		var distance := SimConsts.horizontal_length(point - from)
 		if distance < CROSS_FROM or distance > SimTouch.strike_range(player, point - from, MAX_LOFTED_PASS):
 			continue
-		var flight: float = SimTouch.lofted_flight(distance)
+		# The two flights this ball could have: whipped in, or hung up. Which one
+		# is struck is decided below by the man it is for.
+		var whipped: float = SimTouch.cross_flight(distance)
+		var hung: float = SimTouch.cross_hang(distance)
 		# Who is attacking it, and the man who has claimed the point is that man.
 		# `SimOffBall.box_claimant` is the run being made right now; the race below
 		# is the fallback for a ball into an area nobody has set off for yet, which
 		# is still a cross a footballer plays.
 		var mate := SimOffBall.box_claimant(ctx, player.team, from, i)
-		# He has to be able to get there, claim or no claim: the run's own window
-		# (`SimOffBall.BOX_WINDOW`) allows a man four seconds away, and a ball that
-		# hangs for one and a half does not.
-		if mate >= 0 and (mate == player.id or SimValueField.time_to_arrive(
-				ctx.players[mate], point, SimValueField.reaction_of(ctx.players[mate]))
-				> flight + CROSS_LATE):
+		var arrive := INF
+		if mate >= 0 and mate != player.id:
+			arrive = SimValueField.time_to_arrive(ctx.players[mate], point,
+				SimValueField.reaction_of(ctx.players[mate]))
+		# He has to be able to get there, claim or no claim -- but the ball can
+		# wait for him, up to the hung flight, so what he is measured against is
+		# the slowest ball rather than the fastest. The run's own window
+		# (`SimOffBall.BOX_WINDOW`) allows a man four seconds away and no cross
+		# hangs that long.
+		if mate == player.id or arrive > hung + CROSS_LATE:
 			mate = -1
+			arrive = INF
 		if mate < 0:
-			var soonest := INF
 			for mid in ctx.teammate_ids(player.team):
 				if mid == player.id:
 					continue
@@ -1712,34 +1727,78 @@ static func _add_crosses(ctx: SimContext, player: SimPlayer, uncontrolled: bool)
 				if not m.on_pitch or m.is_keeper:
 					continue
 				var t_arrive := SimValueField.time_to_arrive(m, point, SimValueField.reaction_of(m))
-				if t_arrive > flight + CROSS_LATE:
+				if t_arrive > hung + CROSS_LATE:
 					continue
-				if t_arrive < soonest:
-					soonest = t_arrive
+				if t_arrive < arrive:
+					arrive = t_arrive
 					mate = mid
 		if mate < 0:
 			continue
-		# Ranked on what the ball would be worth if it came off, so the choice
-		# between the three is the same question the score asks. What it costs
-		# when it does not is priced once, on the one that wins.
-		var worth := ctx.value.xt_at(player.team, point, ctx.pitch) \
-			* ctx.value.control_at_time(ctx, point, player.team, flight, player.id)
-		if worth > best_worth:
-			best_worth = worth
-			best_point = point
-			best_mate = mate
-			best_flight = flight
+		# **Both balls are scored, and the better one is played.** Whipped in, and
+		# hung up long enough for the man it is for to arrive -- the same point,
+		# two different questions, and the value model is what decides between
+		# them. Fitting the flight to him and leaving it there was the first
+		# version and it hangs the ball into an empty six-yard box, because the
+		# only man who can get there is two seconds away and nothing was asked
+		# what the goalkeeper would do in the meantime. He is a body in
+		# `control_at_time` like any other, so asked, it answers.
+		#
+		# This is the whole of the owner's *aimed at where team mates are going to
+		# end up, or areas where they dominate by just being more players*
+		# (2026-08-23). The crowd term puts everyone who can reach a hung ball on
+		# level terms -- so the point where we have the bodies wins the ranking on
+		# the hung ball, and the man who is already there wins it on the whipped
+		# one. Nothing here counts heads: the count was always in the model, and a
+		# flight that could not vary was what stopped it saying anything.
+		var fitted: float = clampf(arrive, whipped, hung)
+		for flight in [whipped, fitted]:
+			# A ball he cannot reach is not this ball, whatever it is worth.
+			if arrive > flight + CROSS_LATE:
+				continue
+			# **And it is dropped on him rather than on the point he is running
+			# at.** Measured on `cross-loaded`: the ball came down 7.3 m from the
+			# man it was for and, 90% of the time, *in front of him* -- two metres
+			# nearer the goal, which is two metres on the side the defenders are
+			# already standing (owner, 2026-08-23: *the crosses are hit too far
+			# forward, so the attacking players do not really have a chance*).
+			#
+			# The point is where his run is going and the ball is put where he
+			# will be when it comes down, which is the same distinction the
+			# through ball makes and the cross did not. Asked of
+			# `SimValueField.time_to_arrive`, the function that decided the flight
+			# in the first place, so the two halves cannot disagree about him.
+			var aim_point := _meet_point(ctx, ctx.players[mate], point, flight)
+			# **Built, measured and reverted: ranking the three points by what a
+			# header from each would be worth** (`expected_goals` in place of the
+			# value map here), on the argument that the field barely separates
+			# three points a few metres apart -- and it does not: measured, the
+			# ball went to the penalty spot on every cross in 40 trials, 11.0 m
+			# from the goal line, and the header that followed was struck from
+			# 12.6 m. Ranked by the header instead, the ball goes nearer the goal
+			# and into worse company: `cross-loaded` `lost` 49% to **60%**, the
+			# ball coming down 3.5 m from the nearest of ours to 4.3, and the
+			# goals unmoved at n=100. `cross-deep` liked it -- 6% goals to 10% --
+			# and paid the same way, 4.5 m to 6.3. What the near post is worth is
+			# a value-map question (**8b**) and not one to settle from here.
+			var worth: float = ctx.value.xt_at(player.team, aim_point, ctx.pitch) \
+				* ctx.value.control_at_time(
+					ctx, aim_point, player.team, flight, player.id)
+			if worth > best_worth:
+				best_worth = worth
+				best_point = aim_point
+				best_mate = mate
+				best_flight = flight
 	if best_mate < 0:
 		return
 
 	var mate: SimPlayer = ctx.players[best_mate]
 	var success := _lofted_success(ctx, player, best_point, best_flight, mate, Action.CROSS)
 	var distance := SimConsts.horizontal_length(best_point - from)
-	var xt := ctx.value.xt_at(player.team, best_point, ctx.pitch)
+	var best_xt := ctx.value.xt_at(player.team, best_point, ctx.pitch)
 	var focus := tactics.focus_at(best_point.z, ctx.pitch)
 	var pattern := SimPatterns.pass_bias(ctx, player, best_mate, best_point)
 	var call := _call_bias(ctx, mate)
-	_note_factor(SimAblation.F_FOCUS, (xt * focus - xt) * CROSS_BIAS)
+	_note_factor(SimAblation.F_FOCUS, (best_xt * focus - best_xt) * CROSS_BIAS)
 	_note_factor(SimAblation.F_OFF_BALANCE, off_balance)
 	_note_factor(SimAblation.F_DIRECT, tactics.direct_bias())
 	_note_factor(SimAblation.F_PATTERN, pattern)
@@ -1751,13 +1810,37 @@ static func _add_crosses(ctx: SimContext, player: SimPlayer, uncontrolled: bool)
 		"end": best_point,
 		"first_time": uncontrolled,
 		"success": success * off_balance,
-		"gain": xt * focus * CROSS_BIAS,
+		"gain": best_xt * focus * CROSS_BIAS,
 		"loss": ctx.value.xt_at(SimConsts.other_team(player.team), best_point, ctx.pitch),
 		"flight": best_flight,
 		"bias": tactics.direct_bias() * pattern * call,
 	})
 	_keep_parts()
 	_keep_factors()
+
+
+## How far along his run to `point` a man actually gets in `flight` seconds.
+##
+## The ball is aimed there rather than at the point itself: a cross that arrives
+## where he is *going* is a cross to the defender standing goal-side of him.
+## Bisected against `time_to_arrive` rather than solved, because that function is
+## the engine's own answer about his legs -- a closed form here would be a second
+## opinion about the same man, and the two would drift.
+static func _meet_point(ctx: SimContext, mate: SimPlayer, point: Vector3, flight: float) -> Vector3:
+	var reaction := SimValueField.reaction_of(mate)
+	if SimValueField.time_to_arrive(mate, point, reaction) <= flight:
+		return point
+	var low := 0.0
+	var high := 1.0
+	for _i in 6:
+		var mid := (low + high) * 0.5
+		if SimValueField.time_to_arrive(mate, mate.pos.lerp(point, mid), reaction) <= flight:
+			low = mid
+		else:
+			high = mid
+	var met := mate.pos.lerp(point, low)
+	met.y = 0.0
+	return met
 
 
 ## The teammates worth scoring as pass targets, cheaply chosen.
@@ -1898,7 +1981,17 @@ static func arrival_pace(distance: float, tactics: SimTactics) -> float:
 	# speeds going up, one feel change in two halves: the owner watched the
 	# ball outrunning the men. The interception trade is priced as the comment
 	# above says, and the launch solver keeps arrival exact against any pitch.
-	return clampf(2.0 + distance * 0.19, 2.5, 10.8) * lerpf(0.9, 1.2, tactics.tempo)
+	#
+	# **And the intercept went back up, 2026-08-23, because it had taken the
+	# short pass with it** (owner: *slow short passes that are easy to intercept,
+	# and the receiver needs to turn and run back to the ball*). At 2.0 a
+	# ten-metre ball arrived at 4.3 m/s and spent **1.57 s** on the grass; at
+	# five metres it was 3.2 m/s and a second. That is a ball rolled, not passed,
+	# and a second and a half is time for anybody to step in front of it. The
+	# slope is what the earlier change was about -- a long ball outrunning the men
+	# -- so the slope stays where it was put and the floor under it moves:
+	# 4.2 + 0.19 d puts ten metres at 6.1 m/s and about a second, twenty at 8.0.
+	return clampf(4.2 + distance * 0.19, 4.2, 12.0) * lerpf(0.9, 1.2, tactics.tempo)
 
 
 ## What share of the receiver's top speed a ball in behind should still be doing
@@ -2422,10 +2515,13 @@ static func _lofted_success(ctx: SimContext, player: SimPlayer, to: Vector3, fli
 	# and a passer who cannot cross was talked into it. Link 1 of the chain: an
 	# attribute that never reaches the ball it belongs to.
 	var skill: float = player.attrs.crossing if kind == Action.CROSS else player.attrs.passing
+	# How flat this particular ball is, so a hung cross is not charged the whipped
+	# one's scatter. A lofted pass has one flight and asks for the default.
+	var whip := SimTouch.cross_whip_share(distance, flight) if kind == Action.CROSS else 1.0
 	var struck := SimTouch.execution_accuracy(ctx, player, skill, distance,
 		SimTouch.AIR_MODEL_AIM_BASE, pass_tolerance(distance) * AERIAL_TOLERANCE,
 		to - ctx.ball.pos,
-		SimTouch.LONG_AIR_CROSS if kind == Action.CROSS else SimTouch.LONG_AIR)
+		SimTouch.LONG_AIR_CROSS if kind == Action.CROSS else SimTouch.LONG_AIR, whip)
 	# And where it goes when it does not go there, because a ball in the air that
 	# misses its spot is a loose ball and not a turnover.
 	#

@@ -107,6 +107,12 @@ what is there and what is still loose. `./run.sh world` prints a club.
   nearest man to a dropping cross from 9-12 m to 5-8 m; **the outcome did not
   follow the mechanism**, and a large share of football's headers come from corners,
   which are 0.02 a team a match until proposal 5. `docs/THE_FOOTBALL.md` 29.
+- **The value map is multi-step as of 2026-08-23** (`docs/THE_FOOTBALL.md` 8b),
+  and it is the largest single move on the sparseness this list has recorded: the
+  same eight seeds of ten match-minutes produced **1 shot before it and 11
+  after**, at the same passing volume and completion. Every full-match figure in
+  this file predates it and is stale by however much that is worth over ninety
+  minutes; re-measure before quoting one.
 - **The middle-third lock has eased.** Touches by third 10/78/12 to 14/67/19 over
   the day, which is the item this list has called rough since it was written.
   Twenty seeds: goals 3.50 to 4.44, shots 5.09 to 5.84, box touches 4.6 to 7.3,

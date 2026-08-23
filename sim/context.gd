@@ -150,6 +150,14 @@ var last_pass_arrival_tick := -100000
 ## available here because passes are discrete events (PLAN.md §3.5).
 var offside_pending := -1
 var offside_pos := Vector3.ZERO
+## Whether the law is being applied at all.
+##
+## True in every match. A scenario can take a whole side off the pitch (`cross-
+## open`), and with nobody to hold a line the second-last opponent is nobody:
+## the referee's own fallback puts the line on halfway, so every man in the
+## opposition half is offside and the situation the scenario was set up to show
+## cannot happen. Off, the line is the goal line and nothing is held back.
+var offside_on := true
 ## The tick the flag went up. The pass itself is a touch, so without this the
 ## referee sees "someone other than the flagged player has played the ball" on
 ## the very tick the flag is raised, and clears it every single time.

@@ -35,8 +35,10 @@ dribble: an incoming ball to kill, a limited turn, graded by `quality`.
 **Clearance** — hitting it away because keeping it is not on. Valued as the threat
 it *removes*.
 
-**Poke** — a defender's touch that wins the ball without controlling it. Logged as
-`tackle` or `block`.
+**Poke** — a defender's touch that wins the ball without controlling it. Logged
+as `tackle` from a contest, and otherwise by why he could not take it: `block` if
+the ball was struck harder than his first touch can handle, `poke` if he simply
+got to a loose one first.
 
 **Pass** — four kinds, and which exist is decided by distance rather than
 weighting: **ground**, **lofted**, **through ball** (into space for a runner), and

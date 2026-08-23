@@ -108,7 +108,7 @@ static func collect(m: SimMatch) -> SimMatchStats:
 				var tt: int = e["team"]
 				s.touches[tt] += 1
 				var tk: int = e["kind"]
-				if tk != SimTelemetry.Touch.TACKLE and tk != SimTelemetry.Touch.BLOCK:
+				if not SimTelemetry.is_defensive_kind(tk):
 					var inside := ctx.pitch.in_opponent_penalty_area(tt, e["from"]) if attacking_frame \
 						else ctx.pitch.in_own_penalty_area(tt, e["from"])
 					if inside:

@@ -221,6 +221,14 @@ func live(ctx: SimContext, started: bool) -> bool:
 ## decides what is worth reading.
 var traced := false
 
+## Whether the ball is already in the air when the trial starts, struck as a
+## cross by somebody the situation does not bother to animate.
+##
+## `run` needs telling, because everything it measures about a cross hangs off
+## seeing the touch that struck one -- the `cross` count, and `drop m`, which is
+## the answer to "was anybody there". A ball placed in flight logs no touch.
+var starts_in_flight := false
+
 
 ## Runs one trial of this scenario on an already-built match and scores it.
 ##
@@ -236,11 +244,20 @@ func run(m: SimMatch) -> Result:
 	var shot: Dictionary = {}
 	var shot_tick := -1
 	var conceded := false
-	var cross_up := false
+	# Whether the ball ended up in their net, by whichever shot. `_verdict` reads
+	# the *first* shot of the trial for everything else, which is right -- the
+	# row is about the chance the situation produced -- and wrong for the one
+	# outcome that is not a property of a shot at all. Measured on `cross-open`:
+	# a header saved off the line and a second header put in 0.07 s later scored
+	# the trial `saved`, in a scenario with no goalkeeper in it.
+	var scored := false
+	var cross_up := starts_in_flight
+	if starts_in_flight:
+		r.crosses += 1
 	# The carry clock: when the ball was last under somebody's control, and
 	# whether it is in flight from a struck ball right now.
 	var touched_at := 0.0
-	var in_flight := false
+	var in_flight := starts_in_flight
 	# Whether anybody has actually controlled the ball yet. `in_flight` cannot
 	# stand in for it: a scenario that starts the ball moving does not log a
 	# touch, so before the first one the ball has a nominal owner who is thirty
@@ -304,8 +321,11 @@ func run(m: SimMatch) -> Result:
 				r.offsides += 1
 			elif kind == SimTelemetry.Ev.FOUL:
 				r.fouls += 1
-			elif kind == SimTelemetry.Ev.GOAL and int(e.get("team", -1)) != attacking_team:
-				conceded = true
+			elif kind == SimTelemetry.Ev.GOAL:
+				if int(e.get("team", -1)) == attacking_team:
+					scored = true
+				else:
+					conceded = true
 
 		# The ball on its way down through the height it was aimed to arrive at,
 		# which is the moment the question "was anybody there" has an answer.
@@ -343,7 +363,7 @@ func run(m: SimMatch) -> Result:
 	if not in_flight:
 		r.carry_gap = maxf(r.carry_gap, float(limit) * SimConsts.DT - touched_at)
 
-	r.resolution = _verdict(ctx, shot, conceded)
+	r.resolution = _verdict(ctx, shot, conceded, scored)
 	return r
 
 
@@ -359,7 +379,9 @@ func _nearest_of_ours(ctx: SimContext, at: Vector3) -> float:
 	return -1.0 if is_inf(best) else best
 
 
-func _verdict(ctx: SimContext, shot: Dictionary, conceded: bool) -> int:
+func _verdict(ctx: SimContext, shot: Dictionary, conceded: bool, scored := false) -> int:
+	if scored:
+		return GOAL
 	if shot.is_empty():
 		if conceded or (ctx.possession_team >= 0 and ctx.possession_team != attacking_team):
 			return LOST

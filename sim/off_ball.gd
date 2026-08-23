@@ -228,6 +228,23 @@ const BOX_EASE := 6.0
 ## Near enough that the flight of the cross is the rest of his run.
 const BOX_EASE_CROSS := 2.0
 const BOX_EASE_PACE := 0.8
+## How near the ball a man has to be for it to be his, for the release below.
+##
+## The same three metres `SimContext.update_possession` calls the ball leaving
+## him, and asked here rather than reading `ctx.possession_player` because that
+## field is -1 the moment an opponent is within 2.2 m of the ball. A full-back
+## closing the man about to cross is the situation, not the absence of one, and
+## it was reading as nobody being on the ball at all.
+const CROSS_CARRIER_REACH := 3.0
+## How long "a cross is coming" outlives the tick that said so.
+##
+## The run is committed seconds before the ball is struck and this was recomputed
+## from nothing every tick, so a carrier a stride off the wide line -- or the
+## strike itself, which takes the ball off him -- put the runner straight back to
+## holding six metres short, including as the ball came down. Measured before it:
+## the release fired on 2, 4 and 31 ticks of a match against 392, 702 and 508
+## held.
+const CROSS_COMING_HOLD := 1.0
 
 ## Live intent per player id, and where it is going. Flat arrays rather than
 ## dictionaries because the movement layer reads them for every player, every
@@ -329,6 +346,11 @@ static var box_target := PackedInt32Array()
 ## from outside either way.
 const BOX_EASE_NAMES := ["holding", "attacking the cross"]
 static var box_ease := PackedInt32Array()
+
+## Drifts abandoned for a run, by the kind that was given up. A man mid-drift can
+## change his mind and nothing else can, so this is the whole population of it --
+## and zero here means the mechanic is dead rather than quiet.
+static var switched := PackedInt32Array()
 
 
 static func _note_choice(kind: int, total: float) -> void:
@@ -682,7 +704,25 @@ static func _assign(ctx: SimContext, team: int, carrier: int) -> void:
 		var p := ctx.players[pid]
 		if pid == carrier or p.is_keeper or not p.on_pitch:
 			continue
-		if _intent[pid] != NONE or ctx.tick_index < _ready[pid]:
+		# **A commitment is not a blindfold, and it was.** A man already offering
+		# something was never reconsidered until his window ran out, so a drift
+		# into space -- 4.5 s of it -- blindfolded him to everything that
+		# happened in between. Measured over ten match-minutes: at the 104 ticks
+		# where a man of ours was wide on the ball with a cross on, the box run
+		# was offered to **nobody at all**, and `_box_point` was reached five
+		# times in the whole window because eight of ten men were mid-drift. The
+		# run into the box is offered four to six times a *match* for the same
+		# reason.
+		#
+		# So a drift can be abandoned and a run cannot: `SPACE` is a few metres
+		# off a station he is still holding, and the two things worth abandoning
+		# it for are the two runs that are about a moment rather than a position.
+		# `_consider` enforces which, and the rest below is untouched -- a man
+		# recovering from a sprint stays recovering.
+		var live: int = _intent[pid]
+		if live != NONE and live != SPACE:
+			continue
+		if ctx.tick_index < _ready[pid]:
 			continue
 		if p.dist_to(ball) > RANGE:
 			continue
@@ -690,7 +730,7 @@ static func _assign(ctx: SimContext, team: int, carrier: int) -> void:
 		# about where one player should be is one too many.
 		if SimPatterns.movement_override(ctx, p) != Vector3.INF:
 			continue
-		_consider(ctx, p, team, carrier, ball, urgency)
+		_consider(ctx, p, team, carrier, ball, urgency, live)
 
 	# The quota goes to whoever gains most by running, not to whoever the loop
 	# reached first.
@@ -699,8 +739,17 @@ static func _assign(ctx: SimContext, team: int, carrier: int) -> void:
 		if used[kind] >= int(QUOTA[kind]):
 			chose_blocked[kind] += 1
 			continue
+		var pid: int = _pick_ids[i]
+		# He was drifting and is now running. The drift is retired properly so
+		# every tally it feeds is closed the way a lapsed one is, and without the
+		# rest a finished run earns: he is not stopping, he is going somewhere
+		# better.
+		if _intent[pid] != NONE:
+			switched[_intent[pid]] += 1
+			_retire(ctx, pid, false)
+			used[SPACE] = maxi(used[SPACE] - 1, 0)
 		used[kind] += 1
-		_commit(ctx, _pick_ids[i], kind, _pick_points[i], in_window)
+		_commit(ctx, pid, kind, _pick_points[i], in_window)
 
 
 ## Who on the winning side could have offered anything, in the seconds after the
@@ -734,7 +783,7 @@ static func _sample_regain(ctx: SimContext, team: int, carrier: int, ball: Vecto
 ## Scores this player's options, picks one by softmax, and files it against the
 ## quota. Filing rather than committing, because how good the idea is decides
 ## who gets to act on it.
-static func _consider(ctx: SimContext, p: SimPlayer, team: int, carrier: int, ball: Vector3, urgency: float) -> void:
+static func _consider(ctx: SimContext, p: SimPlayer, team: int, carrier: int, ball: Vector3, urgency: float, live: int = NONE) -> void:
 	if _scores.size() != KIND_NAMES.size():
 		_scores.resize(KIND_NAMES.size())
 		_points.resize(KIND_NAMES.size())
@@ -903,6 +952,12 @@ static func _consider(ctx: SimContext, p: SimPlayer, team: int, carrier: int, ba
 		_note_choice(kind, total)
 	if kind == NONE:
 		return
+	# What a man already drifting is allowed to change his mind to. Anything else
+	# -- including another drift -- would let him restart his own window every
+	# fifth of a second, and every tally that counts a run from `_since` would be
+	# counting one run as twenty.
+	if live != NONE and kind != BOX and kind != BEHIND:
+		return
 
 	# Ranked by what the run gains over standing still, so a striker with a
 	# genuine ball in behind takes the quota off a midfielder shuffling two
@@ -987,6 +1042,22 @@ static func _expire(ctx: SimContext) -> void:
 		var p := ctx.players[i]
 		if ctx.possession_team == p.team and ctx.tick_index < _until[i] and p.on_pitch:
 			continue
+		_retire(ctx, i)
+
+
+## Closes one offer and files what it was worth.
+##
+## Split out of `_expire` because an offer now ends two ways: its window runs out,
+## or the man abandons it for a run (`_assign`). Both have to close the same
+## tallies or `received` and `cut short` start describing different populations.
+## `rest` is the difference between them -- a lapsed run has been made and earns
+## its recovery, and a drift given up halfway has not.
+static func _retire(ctx: SimContext, i: int, rest_after := true) -> void:
+	var kind: int = _intent[i]
+	if kind == NONE:
+		return
+	var p := ctx.players[i]
+	if true:
 		# Judged as it is retired: did the ball come to the man who went to ask
 		# for it. A pass that arrives is the only thing any of these are for.
 		#
@@ -1024,6 +1095,8 @@ static func _expire(ctx: SimContext) -> void:
 			born_received[kind] += 1 if got_it else 0
 		_intent[i] = NONE
 		_born[i] = 0
+		if not rest_after:
+			return
 		var rest: float = float(REST_SECONDS[kind]) * served * lerpf(1.3, 0.7, p.attrs.work_rate)
 		_ready[i] = ctx.tick_index + int(rest * float(SimConsts.TICK_HZ))
 		_rest_kind[i] = kind
@@ -1316,16 +1389,55 @@ static func _box_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3) 
 ## left is when the striker goes: he sets off as the winger's head comes up, and
 ## on any other phase he holds, because where a man should be standing is not what
 ## a value knob answers.
+## Latched per side, because the question is about a moment and the answer was
+## being thrown away every tick. `reset` clears it.
+static var _cross_tick := [-1, -1]
+static var _cross_until := [-1, -1]
+
+
 static func _cross_coming(ctx: SimContext, team: int) -> bool:
-	var carrier := ctx.possession_player
-	if carrier < 0:
+	if _cross_tick[team] != ctx.tick_index:
+		_cross_tick[team] = ctx.tick_index
+		if _wide_on_the_ball(ctx, team):
+			_cross_until[team] = ctx.tick_index \
+				+ int(CROSS_COMING_HOLD * float(SimConsts.TICK_HZ))
+	return ctx.tick_index <= int(_cross_until[team])
+
+
+## A man of this side on the ball, wide, in the final third.
+##
+## The gates are `_add_crosses`'s own and are asked of the ball rather than of
+## the man, for the reason they are there: the cross is generated from where the
+## ball is.
+static func _wide_on_the_ball(ctx: SimContext, team: int) -> bool:
+	var carrier := ctx.ball.last_touch_player
+	if carrier < 0 or carrier >= ctx.players.size():
 		return false
 	var c: SimPlayer = ctx.players[carrier]
-	if c.team != team or c.is_keeper:
+	if c.team != team or c.is_keeper or not c.on_pitch:
 		return false
-	if c.pos.x * ctx.pitch.attack_dir(team) <= ctx.pitch.half_length / 3.0:
+	var at := ctx.ball.ground_pos()
+	if c.dist_to(at) > CROSS_CARRIER_REACH:
 		return false
-	return absf(c.pos.z) > ctx.pitch.half_width * SimDecision.CROSS_WIDE
+	if at.x * ctx.pitch.attack_dir(team) <= ctx.pitch.half_length / 3.0:
+		return false
+	return absf(at.z) > ctx.pitch.half_width * SimDecision.CROSS_WIDE
+
+
+## Where the near and far balls are put, as fractions of the six-yard box -- so
+## they scale with the pitch, and so they can be named: the near one is across
+## the near corner of it, the far one hangs past the far post.
+##
+## **They used to be the posts themselves**, 3.7 m either side of the middle and
+## five and eight metres off the line, which is inside the goal frame. A ball
+## nobody met came down in the goal mouth in front of the keeper, and that is
+## what it looked like -- *aimed too much towards the goal, so it reads like a
+## weak shot* (owner, 2026-08-23). The points are outside the frame now and the
+## ball crosses the face of goal instead of arriving in it. Both halves move
+## together, because this is the geometry the run uses as well as the ball.
+const CROSS_NEAR_WIDE := 0.72
+const CROSS_FAR_OUT := 1.7
+const CROSS_FAR_WIDE := 0.82
 
 
 ## The three points of the box, in the frame of the side attacking it.
@@ -1335,10 +1447,12 @@ static func box_targets(ctx: SimContext, team: int, ball: Vector3) -> Array:
 	var side: float = signf(ball.z)
 	if side == 0.0:
 		side = 1.0
+	var six := ctx.pitch.goal_area_half_width
 	return [
-		Vector3(goal.x - dir * 5.5, 0.0, side * ctx.pitch.goal_half_width),
+		Vector3(goal.x - dir * ctx.pitch.goal_area_depth, 0.0, side * six * CROSS_NEAR_WIDE),
 		Vector3(goal.x - dir * ctx.pitch.penalty_spot_dist, 0.0, 0.0),
-		Vector3(goal.x - dir * 8.0, 0.0, -side * ctx.pitch.goal_half_width * 1.15),
+		Vector3(goal.x - dir * ctx.pitch.goal_area_depth * CROSS_FAR_OUT, 0.0,
+			-side * six * CROSS_FAR_WIDE),
 	]
 
 
@@ -1764,8 +1878,13 @@ static func _clear() -> void:
 	box_ease.resize(BOX_EASE_NAMES.size())
 	for i in box_ease.size():
 		box_ease[i] = 0
+	switched.resize(KIND_NAMES.size())
+	for i in switched.size():
+		switched[i] = 0
 	_claim_tick = [-1, -1]
 	_claims = [{}, {}]
+	_cross_tick = [-1, -1]
+	_cross_until = [-1, -1]
 	chose_seen.resize(KIND_NAMES.size())
 	chose_share.resize(KIND_NAMES.size())
 	chose_won.resize(KIND_NAMES.size())

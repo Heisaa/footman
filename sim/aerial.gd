@@ -81,7 +81,20 @@ const HEADER_MIN := 4.0
 ## rules out is nodding it down into a man or over a line.
 const KNOCK_AHEAD := 4.0
 ## How much of his neck goes into it -- see `SimTouch.header`'s `power_scale`.
-const KNOCK_POWER := 0.45
+## What is left of a man's neck when he is not heading at goal.
+##
+## `SimTouch.header`'s band was raised for the one header the owner watched --
+## the attempt on goal, which was leaving the forehead too slowly to beat a
+## goalkeeper (2026-08-23). Nothing else about heading was wrong, and the ball a
+## defender puts into the stand and the ball nodded to a teammate both hold where
+## they were measured: 0.72 is the old band over the new one. Left at 1.0 the
+## clearing header carried a mean of **29 m** against `tests/test_distances`'s
+## football band of 4 to 26.
+const NOT_AT_GOAL_POWER := 0.72
+## Down from 0.45 when the header's own band went up: the cushion is a fraction
+## of his neck, so it moves whenever the neck does, and what 42 measured -- the
+## ball landing one to two metres away and still moving -- is the thing to hold.
+const KNOCK_POWER := 0.32
 ## And down, which is what makes it drop in front of him rather than fly.
 const KNOCK_ANGLE := -0.25
 
@@ -304,7 +317,8 @@ static func head_clear(ctx: SimContext, player: SimPlayer) -> void:
 	away = away.normalized()
 	var side: float = signf(player.pos.z) if absf(player.pos.z) > 2.0 else (1.0 if ctx.rng.chance(0.5) else -1.0)
 	var dir := (away + Vector3(0.0, 0.0, side * 0.45)).normalized()
-	SimTouch.header(ctx, player, dir, ctx.rng.range_float(0.45, 0.7), CLEAR)
+	SimTouch.header(ctx, player, dir, ctx.rng.range_float(0.45, 0.7), CLEAR,
+		Vector3.INF, 0.0, NOT_AT_GOAL_POWER)
 
 
 ## Nodding it down for himself, which is what a man with nobody to find does.
@@ -371,4 +385,4 @@ static func _head_to(ctx: SimContext, player: SimPlayer, mate: SimPlayer) -> voi
 	# him from further out. There is no solver here -- see `SimTouch.header` --
 	# so this is the angle and the distance is whatever his neck buys.
 	var up: float = clampf(0.1 + distance * 0.022, 0.1, 0.5)
-	SimTouch.header(ctx, player, line, up, TO_A_MAN)
+	SimTouch.header(ctx, player, line, up, TO_A_MAN, Vector3.INF, 0.0, NOT_AT_GOAL_POWER)

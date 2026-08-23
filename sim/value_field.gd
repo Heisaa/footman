@@ -85,18 +85,147 @@ func _init() -> void:
 # --- Expected threat --------------------------------------------------------
 
 
+## How the map is built, and it is `docs/THE_FOOTBALL.md` **8b**.
+##
+## **It was single-step and is now not.** The old map was one hand-made function
+## of distance and angle to goal: it said what a *shot* from a patch of grass is
+## worth and called that the value of the grass. Football does not work that way
+## -- a wide position in the final third is worth something precisely because of
+## the ball that comes *next*, and to a single-step map it is just a bad shooting
+## position. That is the whole of what the engine could not say, and it is why
+## the middle third and the flanks read flat.
+##
+## So the value of a cell is the value of what happens from it, which is the
+## textbook definition of expected threat:
+##
+##     v(c) = shot(c) * goal(c)  +  (1 - shot(c)) * SUM_c' move(c -> c') v(c')
+##
+## solved by iterating until it stops moving. `shot(c)` is how often a possession
+## in that cell becomes an attempt, `goal(c)` what the attempt is worth, and the
+## move kernel is where the ball goes when it is not a shot -- forward-weighted,
+## shorter more often than longer, and losing the ball more often the further it
+## goes. Nothing in it knows about players: the grid stays a pure lookup on a 5 Hz
+## cadence, which is rule 1 at the top of this file, and the context correction
+## stays where it was (`line_broken`).
+##
+## Baked once per match. Roughly a hundred thousand multiplies, which is a tenth
+## of the work one tick of pitch control does.
+const ITERATIONS := 40
+## The longest ball the kernel considers, and how the weight falls with length: a
+## footballer's next ball is usually short and occasionally very long.
+const MOVE_MAX := 34.0
+const MOVE_LAMBDA := 9.0
+## How much more often the ball goes forward than backward. Football's own share
+## of forward passes is about a third, against a sixth for each of the other
+## directions, and this is that shape rather than a preference.
+const MOVE_FORWARD_BIAS := 1.6
+## What survives the move. A short ball is kept; a thirty-metre one is a coin
+## toss, which is the honest half of why a long ball is not free value.
+const MOVE_KEEP_NEAR := 0.90
+const MOVE_KEEP_PER_M := 0.012
+const MOVE_KEEP_FLOOR := 0.35
+## How often a possession in a cell becomes a shot, by distance from goal. Steep,
+## because it is what stops the map valuing the six-yard box as somewhere to pass
+## *from*.
+const SHOT_SHARE_LAMBDA := 11.0
+const SHOT_SHARE_MAX := 0.62
+const SHOT_SHARE_MIN := 0.015
+## And what the attempt is worth from there. The distance decay of football's own
+## conversion, times the angle the goal subtends.
+const SHOT_VALUE_LAMBDA := 8.5
+
+
 func _bake_expected_threat() -> void:
-	_xt.resize(GRID_X * GRID_Z)
-	var peak := 0.0
+	var n := GRID_X * GRID_Z
+	_xt.resize(n)
+	var shot_share := PackedFloat32Array()
+	var shot_value := PackedFloat32Array()
+	shot_share.resize(n)
+	shot_value.resize(n)
+	var centres := PackedVector3Array()
+	centres.resize(n)
 	for ix in GRID_X:
 		for iz in GRID_Z:
-			var v := _raw_threat(_cell_centre(ix, iz))
-			_xt[iz * GRID_X + ix] = v
-			peak = maxf(peak, v)
+			var i := iz * GRID_X + ix
+			var c := _cell_centre(ix, iz)
+			centres[i] = c
+			var d := SimConsts.horizontal_length(
+				Vector3(SimConsts.HALF_LENGTH, 0.0, 0.0) - c)
+			shot_share[i] = clampf(exp(-d / SHOT_SHARE_LAMBDA),
+				SHOT_SHARE_MIN, SHOT_SHARE_MAX)
+			shot_value[i] = _shot_value(c)
+			_xt[i] = shot_share[i] * shot_value[i]
+
+	# The kernel, once: for every cell, where the ball goes next and what
+	# survives the trip. Held as flat arrays so the iteration below is a walk.
+	var starts := PackedInt32Array()
+	var targets := PackedInt32Array()
+	var weights := PackedFloat32Array()
+	starts.resize(n + 1)
+	for i in n:
+		starts[i] = targets.size()
+		var from: Vector3 = centres[i]
+		var total := 0.0
+		var first := targets.size()
+		for j in n:
+			if j == i:
+				continue
+			var to: Vector3 = centres[j]
+			var step := to - from
+			var dist := SimConsts.horizontal_length(step)
+			if dist > MOVE_MAX:
+				continue
+			# Forward is toward the goal being attacked, which is +X here.
+			var forward: float = step.x / maxf(dist, 0.01)
+			var w: float = exp(-dist / MOVE_LAMBDA) \
+				* (1.0 + MOVE_FORWARD_BIAS * maxf(forward, 0.0))
+			var keep: float = maxf(MOVE_KEEP_NEAR - dist * MOVE_KEEP_PER_M,
+				MOVE_KEEP_FLOOR)
+			targets.append(j)
+			weights.append(w * keep)
+			total += w
+		# Normalised over the moves considered, so the kernel is a distribution
+		# over where the ball goes and `keep` is what is lost on the way.
+		if total > 0.0:
+			for k in range(first, weights.size()):
+				weights[k] /= total
+	starts[n] = targets.size()
+
+	var next := PackedFloat32Array()
+	next.resize(n)
+	for _pass in ITERATIONS:
+		for i in n:
+			var moved := 0.0
+			for k in range(starts[i], starts[i + 1]):
+				moved += weights[k] * _xt[targets[k]]
+			next[i] = shot_share[i] * shot_value[i] + (1.0 - shot_share[i]) * moved
+		for i in n:
+			_xt[i] = next[i]
+
+	var peak := 0.0
+	for v in _xt:
+		peak = maxf(peak, v)
 	if peak > 0.0:
 		var scale := XT_PEAK / peak
 		for i in _xt.size():
 			_xt[i] *= scale
+
+
+## What a shot from a point is worth, with nobody in the way: football's own
+## conversion by distance, times the angle the goal mouth subtends.
+##
+## The terminal value of the iteration above, and the only place the map says
+## anything about goals. `_raw_threat` used to be both this and the value of the
+## grass at once, which is the confusion 8b names.
+static func _shot_value(p: Vector3) -> float:
+	var dx := SimConsts.HALF_LENGTH - p.x
+	var dz: float = absf(p.z)
+	var d := sqrt(dx * dx + dz * dz)
+	var half := SimConsts.GOAL_HALF_WIDTH
+	var theta: float = absf(atan2(half - p.z, maxf(dx, 0.4))
+		- atan2(-half - p.z, maxf(dx, 0.4)))
+	var angle_term: float = pow(clampf(theta / 1.047, 0.0, 1.0), 0.7)
+	return exp(-d / SHOT_VALUE_LAMBDA) * maxf(angle_term, 0.02)
 
 
 ## Canonical cell centre, in regulation-pitch metres, attacking +X.

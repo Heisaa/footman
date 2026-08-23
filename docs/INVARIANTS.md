@@ -372,6 +372,16 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   Testing against y = 0 never fires, so the solver "corrects" every cross into a
   flat drive.
 
+- **A solver that takes spin has to correct sideways as well as along the line.**
+  `solve_lofted` iterated on how far the ball got and how long it took, both
+  measured along the straight line to the target, and a curled ball's whole point
+  is that it does not travel down that line. So every bend the game put on a ball
+  was a bend *away* from where it was aimed: measured, 1.5 m off at the engine's
+  old cross curl and six metres off at a footballer's. The fix is a yaw on the
+  launch, iterated like the other two. `solve_direct` still has the hole and it
+  does not bite while `SHOT_CURL` is small; it will the day a shot is meant to
+  bend.
+
 - **Inverting a roll distance means inverting the square.** Travel goes as the
   square of launch speed, so scaling a knock by `room / travel` does not make the
   ball fit the room — it cleared a 5 m knock that left the ball rolling 28 m. The
