@@ -13,6 +13,13 @@ extends Node3D
 ## same call `view3d` makes, so `parade --seed 7` and `view3d --seed 7` are the
 ## same twenty-two men and a note taken here holds there.
 ##
+## **It moves.** A figure judged standing still is half judged: a shoulder that
+## reads at rest can tear open the moment an arm lifts, and a gait is the thing
+## a man spends a match doing. `[` and `]` step through the animation states,
+## `A` rolls through them on its own, `0` goes back to standing, and `--anim RUN`
+## opens on one. The poses are `SimMatchView3D`'s own -- the same table the match
+## plays, not a second one written to look like it.
+##
 ## Presentation only. It builds a match to read the squad list off it and never
 ## ticks one.
 
@@ -32,6 +39,27 @@ const FOV := 32.0
 ## Degrees a second on the turntable. Slow enough to look at, fast enough that
 ## nobody waits for the back of the shirt.
 const SPIN_RATE := 24.0
+## The states the parade cycles, in the order they are worth looking at: the
+## gait first, because it is what a figure spends a match doing, then the ones
+## that bend it hardest.
+##
+## `SimMatchView3D` owns both the poses and the speeds -- a figure judged here
+## has to be posed by the code the match plays, or this view is judging a
+## different man.
+const REEL := [
+	SimConsts.Anim.IDLE, SimConsts.Anim.JOG, SimConsts.Anim.RUN,
+	SimConsts.Anim.SPRINT, SimConsts.Anim.KICK_LIGHT, SimConsts.Anim.KICK_HARD,
+	SimConsts.Anim.HEADER, SimConsts.Anim.CHEST, SimConsts.Anim.THROW,
+	SimConsts.Anim.CELEBRATE, SimConsts.Anim.DEJECTED, SimConsts.Anim.EXHAUSTED,
+	SimConsts.Anim.KEEPER_CATCH, SimConsts.Anim.KEEPER_HOLD, SimConsts.Anim.HOLD,
+]
+## Seconds a one-shot state is held before the reel moves on. Long enough to
+## watch the arc twice, which is what makes a follow-through readable.
+const REEL_DWELL := 2.4
+## Cadence ceiling, in cycles a second. The match takes this off the simulation
+## step; nothing here is stepped, so it is stated.
+const REEL_MAX_HZ := 3.4
+
 const BREATH_RATE := 1.3
 const BREATH_DEPTH := 0.006
 ## Arms hang inside the torso on a figure that is not running, so the stand pose
@@ -44,6 +72,11 @@ var _page := 0
 var _spin := true
 var _turn := 0.0
 var _face := SimAppearance.Face.NEUTRAL
+## Which of `REEL` is playing, or -1 for the stand pose the parade opened with.
+var _reel := -1
+## True while the reel advances on its own; false holds one state to look at.
+var _rolling := false
+var _anim_clock := 0.0
 ## Which cut to put on the rank, overriding what the men were born with. The four
 ## on screen take this one and the next three, so five pages walk the library.
 ## Negative leaves every man his own hair.
@@ -74,6 +107,14 @@ func _ready() -> void:
 			_turn = float(args[i + 1])
 		elif args[i] == "--face" and i + 1 < args.size():
 			_face = int(args[i + 1])
+		elif args[i] == "--anim" and i + 1 < args.size():
+			var wanted := String(args[i + 1]).to_upper()
+			for k in REEL.size():
+				if SimConsts.Anim.keys()[REEL[k]] == wanted:
+					_reel = k
+			if wanted == "ALL":
+				_reel = 0
+				_rolling = true
 		elif args[i] == "--hair" and i + 1 < args.size():
 			_hair = int(args[i + 1])
 		elif args[i] == "--shot" and i + 1 < args.size():
@@ -254,8 +295,13 @@ func _write_caption() -> void:
 		"PARADE   match seed %d   men %d-%d of %d   page %d/%d" % [
 			_seed, first, last, _pool.size(), _page + 1, _pages(),
 		],
-		"%s" % ["turning" if _spin else "still"],
-		"< >  page    N / P  seed    SPACE  turn    1-5  face    Q  quit",
+		"%s   %s" % [
+			"turning" if _spin else "still",
+			"standing" if _reel < 0 else "%s%s" % [
+				SimConsts.Anim.keys()[REEL[_reel]], "  (rolling)" if _rolling else "",
+			],
+		],
+		"< >  page    N / P  seed    SPACE  turn    1-5  face    [ ]  anim    A  roll    Q  quit",
 	])
 
 
@@ -264,16 +310,50 @@ func _write_caption() -> void:
 
 func _process(delta: float) -> void:
 	_elapsed += delta
+	if _reel >= 0:
+		_anim_clock += delta
+		if _rolling and _anim_clock >= REEL_DWELL:
+			_anim_clock = 0.0
+			_reel = (_reel + 1) % REEL.size()
+			_write_caption()
 	for i in _nodes.size():
 		var node: Node3D = _nodes[i]
 		if _spin:
 			node.rotation.y += deg_to_rad(SPIN_RATE) * delta
+		if _reel >= 0:
+			_play(node, i, delta)
+			continue
 		# A figure that does not move at all reads as a shop dummy, so it breathes.
 		var spine := node.find_child("Spine", true, false) as Node3D
 		if spine != null and node.has_meta("spine_y"):
 			var base: float = node.get_meta("spine_y")
 			spine.position.y = base + sin(_elapsed * BREATH_RATE + float(i)) * BREATH_DEPTH
 	_maybe_shoot()
+
+
+## One figure, one frame of whatever the reel is on.
+##
+## The gait runs underneath every state, exactly as it does in a match: a kick
+## is a leg swung out of a run, not a pose struck from standing. Each man is
+## started a little way round the cycle so a rank of four is not a chorus line.
+func _play(node: Node3D, index: int, delta: float) -> void:
+	var anim: int = REEL[_reel]
+	var speed: float = float(SimMatchView3D.POSE_SHEET_SPEEDS.get(anim, 0.0))
+	var amplitude := SimMatchView3D.gait_amplitude(speed)
+	var phase: float = node.get_meta("reel_phase", fmod(float(index) * 1.29, TAU))
+	var leg := SimMatchView3D._leg_length(node)
+	var step := 2.0 * leg * sin(amplitude)
+	if step > 0.01:
+		var hz: float = minf(speed / (2.0 * step), REEL_MAX_HZ)
+		phase = fposmod(phase + TAU * hz * delta, TAU)
+	node.set_meta("reel_phase", phase)
+
+	node.scale = Vector3.ONE
+	node.position.y = 0.0
+	SimMatchView3D.pose_gait(node, speed, phase, 0.0)
+	var span: float = float(SimMatchView3D.ANIM_SECONDS.get(anim, REEL_DWELL))
+	var t: float = fposmod(_anim_clock + float(index) * 0.21, maxf(span, 0.001))
+	SimMatchView3D.pose_anim(node, anim, t / maxf(span, 0.001), _anim_clock)
 
 
 func _maybe_shoot() -> void:
@@ -313,6 +393,27 @@ func _unhandled_input(event: InputEvent) -> void:
 			_build_row()
 		KEY_SPACE:
 			_spin = not _spin
+			_write_caption()
+		KEY_BRACKETLEFT, KEY_BRACKETRIGHT:
+			# Stepping off the stand pose starts at the top of the reel rather
+			# than wherever it was, so `]` from standing is always the gait.
+			if _reel < 0:
+				_reel = 0
+			else:
+				_reel = posmod(_reel + (1 if key == KEY_BRACKETRIGHT else -1), REEL.size())
+			_rolling = false
+			_anim_clock = 0.0
+			_write_caption()
+		KEY_0:
+			_reel = -1
+			for node in _nodes:
+				_stand(node)
+			_write_caption()
+		KEY_A:
+			if _reel < 0:
+				_reel = 0
+			_rolling = not _rolling
+			_anim_clock = 0.0
 			_write_caption()
 		KEY_1, KEY_2, KEY_3, KEY_4, KEY_5:
 			_face = key - KEY_1

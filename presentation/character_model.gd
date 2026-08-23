@@ -25,6 +25,14 @@ const MODEL_DIR := "res://presentation/models"
 ## height over this, so the rig is built once at an ordinary size.
 const REFERENCE_HEIGHT := 1.78
 
+## The radius the model's face is drawn on, in the model's own space.
+##
+## `SimCharacterBuilder` lays the atlas and poses the brows on a sphere of
+## `head_r * FACE_SHELL`, and a built model has no way to say what its own is --
+## so this is the number `art/toy/figure.py` builds to, and that script prints it
+## on every export. If the two ever drift the brows drift off the face with them.
+const MODEL_HEAD_R := 0.2869
+
 ## Material slots, in the order the Blender file has to declare them. Index is
 ## the slot; a model with fewer slots keeps its authored colours for the rest.
 const SLOT_SHIRT := 0
@@ -33,6 +41,20 @@ const SLOT_TRIM := 2
 const SLOT_SKIN := 3
 const SLOT_HAIR := 4
 const SLOT_BOOT := 5
+
+## The slot each material name maps to. **Name, not index.** The index order in
+## `docs/THE_MODELS.md` cannot survive the trip: a part is one moulding and one
+## colour, so it carries one material, and glTF drops the slots a mesh does not
+## use -- every part would arrive with its single surface at index 0 and be
+## painted shirt-coloured. A name survives, and it is what `art/export.py`
+## writes. Index is still the fallback for a model that uses no known name.
+##
+## A name that is not here keeps the colour it was authored in, which is what
+## the eyes want: `ink` is black in every kit.
+const SLOT_NAMES := {
+	"shirt": SLOT_SHIRT, "shorts": SLOT_SHORTS, "trim": SLOT_TRIM,
+	"skin": SLOT_SKIN, "hair": SLOT_HAIR, "boot": SLOT_BOOT,
+}
 
 ## Which `AccessoryN` mesh each accessory is. `SimAppearance.ACCESSORIES` holds
 ## repeats of "none" to weight the draw, so the list itself is not the index.
@@ -90,13 +112,62 @@ static func build(seed_value: int, appearance: SimAppearance, kit: PackedColorAr
 		# put nobody on the pitch.
 		push_warning("model for %s did not instantiate; drawing the primitives" % WorldLook.type_name(body_type))
 		return SimCharacterBuilder.build(appearance, kit, shirt_number)
+	root = _unwrap(root)
 	root.name = "Player"
 	root.scale = Vector3.ONE * (appearance.height / REFERENCE_HEIGHT)
 	_paint(root, appearance, kit)
 	_choose_variant(root, "Hair", appearance.hair_style)
 	_choose_variant(root, "Accessory", int(ACCESSORY_INDEX.get(appearance.accessory, -1)))
+	# The face and the brows are the whole of a man's identity at this size, and
+	# they are the same code for a model as for the primitives: the metas below
+	# are what `SimCharacterBuilder.set_expression` and `_pose_brows` read.
+	root.set_meta("brow_style", appearance.brow_style)
+	root.set_meta("eye_style", appearance.eye_style)
+	root.set_meta("mouth_style", appearance.mouth_style)
+	root.set_meta("head_r", MODEL_HEAD_R)
+	_dress_face(root, appearance)
 	set_expression(root, appearance.face)
 	return root
+
+
+## Gives the model's face surface a material the atlas can be swapped into.
+##
+## A built face carries no art -- it is a blank patch on the front of the skull
+## -- and the atlas is drawn per player and again per expression. The material
+## has to be an override rather than the file's own, or every man in the match
+## shares one face; and it has to be alpha, because the atlas is features on
+## nothing.
+static func _dress_face(root: Node3D, appearance: SimAppearance) -> void:
+	var quad := root.find_child("Face", true, false) as MeshInstance3D
+	if quad == null:
+		return
+	var material := SimCharacterBuilder.toy_material(Color.WHITE)
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.albedo_texture = SimFaceAtlas.texture_for(
+		appearance.face, appearance.eye_style, appearance.mouth_style)
+	quad.material_override = material
+
+
+## Takes a built model out of the wrapper glTF import puts it in.
+##
+## The file's own root is `Player`, and Godot hands back a scene root with that
+## node hanging under it -- so a model arrives one level deeper than the
+## procedural figure, and anything reaching for a direct child of the figure
+## finds nothing. That is not hypothetical: `_spine_base` did exactly that and
+## quietly answered zero, which put every man's torso on his hips.
+##
+## Only an empty, untransformed wrapper round a single node is removed, which is
+## the shape glTF import makes and nothing else.
+static func _unwrap(root: Node3D) -> Node3D:
+	if root.get_child_count() != 1 or root.transform != Transform3D.IDENTITY:
+		return root
+	var inner := root.get_child(0) as Node3D
+	if inner == null or root is MeshInstance3D:
+		return root
+	root.remove_child(inner)
+	root.free()
+	return inner
 
 
 ## The body type for a seed. Falls back to reading the appearance itself for an
@@ -135,19 +206,67 @@ static func _paint(root: Node3D, appearance: SimAppearance, kit: PackedColorArra
 		SLOT_HAIR: appearance.hair_colour,
 		SLOT_BOOT: SimPalette.INK,
 	}
-	for node in _meshes(root):
+	var meshes := _meshes(root)
+	if _named(meshes):
+		for node in meshes:
+			for slot in node.get_surface_override_material_count():
+				var name := _material_name(node, slot)
+				if SLOT_NAMES.has(name):
+					node.set_surface_override_material(
+						slot, SimCharacterBuilder.toy_material(colours[SLOT_NAMES[name]]))
+		return
+	for node in meshes:
 		for slot in mini(node.get_surface_override_material_count(), colours.size()):
 			node.set_surface_override_material(slot, SimCharacterBuilder.toy_material(colours[slot]))
+
+
+## Does this model name its materials, or does it want the slot order?
+static func _named(meshes: Array[MeshInstance3D]) -> bool:
+	for node in meshes:
+		for slot in node.get_surface_override_material_count():
+			if SLOT_NAMES.has(_material_name(node, slot)):
+				return true
+	return false
+
+
+static func _material_name(node: MeshInstance3D, slot: int) -> String:
+	var material := node.get_active_material(slot)
+	return "" if material == null else material.resource_name
 
 
 ## Shows one of a set of variant meshes named `Prefix0`, `Prefix1`, ... and
 ## hides the rest. How hair and accessories are chosen: the Blender file carries
 ## every cut, and the seed picks which one is visible.
+## Shows one of a set of variant meshes named `Prefix0`, `Prefix1`, ... and
+## hides the rest. How hair and accessories are chosen: the model carries every
+## cut and the seed picks which one is visible.
+##
+## **The number in the name is the index**, not the node's place in the sorted
+## list, and the difference is not academic. Sorted as text `Hair10` lands
+## between `Hair1` and `Hair2`, so eighteen cuts mean eight men in the wrong
+## one; and bald has no mesh at all, so counting the nodes is one short and
+## every index after it is off by one. Position is the fallback for a model
+## whose variants are not numbered.
 static func _choose_variant(root: Node3D, prefix: String, index: int) -> void:
 	var variants: Array[Node3D] = []
 	for node in root.find_children("%s*" % prefix, "Node3D", true, false):
 		variants.append(node)
 	if variants.is_empty():
+		return
+	var numbered := {}
+	var highest := -1
+	for node in variants:
+		var tail := String(node.name).substr(prefix.length())
+		if tail.is_valid_int():
+			numbered[node] = tail.to_int()
+			highest = maxi(highest, tail.to_int())
+	if numbered.size() == variants.size():
+		# `highest + 1` and not the node count: the gaps are real. Bald is hair
+		# zero and has nothing to show, and wrapping on the count would show the
+		# next man's cut instead of no cut at all.
+		var wanted := -1 if index < 0 else posmod(index, highest + 1)
+		for node in variants:
+			node.visible = numbered[node] == wanted
 		return
 	variants.sort_custom(func(a, b): return a.name < b.name)
 	for i in variants.size():

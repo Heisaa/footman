@@ -1,3 +1,4 @@
+class_name SimMatchView3D
 extends Node3D
 ## The watchable match view (PLAN.md §9).
 ##
@@ -1405,7 +1406,13 @@ func _build_pose_sheet() -> void:
 		_curr.player_stamina[i] = 1.0
 		_curr.player_anim[i] = anim
 		_curr.player_on_pitch[i] = 1
-		var node := SimCharacterBuilder.build(SimAppearance.from_seed(i + 11), kit)
+		# **Through the model seam, like the match.** Built straight off
+		# `SimCharacterBuilder`, this sheet renders the primitives whatever is on
+		# disk -- so the one tool that shows every animation state was the one
+		# tool that could not show them on the figure the game actually draws,
+		# and a built model with its torso planted on its hips passed it.
+		var node := SimCharacterModel.build(
+			i + 11, SimCharacterModel.appearance_for(i + 11), kit)
 		add_child(node)
 		_players.append(node)
 
@@ -2139,6 +2146,36 @@ func _pose(node: Node3D, index: int, clock: float) -> void:
 	node.scale = Vector3.ONE
 	_pose_run(node, index, clock)
 
+	if not pose_anim(node, anim, u, t):
+		match anim:
+			SimConsts.Anim.SLIDE:
+				_pose_slide(node, index, u)
+			SimConsts.Anim.FALL:
+				_pose_fall(node, index, u)
+			SimConsts.Anim.GET_UP:
+				_pose_fall(node, index, 1.0 - u)
+			SimConsts.Anim.DIVE_LEFT:
+				_pose_dive(node, index, u, -1.0)
+			SimConsts.Anim.DIVE_RIGHT:
+				_pose_dive(node, index, u, 1.0)
+			_:
+				pass
+
+	SimCharacterModel.set_expression(
+		node, SimAppearance.face_for_anim(anim, _curr.player_stamina[index])
+	)
+
+
+## The half of the anim table whose shape is a function of the figure and the
+## phase alone, and nothing else. Returns whether it handled the state.
+##
+## Split out so `parade` can play the **same** poses rather than a second set
+## written to look like them: a figure judged standing still is half judged, and
+## two tables would drift the first time one of them was tuned.
+##
+## What stays behind is what genuinely needs the match. A slide, a fall and a
+## keeper's dive are posed off the player's own heading, and a parade has none.
+static func pose_anim(node: Node3D, anim: int, u: float, t: float) -> bool:
 	match anim:
 		SimConsts.Anim.KICK_LIGHT:
 			_pose_kick(node, u, 1.0)
@@ -2146,22 +2183,12 @@ func _pose(node: Node3D, index: int, clock: float) -> void:
 			_pose_kick(node, u, 1.45)
 		SimConsts.Anim.HEADER:
 			_pose_header(node, u)
-		SimConsts.Anim.SLIDE:
-			_pose_slide(node, index, u)
-		SimConsts.Anim.FALL:
-			_pose_fall(node, index, u)
-		SimConsts.Anim.GET_UP:
-			_pose_fall(node, index, 1.0 - u)
 		SimConsts.Anim.CELEBRATE:
 			_pose_celebrate(node, t)
 		SimConsts.Anim.DEJECTED:
 			_pose_dejected(node, t)
 		SimConsts.Anim.EXHAUSTED:
 			_pose_exhausted(node, t)
-		SimConsts.Anim.DIVE_LEFT:
-			_pose_dive(node, index, u, -1.0)
-		SimConsts.Anim.DIVE_RIGHT:
-			_pose_dive(node, index, u, 1.0)
 		SimConsts.Anim.KEEPER_CATCH:
 			_pose_catch(node, u)
 		SimConsts.Anim.THROW:
@@ -2173,11 +2200,8 @@ func _pose(node: Node3D, index: int, clock: float) -> void:
 		SimConsts.Anim.CHEST:
 			_pose_chest(node, u)
 		_:
-			pass
-
-	SimCharacterModel.set_expression(
-		node, SimAppearance.face_for_anim(anim, _curr.player_stamina[index])
-	)
+			return false
+	return true
 
 
 ## The gait is geared to the ground, not to the clock.
@@ -2248,7 +2272,7 @@ func _gait_phase(node: Node3D, index: int, clock: float, speed: float, amplitude
 
 ## Hip height, which is the length of the leg the gait is geared to. Cached off
 ## the node: it is fixed at build time and varies per player with their height.
-func _leg_length(node: Node3D) -> float:
+static func _leg_length(node: Node3D) -> float:
 	if not node.has_meta("leg_length"):
 		var hip := _joint(node, "HipL")
 		node.set_meta("leg_length", hip.position.y if hip != null else 0.83)
@@ -2297,7 +2321,7 @@ const GAIT_DIP := 0.035
 
 
 ## One leg, `tag` being "L" or "R" and `phase` already offset for the side.
-func _pose_leg(node: Node3D, tag: String, phase: float, amplitude: float) -> void:
+static func _pose_leg(node: Node3D, tag: String, phase: float, amplitude: float) -> void:
 	var lift: float = maxf(-cos(phase + GAIT_KNEE_LEAD), 0.0)
 	var planted: float = maxf(cos(phase), 0.0)
 	var knee: float = amplitude * (
@@ -2315,11 +2339,28 @@ func _pose_leg(node: Node3D, tag: String, phase: float, amplitude: float) -> voi
 
 func _pose_run(node: Node3D, index: int, clock: float) -> void:
 	var speed: float = _velocity(index).length()
-	var effort: float = clampf(speed / GAIT_SATURATION_SPEED, 0.0, 1.0)
-	# How far the hips swing, and therefore how long a step is. Grows fast at
-	# walking pace and saturates, which is what makes the cadence climb.
-	var amplitude: float = GAIT_SWING_MAX * pow(effort, GAIT_SWING_CURVE)
+	var amplitude: float = gait_amplitude(speed)
 	var phase := _gait_phase(node, index, clock, speed, amplitude)
+	pose_gait(node, speed, phase, clampf(_turn_rate(node, index, clock), -1.0, 1.0))
+
+
+## How far the hips swing at this speed, and therefore how long a step is. Grows
+## fast at walking pace and saturates, which is what makes the cadence climb.
+static func gait_amplitude(speed: float) -> float:
+	return GAIT_SWING_MAX * pow(
+		clampf(speed / GAIT_SATURATION_SPEED, 0.0, 1.0), GAIT_SWING_CURVE)
+
+
+## The run, as a shape: everything about it that is a function of the figure and
+## the phase, and nothing that is a function of the match.
+##
+## Split out so the parade can run the **same** gait rather than a second one
+## written to look like it. What the match keeps is where the phase comes from
+## -- a real speed over a real leg length, quantised to the sim's step -- and
+## that is a clock, not a pose.
+static func pose_gait(node: Node3D, speed: float, phase: float, turn: float) -> void:
+	var effort: float = clampf(speed / GAIT_SATURATION_SPEED, 0.0, 1.0)
+	var amplitude: float = gait_amplitude(speed)
 	var swing := sin(phase) * amplitude
 	var opposite := -swing
 
@@ -2338,7 +2379,6 @@ func _pose_run(node: Node3D, index: int, clock: float) -> void:
 
 	# Lean into the run, and bank into a turn. Positive x pitches the torso
 	# forward: this was negative, so runners leaned back as they accelerated.
-	var turn: float = clampf(_turn_rate(node, index, clock), -1.0, 1.0)
 	_lean(node, effort * 0.22, turn * 0.25)
 	var spine := _joint(node, "Spine")
 	if spine != null:
@@ -2356,7 +2396,7 @@ func _pose_run(node: Node3D, index: int, clock: float) -> void:
 
 ## The follow-through, not the strike: the sim plays this *after* the ball has
 ## gone, so the leg starts extended and relaxes out of it.
-func _pose_kick(node: Node3D, u: float, force: float) -> void:
+static func _pose_kick(node: Node3D, u: float, force: float) -> void:
 	var swing: float = lerpf(1.0, 0.2, u) * force
 	_rotate(node, "HipR", -1.15 * swing)
 	_rotate(node, "KneeR", 0.12)
@@ -2397,7 +2437,7 @@ const HEADER_LIFT_MAX := 0.5
 ## And how far he leaves the ground is the ball's business, not a constant. A
 ## fixed 0.55 m is a full leap at a ball on his forehead and half a leap at one
 ## over it; both read as the head missing.
-func _pose_header(node: Node3D, u: float) -> void:
+static func _pose_header(node: Node3D, u: float) -> void:
 	var fall: float = clampf(u / HEADER_LAND, 0.0, 1.0)
 	# A body comes down like a body: slowly at first, then all at once.
 	var arc := 1.0 - fall * fall
@@ -2420,7 +2460,7 @@ func _pose_header(node: Node3D, u: float) -> void:
 
 ## How high he has to get to meet this particular ball: the gap between it and
 ## the top of his own head, capped at a leap a footballer can actually produce.
-func _header_lift(node: Node3D) -> float:
+static func _header_lift(node: Node3D) -> float:
 	var contact: float = float(node.get_meta("contact_y", 0.0))
 	if contact < 0.01:
 		# No ball in the scene — the pose sheet. Show the leap it was drawn for.
@@ -2431,7 +2471,7 @@ func _header_lift(node: Node3D) -> float:
 ## Where this figure's head sits when it is standing — its centre, which is where
 ## a ball meets a forehead. Read off the joints it was built from, and cached: it
 ## never changes, and it varies with height the way the leg length does.
-func _head_height(node: Node3D) -> float:
+static func _head_height(node: Node3D) -> float:
 	if not node.has_meta("head_height"):
 		var neck := _joint(node, "Neck")
 		var head := _joint(node, "Head")
@@ -2454,7 +2494,7 @@ func _head_height(node: Node3D) -> float:
 ## Like the header and the kick, contact is the first frame. What follows is the
 ## half-second the ball spends dropping to his feet, and he spends it coming
 ## upright and looking down at it.
-func _pose_chest(node: Node3D, u: float) -> void:
+static func _pose_chest(node: Node3D, u: float) -> void:
 	var give := 1.0 - smoothstep(0.0, 0.85, u)
 	_lean(node, -0.42 * give)
 	# Chin up at the ball on contact, down at it by the time it lands.
@@ -2517,7 +2557,7 @@ func _pose_fall(node: Node3D, index: int, u: float) -> void:
 ## nothing. The wind-up leans them back past vertical and the release carries
 ## them through to horizontal, which puts the hands outside the head at both ends
 ## of the arc and gives the whip something to travel across.
-func _pose_throw(node: Node3D, u: float) -> void:
+static func _pose_throw(node: Node3D, u: float) -> void:
 	# Wind-up on a slow ease, release on a fast one: the arms go back over about
 	# half a second and come through in a fifth of it.
 	var back := smoothstep(0.0, THROW_RELEASE, u)
@@ -2550,7 +2590,7 @@ func _pose_throw(node: Node3D, u: float) -> void:
 	_squash(node, -0.1 * back + 0.16 * whip)
 
 
-func _pose_celebrate(node: Node3D, t: float) -> void:
+static func _pose_celebrate(node: Node3D, t: float) -> void:
 	# Up and *forward*, in a slight V. Two things rule out the obvious pose. The
 	# arms reach about 1.7 m and the head tops out at 1.95 m, so straight
 	# overhead puts them inside the head's silhouette; and a sideways spread
@@ -2571,7 +2611,7 @@ func _pose_celebrate(node: Node3D, t: float) -> void:
 	_squash(node, 0.22 * (1.0 - hop))
 
 
-func _pose_dejected(node: Node3D, t: float) -> void:
+static func _pose_dejected(node: Node3D, t: float) -> void:
 	_lean(node, 0.42)
 	_rotate(node, "Neck", 0.4)
 	# Arms hang. Nothing swings, which is the whole point of the pose.
@@ -2592,7 +2632,7 @@ func _pose_dejected(node: Node3D, t: float) -> void:
 
 ## Hands on knees, heaving. §9.5 wants exhaustion visible in the body before it
 ## is visible anywhere else, and this is the pose that does it.
-func _pose_exhausted(node: Node3D, t: float) -> void:
+static func _pose_exhausted(node: Node3D, t: float) -> void:
 	var heave := sin(t * 3.2) * 0.07
 	_lean(node, 0.85 + heave)
 	_rotate(node, "Neck", -0.45)
@@ -2645,7 +2685,7 @@ func _pose_dive(node: Node3D, index: int, u: float, dir_z: float) -> void:
 ## front of the chest. The previous pair (-1.35 / -1.15) reached a hand about
 ## 0.24 m too high, which with the ball on his own centre line meant hands
 ## cupping nothing above a ball inside his chest.
-func _pose_keeper_hold(node: Node3D, t: float) -> void:
+static func _pose_keeper_hold(node: Node3D, t: float) -> void:
 	_rotate(node, "ShoulderL", -0.63, 0.34)
 	_rotate(node, "ShoulderR", -0.63, -0.34)
 	_rotate(node, "ElbowL", -1.3)
@@ -2686,7 +2726,7 @@ const HOLD_ANKLE := 0.32
 ## chest up. Both arms come out to balance against a foot that is off the ground.
 ## The one thing that keeps moving is the head: he is scanning, and a figure
 ## standing on a ball with nothing moving reads as the match having paused.
-func _pose_hold(node: Node3D, t: float) -> void:
+static func _pose_hold(node: Node3D, t: float) -> void:
 	var plant: float = smoothstep(0.0, HOLD_PLANT_SECONDS, t)
 	# The ball rolls a little back and forth under the sole. Small, slow, and the
 	# reason the foot does not look welded to it.
@@ -2710,7 +2750,7 @@ func _pose_hold(node: Node3D, t: float) -> void:
 	_rotate(node, "Neck", -0.12 * plant, sin(t * 1.4) * 0.3 * plant)
 
 
-func _pose_catch(node: Node3D, u: float) -> void:
+static func _pose_catch(node: Node3D, u: float) -> void:
 	var arc := sin(u * PI)
 	node.position.y += arc * 0.12
 	# Arms forward and folded, gathering the ball in.
@@ -2779,14 +2819,14 @@ func _anim_phase(node: Node3D, anim: int) -> float:
 ## as a different triple — arms raised overhead read back as (0.29, π, π) — so
 ## the *next* component write builds a wholly different orientation from it. The
 ## symptom was a goal celebrated with the arms hanging down.
-func _rotate(node: Node3D, joint: String, angle: float, lateral := 0.0) -> void:
+static func _rotate(node: Node3D, joint: String, angle: float, lateral := 0.0) -> void:
 	var j := _joint(node, joint)
 	if j != null:
 		j.rotation = Vector3(angle, 0.0, lateral)
 
 
 ## Pitches the torso. Positive is forward, over the ball.
-func _lean(node: Node3D, angle: float, bank := 0.0) -> void:
+static func _lean(node: Node3D, angle: float, bank := 0.0) -> void:
 	var spine := _joint(node, "Spine")
 	if spine != null:
 		spine.rotation = Vector3(angle, 0.0, bank)
@@ -2798,7 +2838,7 @@ func _root(node: Node3D, index: int, pitch: float, roll: float) -> void:
 
 
 ## Positive squashes, negative stretches, volume roughly held.
-func _squash(node: Node3D, amount: float) -> void:
+static func _squash(node: Node3D, amount: float) -> void:
 	var a: float = clampf(amount, -0.4, 0.4)
 	node.scale = Vector3(1.0 + a * 0.45, 1.0 - a, 1.0 + a * 0.45)
 
@@ -2806,7 +2846,7 @@ func _squash(node: Node3D, amount: float) -> void:
 ## Joint lookups are cached per player. `find_child` walks the subtree, and at
 ## twenty-two players and a dozen joints a frame that is a search per joint per
 ## frame for a hierarchy that never changes.
-func _joint(node: Node3D, joint: String) -> Node3D:
+static func _joint(node: Node3D, joint: String) -> Node3D:
 	var cache: Dictionary = node.get_meta("joints", {})
 	if cache.is_empty():
 		node.set_meta("joints", cache)
@@ -2817,9 +2857,15 @@ func _joint(node: Node3D, joint: String) -> Node3D:
 
 ## Where a player's spine sits when standing, cached off the node so the bob
 ## does not accumulate.
-func _spine_base(node: Node3D) -> float:
+static func _spine_base(node: Node3D) -> float:
 	if not node.has_meta("spine_y"):
-		var spine := node.get_node_or_null("Spine")
+		# **`_joint`, not `get_node_or_null`.** A direct-child lookup finds the
+		# procedural figure's spine and misses a built model's, and the miss is
+		# silent: it falls back to zero, which is a plausible height for a node
+		# to sit at. Every man in the match then had his torso planted on his
+		# hips and no legs to speak of, while the parade -- which caches this
+		# meta from its own stand pose first -- looked perfectly correct.
+		var spine := _joint(node, "Spine")
 		node.set_meta("spine_y", spine.position.y if spine != null else 0.0)
 	return node.get_meta("spine_y")
 
