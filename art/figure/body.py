@@ -167,7 +167,7 @@ def _body(skin, look, h):
     trunk_top = h * (SHOULDER - 0.055)
     skin.add(Barrel(
         (0.0, 0.0, (h * SHIRT_HEM + trunk_top) * 0.5),
-        (w * 0.62, h * 0.068), (trunk_top - h * SHIRT_HEM) * 0.5,
+        (w * 0.62, h * 0.058), (trunk_top - h * SHIRT_HEM) * 0.5,
         round=h * 0.072))
 
     for side in (-1.0, 1.0):
@@ -368,16 +368,23 @@ def _hair(hair, look, h):
     hh = look.head_h * h
     hd = look.head_d * h
 
-    # How much hair there is, and how far down the forehead it comes.
-    thick, lift, hairline = {
-        "crop": (1.04, 0.22, 1.66),
-        "cap": (1.07, 0.26, 1.62),
-        "perm": (1.10, 0.30, 1.50),
-        "mop": (1.09, 0.32, 1.54),
+    # How much hair there is, where its top and its **bottom** are in head
+    # half-heights off the middle of the head, and how far down the forehead it
+    # comes.
+    #
+    # The bottom is not a detail. Given only a top and a thickness the shell
+    # finished level with the ears and every man was bald from there to the
+    # nape -- which a front view cannot show you and a back view shows
+    # instantly. The reference perm carries down past the ears to the jaw.
+    thick, top, bottom, hairline = {
+        "crop": (1.04, 1.14, -0.82, 1.66),
+        "cap": (1.07, 1.18, -0.86, 1.62),
+        "perm": (1.10, 1.22, -1.02, 1.50),
+        "mop": (1.09, 1.24, -1.00, 1.54),
     }[style]
 
-    hair.add(RoundBox((0.0, hd * 0.05, mid + hh * lift),
-                      (hw * thick, hd * thick, hh * 0.92),
+    hair.add(RoundBox((0.0, hd * 0.05, mid + hh * (top + bottom) * 0.5),
+                      (hw * thick, hd * thick, hh * (top - bottom) * 0.5),
                       radius=look.head_round * h * 1.12))
     hair.cut(Ellipsoid((0.0, -hd * hairline, mid - hh * 0.30),
                        (hw * 1.52, hd * 1.52, hh * 1.58)), k=h * 0.006)
@@ -461,10 +468,21 @@ def _kit(shirt, trim, collar, shorts, socks, boots, look, h):
     shirt_high = h * 0.500
     shirt.add(Barrel(
         (0.0, 0.0, (shirt_low + shirt_high) * 0.5),
-        (trunk, h * 0.112), (shirt_high - shirt_low) * 0.5,
-        round=shirt_round, top=(trunk * 0.99, h * 0.078)))
+        (trunk, h * 0.088), (shirt_high - shirt_low) * 0.5,
+        round=shirt_round, top=(trunk * 0.99, h * 0.080)))
+
+    # **The hem is cut before the sleeves go on.** A plane cut applies to the
+    # whole solid, so cutting it afterwards takes the bottom off a long sleeve
+    # as well as off the shirt -- the keeper had a bare arm from the shirt hem
+    # down and a cuff floating at his hip. Ops run in order, so the sleeves are
+    # simply added after it.
+    shirt.cut(Plane((0.0, 0.0, h * SHIRT_HEM), (0.0, 0.0, 1.0)), k=h * 0.006)
 
     sleeve_end = h * (0.472 if not look.sleeves_long else 0.300)
+    # A long sleeve has to arrive at the wrist about the width of the wrist. Run
+    # down at the width it leaves the shoulder, it finishes in a cuff wider than
+    # the hand below it, which reads as a bandage rather than a sleeve.
+    cuff_r = limb * (1.24 if not look.sleeves_long else 1.06)
     for side in (-1.0, 1.0):
         # The shoulder: from beside the neck, out and **down**. Its top at the
         # neck end comes to the chin exactly, which is where the reference puts
@@ -485,13 +503,12 @@ def _kit(shirt, trim, collar, shorts, socks, boots, look, h):
         # ends up being the cuff instead of the shoulder.
         shirt.add(Capsule((side * w * 0.60, 0.0, h * 0.520),
                           (side * w * 0.76, 0.0, sleeve_end),
-                          limb * 1.80, limb * 1.24), k=h * 0.050)
+                          limb * 1.80, cuff_r), k=h * 0.050)
         # The cuff, in the trim colour, standing a little proud of the sleeve.
         cuff_a = (side * w * 0.752, 0.0, sleeve_end + h * 0.018)
         cuff_b = (side * w * 0.76, 0.0, sleeve_end - h * 0.001)
-        trim.add(Capsule(cuff_a, cuff_b, limb * 1.285, limb * 1.275))
+        trim.add(Capsule(cuff_a, cuff_b, cuff_r * 1.10, cuff_r * 1.09))
 
-    shirt.cut(Plane((0.0, 0.0, h * SHIRT_HEM), (0.0, 0.0, 1.0)), k=h * 0.006)
     # The collar: the head's own jaw, enlarged, taken out of the shirt, so the
     # shirt hugs the jaw instead of disappearing inside it.
     hw = look.head_w * h
@@ -512,7 +529,7 @@ def _kit(shirt, trim, collar, shorts, socks, boots, look, h):
     # what a neckline does -- the insert is under the shirt, not on it.
     # The cut reaches from outside the shirt to well inside it, so it opens a
     # hole rather than scoring a line.
-    face = h * 0.104
+    face = h * 0.088
     for prim in _vee_slabs(w, h, -face - h * 0.030, -face + h * 0.050):
         shirt.cut(prim, k=h * 0.009)
     for prim in _vee_slabs(w, h, -face - h * 0.030, -face + h * 0.075):
@@ -542,7 +559,7 @@ def _kit(shirt, trim, collar, shorts, socks, boots, look, h):
     seat_half = w * 0.66
     shorts.add(Barrel(
         (0.0, 0.0, (crotch + shorts_high) * 0.5),
-        (seat_half, h * 0.118), (shorts_high - crotch) * 0.5,
+        (seat_half, h * 0.082), (shorts_high - crotch) * 0.5,
         round=shorts_round))
     leg_r = w * 0.30
     for side in (-1.0, 1.0):

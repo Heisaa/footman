@@ -91,6 +91,17 @@ contrast is most of what reads as a football kit.
   slug on the forehead; far enough back to hug the shell, it lands on the brows
   and the two fuse into one bar. The hairline is the cut, and the cut can simply
   come further down the forehead.
+- **One thickness for the whole body.** The seat of the shorts was the deepest
+  thing on the figure — 0.208m half-depth against the chest's 0.147 — so in
+  profile the man had a belly and a backside and a chest narrower than either.
+  Depth now runs 0.105–0.160 top to bottom.
+- **A plane cut applies to the whole solid.** Cutting the shirt hem after the
+  sleeves were added took the bottom off a long sleeve too: the keeper had a
+  bare arm from the hem down and a cuff floating at his hip. Ops run in order,
+  so the hem is cut before the sleeves go on.
+- **A hair shell needs a bottom as well as a top.** Given only a top and a
+  thickness it finishes level with the ears and every man is bald from there to
+  the nape — which a front view cannot show and a back view shows instantly.
 - **Judge nothing from the front alone.** `--mode views` puts the same man at
   four angles in one frame. The first pass had a bored hole where the crotch
   should be and a bare torso breaking out through the back of the shirt, and
