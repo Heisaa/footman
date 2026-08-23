@@ -402,6 +402,31 @@ trunk is why the shorts kept having to be narrower still to avoid reading as a
 skirt -- which they did twice, in both directions, before the widths were made to
 agree.
 
+**Then the legs of the shorts were outside the seat of the shorts**, which is the
+same fault as the floating trim and was found the same way -- by turning the rank.
+The seat was one flattened tube, so in plan it was an ellipse; the legs were
+cylinders sitting inside it. An ellipse is narrower than a circle it touches
+everywhere except at the point they touch, so head on the two walls lined up and a
+quarter turn later each leg had broken out through the side of the seat, leaving a
+step down the hip.
+
+Neither piece was wrong on its own. **The shape of the garment in plan was.** Shorts
+are a rounded oblong seen from above -- a thigh's width at each end, a straight run
+between -- and they are built that way now: a box with a cylinder on each end, the
+cylinders being the legs' own, at the legs' own radius and depth. The wall is one
+line from waist to hem at every angle, and the seat's only job above the legs is
+the block between them.
+
+Two things fell out of it. The seat's flare, 0.60 at the waist to 0.64 at the hem,
+was **entirely under the shirt** -- the shirt finishes at 0.427 of a leg height off
+the hip and the seat at 0.48, so all but half a percent of the flare was hidden.
+It is gone and nothing looks different. And the first fix tried was to flatten the
+legs to match the ellipse instead, which does cure the step and puts a shelf across
+the front of the hem in its place: a leg thin enough to stay inside a shallow
+ellipse is far shallower than the seat it hangs off. That direction has no bottom
+to it -- the flatter the seat, the thinner the legs have to be, and the thigh
+inside sets a floor they hit first.
+
 ## Design calls made during the build
 
 **Waiting is a first-class option: an unpressured man is not rushed** (2026-08-14,

@@ -79,34 +79,47 @@ const BROW_DEPTH := 0.6
 ## The shorts, as shares of the shoulder half-width so that every build keeps the
 ## same shape.
 ##
-## **The relationship is the point**: `HIP_SPREAD + SHORTS_LEG_RADIUS` equals
-## `SHORTS_SEAT_BOTTOM`, so the outside of each leg of the shorts lands exactly on
-## the side of the seat above it. The garment then has one straight line down its
-## outer edge, and the only thing cut into it is the notch between the legs --
-## which is what shorts look like. Left to drift apart, either the seat overhangs
-## the legs like a peplum or the legs bulge out of it like jodhpurs.
+## **The garment is two legs and the block between them, and it is built that
+## way.** Seen from above, shorts are a rounded oblong: a thigh's width at each
+## end and a straight run across. Built instead as one flattened tube the seat is
+## an ellipse, and an ellipse is narrower than the legs inside it everywhere
+## except dead ahead -- so head on the two lined up and a quarter turn later each
+## leg broke out through the side of the seat and left a step down the hip. The
+## seat here is a box with a cylinder on each end, the cylinders are the legs'
+## own, and the wall is one line from the waist to the hem at every angle.
 ##
-## Move one of these three and the other has to move with it.
+## Move one of these and the others have to move with it.
 const HIP_SPREAD := 0.34
-const SHORTS_SEAT_TOP := 0.60
-const SHORTS_SEAT_BOTTOM := 0.64
-const SHORTS_LEG_RADIUS := SHORTS_SEAT_BOTTOM - HIP_SPREAD
-## How deep the shorts are against their width, seen from above.
+## Half the width of a leg of the shorts, and so of the end of the seat.
+const SHORTS_LEG_RADIUS := 0.30
+## How far the seat's wall stands proud of the leg's. A hem overhangs, barely: at
+## 1.0 the two surfaces are flush and fight for the same pixels where they
+## overlap, and there is nothing to say the garment has an edge there.
+const SHORTS_SEAT_OVERHANG := 1.03
+## How deep the shorts are against a leg's own width, seen from above.
 ##
-## They wrap two legs side by side and nothing else, so the footprint wants to be
-## a wide shallow oval -- near enough the pair of thighs and not much more. At the
-## trunk's own 0.84 the seat came out 0.64 across by 0.58 deep, which is a circle
-## in all but name and reads as a barrel strapped round the hips. The legs
-## themselves stay round in plan, because a thigh is.
-const SHORTS_DEPTH := 0.52
+## A little over round: a thigh is round and the cloth over the pair of them is
+## fuller front to back than a bare leg. Read it against `TRUNK_DEPTH`, which is
+## the shirt's: the hips have to come out to somewhere near the shirt hem or the
+## shirt hangs over them like a smock.
+const SHORTS_DEPTH := 1.10
+## Where the top of a leg sits in the seat, as a share of the seat's height up
+## from its hem. Enough that the two are one garment and no seam can open between
+## them; small enough that the leg is still most of the way below the hem.
+const SHORTS_LEG_OVERLAP := 0.16
+## The seat of the shorts, in leg heights off the hip: how tall it is and where
+## its middle sits. Named because the legs are hung off its hem, and a hem that
+## has moved with legs that have not is a garment in two pieces.
+const SEAT_HEIGHT := 0.44
+const SEAT_CENTRE := 0.26
 ## How deep the trunk is against its width. A body is an oval in plan, never a
-## circle, and this one number is most of what stops the torso and the shorts
-## reading as pipe. Anything laid on the front of the shirt -- the collar, the
-## number -- has to be moved in by the same factor or it floats off the surface.
+## circle, and this one number is most of what stops the torso reading as pipe.
+## Anything laid on the front of the shirt -- the collar, the number -- has to be
+## moved in by the same factor or it floats off the surface.
 ##
-## Read it against `SHORTS_DEPTH`. At 0.84 the shirt was very nearly twice as deep
-## as the hips under it and hung over them like a smock from the side -- which
-## only became visible once the shorts were cut down to the width of the legs.
+## Read it against the hips: the shirt hem comes out to about 0.54 of a shoulder
+## and the shorts to about 0.34, and at 0.84 here it was nearly twice the hips and
+## hung over them like a smock from the side.
 const TRUNK_DEPTH := 0.72
 ## Moulded vinyl, not paper: the reference figures carry a soft highlight and it
 ## is most of what makes them read as objects rather than flat shapes. Scenery
@@ -230,24 +243,39 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	spine.add_child(shoulders)
 	# The shorts, in the kit's second colour, so the kit reads in two blocks.
 	#
-	# A cylinder, so they have straight sides and a hem you can see. Every earlier
-	# version was a rounded solid -- a capsule, then a flattened sphere -- and
-	# both bulged wider than the hips and finished in a curved lower edge. That is
-	# an inner tube, and on a pale kit it is unmistakably a nappy. A garment has a
-	# flat hem; that one edge is most of what makes it read as clothing.
-	# Flared the other way from the shirt -- shorts are narrow at the waist and
-	# widest at the hem -- but **narrower than the shirt hem throughout**, and
-	# short. Wider than the shirt and the two garments together are one flaring
-	# line from the armpit to the knee, which is a dress; the shirt has to be seen
-	# to finish and the shorts to start inside it.
-	# Up under the shirt hem and down to about the crotch, which is where the
-	# reference puts them. They used to hang below the hip with the shirt over the
-	# top of the lot.
-	var hips := _taper(
-		shoulder * SHORTS_SEAT_TOP, shoulder * SHORTS_SEAT_BOTTOM, leg_h * 0.44, shorts)
-	hips.position = Vector3(0.0, leg_h * 0.26, 0.0)
-	hips.scale = Vector3(1.0, 1.0, SHORTS_DEPTH)
-	spine.add_child(hips)
+	# A box with a cylinder on each end, straight-sided, so the garment has a flat
+	# hem you can see and one straight line down each side. Every earlier version
+	# was a rounded solid -- a capsule, then a flattened sphere, then a flattened
+	# tube -- and all three bulged wider than the legs somewhere or finished in a
+	# curved lower edge. That is an inner tube, and on a pale kit it is
+	# unmistakably a nappy. A garment has a flat hem; that one edge is most of what
+	# makes it read as clothing.
+	#
+	# **Narrower than the shirt hem throughout**, and short. Wider than the shirt
+	# and the two garments together are one flaring line from the armpit to the
+	# knee, which is a dress; the shirt has to be seen to finish and the shorts to
+	# start inside it. Up under the shirt hem and down to about the crotch, which
+	# is where the reference puts them.
+	var seat_r := shoulder * SHORTS_LEG_RADIUS * SHORTS_SEAT_OVERHANG
+	var seat := Node3D.new()
+	seat.name = "Shorts"
+	seat.position = Vector3(0.0, SEAT_CENTRE * leg_h, 0.0)
+	spine.add_child(seat)
+	# The straight run between the legs. Its corners land on the ends' widest
+	# points, so the three pieces are one surface and no edge shows.
+	var seat_span := _box(
+		Vector3(
+			shoulder * HIP_SPREAD * 2.0,
+			SEAT_HEIGHT * leg_h,
+			seat_r * SHORTS_DEPTH * 2.0,
+		),
+		shorts)
+	seat.add_child(seat_span)
+	for hip_side in [-1.0, 1.0]:
+		var cheek := _taper(seat_r, seat_r, SEAT_HEIGHT * leg_h, shorts)
+		cheek.position = Vector3(hip_side * shoulder * HIP_SPREAD, 0.0, 0.0)
+		cheek.scale = Vector3(1.0, 1.0, SHORTS_DEPTH)
+		seat.add_child(cheek)
 
 	_v_neck(spine, shoulder, torso_h, trim)
 
@@ -413,20 +441,27 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 		# The leg of the shorts hangs lower than the seat does. That is what puts a
 		# notch between the legs; a seat that reaches further down than these fills
 		# the notch in and the shorts are one block again. A cylinder for the same
-		# reason the seat is one -- it is the hem that reads.
-		# Hanging well below the seat, which is what a notch is. A seat that
-		# reaches as far down as these fills it in and the shorts are a skirt.
+		# reason the seat's ends are -- it is the hem that reads, and this is the
+		# same cylinder carried on down past it.
 		#
-		# Wider than the leg inside it, and sized off the shoulder rather than off
-		# the limb so that its outer edge lands on the side of the seat -- see
+		# Sized off the shoulder rather than off the limb so that it matches the end
+		# of the seat above it and the wall stays one line -- see
 		# `SHORTS_LEG_RADIUS`. The floor is there because the two scale differently
 		# with build: a light man's shoulders narrow faster than his limbs thin,
 		# and at the bottom of the range the shorts would otherwise close on the
 		# thigh and disappear inside it.
 		var short_r: float = maxf(shoulder * SHORTS_LEG_RADIUS, limb * 1.12)
-		var short_leg := _taper(short_r, short_r * 0.97, leg_h * 0.34, shorts)
-		short_leg.position = Vector3(0.0, -leg_h * 0.06, 0.0)
-		# Round in plan, unlike the seat: this one wraps a single thigh.
+		var short_h := leg_h * 0.34
+		var short_leg := _taper(short_r, short_r * 0.97, short_h, shorts)
+		# Its top reaches up inside the seat rather than meeting it, because the leg
+		# swings and the seat does not: a joint that only touches opens as soon as
+		# the man runs. Hip and spine both stand one leg off the ground, so the
+		# seat's own offsets carry over unchanged.
+		var seat_hem := (SEAT_CENTRE - SEAT_HEIGHT * 0.5) * leg_h
+		var leg_top := seat_hem + SHORTS_LEG_OVERLAP * SEAT_HEIGHT * leg_h
+		short_leg.position = Vector3(0.0, leg_top - short_h * 0.5, 0.0)
+		# The same depth as the seat, so the two are one surface all the way round.
+		short_leg.scale = Vector3(1.0, 1.0, SHORTS_DEPTH)
 		hip.add_child(short_leg)
 
 		var knee := Node3D.new()
