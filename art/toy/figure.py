@@ -52,6 +52,19 @@ ANKLE_X = 0.395
 ## and elbow pivots on it.
 ARM_IN = 0.050
 
+## How far a rolled limb wanders off true, and how big a lump is.
+##
+## The same thumbing the hair gets (`toy/hair.py:ROLLED`) and rather less of it.
+## A head of hair is worked in the hand until it is not true anywhere; an arm is
+## rolled out, so it wanders a couple of millimetres and no more. Enough that the
+## outline is not a lathe's and not so much that a man looks melted.
+##
+## Every part is seeded off its own name and side, so the two arms are not
+## mirror images of each other -- two identical lumpy arms read as a moulding
+## fault rather than as something made by hand.
+LIMB_ROLL = 0.038
+ROLL_SCALE = 68.0
+
 # How round each thing is in plan: 2 is an ellipse, 4 a rounded rectangle. The
 # head is the one that matters -- a ball head is the single easiest way to lose
 # the register, and the references are emphatically boxes with the corners off.
@@ -527,6 +540,7 @@ def _arms(fig, look, h, w, limb, segs):
             M.Ring(0.30, limb * 0.93, limb * 0.93),
             M.Ring(1.06, limb * 0.88, limb * 0.88),
         ], segs, SKIN, power=LIMB_POWER, name="upper")
+        M.roughen_axis(upper, LIMB_ROLL, seed=11.0 * side, scale=ROLL_SCALE)
         upper.transform(M.along(shoulder + (arm_top - shoulder) * 0.2, elbow))
         fig.put("Shoulder" + tag, upper)
 
@@ -542,6 +556,10 @@ def _arms(fig, look, h, w, limb, segs):
             M.Ring(0.68, limb * 1.19, limb * 1.19, material=TRIM),
             M.Ring(0.74, limb * 1.18, limb * 1.18, material=TRIM, hard=True),
         ], segs, SHIRT, power=LIMB_POWER, name="sleeve")
+        # Less than the bare arm gets. A sleeve is cloth over clay, and its hem
+        # is one of the three crisp edges the kit is made of -- worked as hard
+        # as an arm it goes from a hem to a frill.
+        M.roughen_axis(sleeve, LIMB_ROLL * 0.55, seed=23.0 * side, scale=ROLL_SCALE)
         sleeve.transform(M.along(shoulder, elbow))
         fig.put("Shoulder" + tag, sleeve)
 
@@ -557,14 +575,19 @@ def _arms(fig, look, h, w, limb, segs):
             M.Ring(0.62, limb * 0.88, limb * 0.88),
             M.Ring(0.86, limb * 0.98, limb * 0.98),
         ], segs, SKIN, power=LIMB_POWER, name="fore")
+        M.roughen_axis(fore, LIMB_ROLL, seed=37.0 * side, scale=ROLL_SCALE)
         fore.transform(M.along(elbow, hand))
         fig.put("Elbow" + tag, fore)
 
         # A mitten, with a thumb. No fingers -- the reference has none, and the
         # thumb is the whole of what says hand rather than end of an arm.
-        fig.put("Elbow" + tag, M.blob(
+        # A blob is already where it belongs, so it is worked about its own
+        # middle rather than about an axis.
+        fig.put("Elbow" + tag, M.roughen(M.blob(
             (hand[0], 0.0, hand[2]), (limb * 1.06, limb * 0.98, limb * 1.22),
-            segs, segs // 2, SKIN, name="hand"))
+            segs, segs // 2, SKIN, name="hand"),
+            LIMB_ROLL, (hand[0], 0.0, hand[2]), seed=53.0 * side,
+            scale=ROLL_SCALE))
         # Down the side of the mitten and forward, not sitting on top of it.
         # Level with the middle of the hand it was a second knuckle.
         fig.put("Elbow" + tag, M.blob(
@@ -592,6 +615,7 @@ def _legs(fig, look, h, w, limb, segs):
             M.Ring(0.30, limb * 1.12, limb * 1.12),
             M.Ring(1.10, limb * 1.08, limb * 1.08),
         ], segs, SKIN, power=LIMB_POWER, name="thigh")
+        M.roughen_axis(thigh, LIMB_ROLL, seed=67.0 * side, scale=ROLL_SCALE)
         thigh.transform(M.along(hip, knee))
         fig.put("Hip" + tag, thigh)
 
@@ -648,6 +672,8 @@ def _legs(fig, look, h, w, limb, segs):
         # nobody wears. 0.575 puts the top just under the knee, and a tenth off
         # every radius leaves the shin slimmer than the thigh, the way round the
         # renders have it.
+        # Like the sleeve: cloth, and its flat top is a hem worth keeping flat.
+        M.roughen_axis(sock, LIMB_ROLL * 0.55, seed=83.0 * side, scale=ROLL_SCALE)
         sock.transform(M.along(ankle - (knee - ankle) * 0.06,
                                ankle + (hip - ankle) * 0.575))
         fig.put("Knee" + tag, sock)

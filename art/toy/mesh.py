@@ -124,12 +124,39 @@ def roughen(mesh, amount, centre, seed=0.0, scale=16.0):
     cx, cy, cz = centre
     for i, (x, y, z) in enumerate(mesh.verts):
         dx, dy, dz = x - cx, y - cy, z - cz
-        u, v, w = x * scale + seed, y * scale + seed * 1.7, z * scale + seed * 2.3
-        n = (math.sin(u * 1.00) * math.sin(v * 0.87) * math.sin(w * 0.73)
-             + 0.45 * math.sin(u * 2.13) * math.sin(v * 1.91) * math.sin(w * 2.37))
-        k = 1.0 + amount * n * 0.7
+        k = 1.0 + amount * _lumps(x, y, z, seed, scale)
         mesh.verts[i] = (cx + dx * k, cy + dy * k, cz + dz * k)
     return mesh
+
+
+def roughen_axis(mesh, amount, seed=0.0, scale=60.0):
+    """The same thumbing, but radial about the **local Z axis**.
+
+    A limb is a tube built up its own axis and stood where it belongs
+    afterwards, so it has to be worked before it is stood: pushed out from a
+    single point instead, one end of an arm swells and the other pinches.
+    Called on the tube in its own space, this pushes each vertex away from the
+    axis it was turned on, which is what a thumb does to a rolled sausage.
+    """
+    for i, (x, y, z) in enumerate(mesh.verts):
+        k = 1.0 + amount * _lumps(x, y, z, seed, scale)
+        mesh.verts[i] = (x * k, y * k, z)
+    return mesh
+
+
+def _lumps(x, y, z, seed, scale):
+    """Smooth deterministic noise in [-1, 1], give or take.
+
+    `scale` is in **radians per metre**, so a lump is about `tau / scale`
+    across -- 60 is a thumbprint every ten centimetres on a figure built in
+    metres. Getting that wrong is silent: at a scale of 2 the whole man sits
+    inside one lobe of the noise and the surface comes out perfectly smooth,
+    which is exactly what the first pass of this shipped.
+    """
+    u, v, w = x * scale + seed, y * scale + seed * 1.7, z * scale + seed * 2.3
+    return 0.7 * (math.sin(u * 1.00) * math.sin(v * 0.87) * math.sin(w * 0.73)
+                  + 0.45 * math.sin(u * 2.13) * math.sin(v * 1.91)
+                  * math.sin(w * 2.37))
 
 
 def along(a, b):

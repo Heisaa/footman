@@ -23,8 +23,12 @@ HAIR = "hair"
 ## How far a rolled shell wanders off true, as a fraction of its own radius, and
 ## how big a lump is. `M.roughen` has the argument; these two numbers are the
 ## whole of the clay register in the hair.
-ROLLED = 0.055
-ROLL_SCALE = 3.1
+ROLLED = 0.060
+## Radians per metre: a lump about ten centimetres across on a head half a metre
+## wide. This was 3.1 in the first pass, which put the entire figure inside one
+## lobe of the noise and displaced nothing -- the lumpiness that showed was all
+## normal map. `M._lumps` says why the mistake is silent.
+ROLL_SCALE = 62.0
 
 # The cuts. Row for row with `presentation/character_builder.gd:HAIR_LIBRARY` --
 # the **index** is the cut and has to agree, because a man keeps his hair across
@@ -303,7 +307,7 @@ def one(look, h, style, segs, coarse, name):
     # two men in the same cut are lumpy in the same places -- which is right,
     # they came out of the same mould -- while eighteen cuts differ.
     M.roughen(mesh, ROLLED, (0.0, 0.0, h * 0.80),
-              seed=float(style.get("seed", 0)) * 3.7, scale=ROLL_SCALE / h)
+              seed=float(style.get("seed", 0)) * 3.7, scale=ROLL_SCALE)
     return mesh
 
 

@@ -100,6 +100,26 @@ const EYE_SWELL := 1.35
 ## And set a little further apart, because they are now big enough to crowd the
 ## nose between them. The drawn table spaced painted ovals.
 const EYE_SPREAD := 1.12
+## The size a clay eye settles at, and how much of the drawn table's spread
+## survives.
+##
+## `EYE_STYLES` runs 2.5 to 3.7 across the rows, which was a sensible range for a
+## *painted* oval and is far too wide for a ball. Swollen by `EYE_SWELL` the big
+## end came out at five grid units -- a man permanently startled -- while the
+## small end was right. So the floor is the small end, kept exactly, and only two
+## fifths of each row's excess over it survives: the squad still tells itself
+## apart close up and nobody is staring.
+const EYE_FLOOR_RX := 2.5
+const EYE_FLOOR_RY := 2.9
+const EYE_VARY := 0.40
+## How far each pupil sits in from the middle of its own white, as a fraction of
+## the white's radius.
+##
+## Dead centre is a thousand-yard stare: two pupils looking straight out of a
+## head that is itself pointing straight out. Every clay figure converges them a
+## little, and it is the difference between a man looking *at* something and a
+## man looking *through* you.
+const PUPIL_IN := 0.17
 ## The shorts, as shares of the shoulder half-width so that every build keeps the
 ## same shape.
 ##
@@ -871,7 +891,9 @@ static func _eyes(head: Node3D, head_r: float) -> void:
 		# printed on a sphere is a decal, one pressed onto it is a bead.
 		var pupil := _sphere(unit * PUPIL_SIZE, ink, true)
 		pupil.name = "Pupil" + ("L" if side < 0.0 else "R")
-		pupil.position = Vector3(0.0, 0.0, unit * (1.0 - PUPIL_SIZE * 0.55))
+		# In towards the nose, never dead centre. `PUPIL_IN` has the argument.
+		pupil.position = Vector3(
+			-side * unit * PUPIL_IN, 0.0, unit * (1.0 - PUPIL_SIZE * 0.55))
 		bead.add_child(pupil)
 
 
@@ -916,8 +938,10 @@ static func _pose_eyes(root: Node3D, face: int) -> void:
 		bead.rotation = Vector3(-pitch, yaw, 0.0)
 		# Flattened front to back: a ball on a cheek is a googly eye, and the
 		# reference eye is a shallow dome with most of it inside the head.
-		bead.scale = Vector3(float(pose["rx"]) * EYE_SWELL,
-			float(pose["ry"]) * EYE_SWELL, EYE_DEPTH * EYE_SWELL)
+		var rx := EYE_FLOOR_RX + (float(pose["rx"]) - EYE_FLOOR_RX) * EYE_VARY
+		var ry := EYE_FLOOR_RY + (float(pose["ry"]) - EYE_FLOOR_RY) * EYE_VARY
+		bead.scale = Vector3(
+			rx * EYE_SWELL, ry * EYE_SWELL, EYE_DEPTH * EYE_SWELL)
 
 
 static func _brows(head: Node3D, head_r: float, appearance: SimAppearance) -> void:

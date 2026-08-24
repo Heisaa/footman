@@ -225,9 +225,13 @@ def eyes(head, head_r, depth, slots, pivot, head_pivot):
         # The pupil is a child of the white, not a sibling, so it goes wherever
         # the game poses the eye and squashes with it. `PUPIL_SIZE` and the
         # offset are `SimCharacterBuilder`'s, because that file poses both.
+        # In towards the nose. Blender +X is the game's +X and Blender -Y is its
+        # +Z, so this is `SimCharacterBuilder`'s offset written the other way up.
+        # `PUPIL_IN` there is 0.17 and this is the copy of it.
         at = unit * (1.0 - 0.46 * 0.55)
-        pupil = M.blob((0.0, -at, 0.0), (unit * 0.46,) * 3, 10, 6, "pupil",
-                       name="Pupil" + side)
+        sign = -1.0 if side == "L" else 1.0
+        pupil = M.blob((-sign * unit * 0.17, -at, 0.0), (unit * 0.46,) * 3,
+                       10, 6, "pupil", name="Pupil" + side)
         upload(pupil, obj, (0.0, 0.0, 0.0), slots)
     return node
 
