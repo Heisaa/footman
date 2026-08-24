@@ -50,7 +50,7 @@ ANKLE_X = 0.395
 ## How far the whole arm is pulled in towards the body. `figure/body.py` holds
 ## the same number and the argument for it; `figure/rig.py` puts the shoulder
 ## and elbow pivots on it.
-ARM_IN = 0.050
+ARM_IN = 0.085
 
 ## How far a rolled limb wanders off true, and how big a lump is.
 ##
@@ -485,10 +485,37 @@ def extras(look, h, segs, coarse):
     # pair read as a beak. The reference wears it tucked up against the nose's
     # underside with the mouth clear below, and that is 0.745 -- and wider, too:
     # a moustache narrower than the nose is a smudge.
+    # **Two lobes a side, and the outer one hangs.** One lobe a side is a bar,
+    # and a bar under a nose is a smear of dark however wide it is. What the
+    # reference wears is a handlebar: thick where it meets the nose and drooping
+    # away past the corners of the mouth, so the outline has a fall in it. That
+    # fall is the whole shape -- it is what stops a moustache reading as an
+    # upper lip in shadow.
+    #
+    # Half again as big as the flat bar it replaces. Clay is rolled on in
+    # quantity; a moustache you have to look for is a moustache nobody drew.
+    # **Under the nose, and the nose is the thing that moved.** Placed at 0.745
+    # it was inside the nose rather than below it -- that ball grew by half when
+    # the figure went to clay and now reaches down to 0.725, near enough to the
+    # mouth that there is no gap left to sit in. All that showed of a moustache
+    # was two dark specks either side of a nostril.
+    #
+    # So it hangs off the nose's underside instead, and it is wider than the
+    # nose so that it clears it: the inner pair tuck up against it, the outer
+    # pair sit further out and lower, and the fall between them is the shape.
     tache = M.Mesh("Moustache")
     for side in (-1.0, 1.0):
-        tache.merge(M.blob((side * hw * 0.120, -hd * 1.00, h * 0.745),
-                           (hw * 0.190, hd * 0.062, hh * 0.052),
+        tache.merge(M.blob((side * hw * 0.185, -hd * 1.02, h * 0.7285),
+                           (hw * 0.205, hd * 0.100, hh * 0.088),
+                           coarse, max(4, coarse // 2), HAIR, name="tache"))
+        # **The same depth as the inner pair, not less.** Set back at 0.92 on
+        # the reasoning that the face curves away out there, these came out as
+        # two loose diamonds with skin between them and the moustache. It does
+        # not curve away: the head is a rounded *box*, so its front is within a
+        # per cent of flat until well past where a moustache ends, and a lobe
+        # set back at all is a lobe buried in the cheek.
+        tache.merge(M.blob((side * hw * 0.390, -hd * 1.00, h * 0.7165),
+                           (hw * 0.165, hd * 0.090, hh * 0.108),
                            coarse, max(4, coarse // 2), HAIR, name="tache"))
     out.append(("Moustache", tache))
 

@@ -284,6 +284,28 @@ def mesh_ring(mesh, loop):
     return list(range(base, base + len(loop)))
 
 
+def strip(centre, radii, segments, material, power=8.0, name="strip"):
+    """A slab: one section held through its whole depth, eased at the faces.
+
+    `blob` cannot make this and that is the point of having both. A blob stacks
+    rings with an elliptical falloff, so its widest section exists at exactly one
+    depth and everything either side of that is narrower -- which means the ends
+    of a long one taper to an edge and read as *pointed* however square the
+    section is. A brow made of one is a lozenge no matter what `power` says.
+
+    Here the section is held flat through the middle and only eased at the front
+    and back faces, so the ends are full depth and square, and the outline the
+    eye actually measures is the section itself.
+    """
+    rx, ry, rz = radii
+    rings = [Ring(-rz, rx * 0.55, ry * 0.55, power=power),
+             Ring(-rz * 0.62, rx, ry, power=power),
+             Ring(rz * 0.62, rx, ry, power=power),
+             Ring(rz, rx * 0.55, ry * 0.55, power=power)]
+    return tube(rings, segments, material, power=power,
+                name=name).translate(centre)
+
+
 def blob(centre, radii, segments, stacks, material, power=2.0, name="blob"):
     """A closed superellipsoid: the same rings, shut with a fan at each end.
 

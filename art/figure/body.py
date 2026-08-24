@@ -130,7 +130,7 @@ ANKLE_X = 0.395
 ## how far out the arm hangs is how pronounced the shoulder is; at 0.68 the
 ## sleeve stood off the shirt as a separate lump on each side. Buried a little
 ## further into the trunk it is a shoulder again.
-ARM_IN = 0.050
+ARM_IN = 0.085
 
 # Heights, in fractions of total height, off the references.
 BOOT_TOP = 0.095

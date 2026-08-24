@@ -273,9 +273,24 @@ def one(look, h, style, segs, coarse, name):
                           (hw * 0.20, hd * 0.16, hh * 0.15),
                           coarse, coarse // 2, HAIR, name="peak"))
     if style.get("burns"):
+        # **Hung off the hairline, not placed at a fixed height.**
+        #
+        # These were a blob at a flat 0.712 with the shell's own push-back added
+        # to them, and on half the cuts they were simply not touching anything:
+        # the hairline drops at the sides by however much a cut says, and a
+        # slicked head drops it barely at all, so its rim finished two
+        # centimetres above a sideburn that started below the ear. What showed
+        # was a dark lump floating beside a man's head with daylight over it.
+        #
+        # So the rim is computed the same way `_shell` computes it -- base plus
+        # the cut's own lift, less its own side drop -- and the burn is hung
+        # from there, overlapping it. It also comes forward: a sideburn runs
+        # down **in front of** the ear, and this one used to sit behind it.
+        base = h * (HAIRLINE + style.get("recede", 0.0))
+        rim = base + lift - hh * style.get("sides", 0.19)
         for side in (-1.0, 1.0):
-            mesh.merge(M.blob((side * hw * r * 0.90, -hd * 0.06 + back, h * 0.712),
-                              (hw * 0.12, hd * 0.20, hh * 0.20),
+            mesh.merge(M.blob((side * hw * 0.99, -hd * 0.22, rim - hh * 0.17),
+                              (hw * 0.115, hd * 0.30, hh * 0.27),
                               coarse, coarse // 2, HAIR, name="burn"))
     if style.get("mass"):
         # Down the back, not round the sides: a mass that wraps is a hood.
