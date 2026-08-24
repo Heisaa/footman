@@ -252,13 +252,24 @@ static func _dress_eyes(root: Node3D) -> void:
 	var eyes := root.find_child("Eyes", true, false)
 	if eyes == null:
 		return
-	var material := SimCharacterBuilder.eye_material()
+	var white := SimCharacterBuilder.eye_material()
+	var ink := SimCharacterBuilder.pupil_material()
 	for child in eyes.get_children():
 		var bead := child as MeshInstance3D
 		if bead == null:
 			continue
 		for slot in bead.get_surface_override_material_count():
-			bead.set_surface_override_material(slot, material)
+			bead.set_surface_override_material(slot, white)
+		# The pupil is a child of the white and wears the other material. Both
+		# are outside `SLOT_NAMES` so no kit can repaint them, and both are
+		# authored flat in the file because a glTF material cannot carry the
+		# gloss that makes a clay eye read.
+		for grand in bead.get_children():
+			var pupil := grand as MeshInstance3D
+			if pupil == null:
+				continue
+			for slot in pupil.get_surface_override_material_count():
+				pupil.set_surface_override_material(slot, ink)
 
 
 ## Takes a built model out of the wrapper glTF import puts it in.

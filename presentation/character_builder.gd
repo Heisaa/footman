@@ -84,9 +84,22 @@ const BROW_DEPTH := 0.6
 ## `art/toy/figure.py:EYE_STAND`, which is baked into the model's `Eyes` node
 ## rather than applied here. Same split as the brows.
 const EYE_PROUD := 0.002
-## Flat, front to back. A ball on a cheek is a googly eye; the reference eye is
-## a shallow dome with most of it inside the head.
-const EYE_DEPTH := 0.55
+## How round the eye is, front to back. Nearly a ball on this branch: a clay eye
+## is a ball stuck on, and the flat dome the vinyl figure wanted is the shape
+## this register specifically is not.
+const EYE_DEPTH := 0.90
+## The pupil against the white it sits on.
+const PUPIL_SIZE := 0.46
+## How much bigger a clay eye is than the drawn oval it replaced.
+##
+## The drawn table was fitted to a *painted* eye, where big reads as a smudge at
+## distance. A pressed-on ball is a different object and wants the size the
+## reference gives it: on Wallace an eye is a quarter of the face across, and
+## the two of them together with the nose between are most of what you see.
+const EYE_SWELL := 1.35
+## And set a little further apart, because they are now big enough to crowd the
+## nose between them. The drawn table spaced painted ovals.
+const EYE_SPREAD := 1.12
 ## The shorts, as shares of the shoulder half-width so that every build keeps the
 ## same shape.
 ##
@@ -132,17 +145,30 @@ const SEAT_CENTRE := 0.26
 ## and the shorts to about 0.34, and at 0.84 here it was nearly twice the hips and
 ## hung over them like a smock from the side.
 const TRUNK_DEPTH := 0.72
-## Moulded vinyl, not paper: the reference figures carry a soft highlight and it
-## is most of what makes them read as objects rather than flat shapes. Scenery
-## keeps the old dead-flat material.
-const TOY_ROUGHNESS := 0.42
-const TOY_SPECULAR := 0.45
-## Broad rather than tight. At 0.28 over a 0.10 roughness the highlight was a
-## hot white blob on a dark forehead -- a wet figure, not a moulded one. The
-## reference's is a wide soft band you can see travel, which is a bigger
-## roughness and less of it.
-const TOY_CLEARCOAT := 0.20
-const TOY_CLEARCOAT_ROUGHNESS := 0.22
+## **Plasticine, not vinyl.** The whole figure is worked clay on this branch and
+## the material is most of what says so, because the silhouette is unchanged.
+##
+## Three things separate clay from moulded vinyl and all three are here. It is
+## **rough** -- a thumbed surface scatters, so there is no travelling highlight,
+## only a broad soft one you can barely find. It is **bumpy**: the single
+## strongest tell in the reference stills is that no surface is true, every plane
+## carries the pressure of a thumb, and a normal map is the cheap way to get that
+## on geometry that has no room for it. And it is **waxy** at the edge, which is
+## a little rim light standing in for the light that gets under the surface of
+## something soft.
+##
+## Vinyl's clear coat is gone entirely. A second tight highlight riding over the
+## colour is exactly the register this branch is trying to leave.
+const TOY_ROUGHNESS := 0.86
+const TOY_SPECULAR := 0.20
+## How deep the thumbing reads, and how big a thumb is. The scale is in the
+## figure's own space -- object triplanar, not world -- so the marks stay put on
+## a man as he runs instead of swimming through him.
+const CLAY_BUMP := 0.85
+const CLAY_SCALE := 7.0
+## Softness at the grazing edge: light that got into the clay and came back out.
+const CLAY_RIM := 0.35
+
 ## Hair and boots, which are not painted vinyl and must not read as it.
 ##
 ## The clear coat above is pigment under gloss, and on a *kit* that is exactly
@@ -248,8 +274,40 @@ static func flat_material(colour: Color) -> StandardMaterial3D:
 	return m
 
 
-## The figure's own material: the same flat colour with a soft sheen on it.
+## The thumbprints, built once and shared by every material on every man.
+##
+## Object-space triplanar, so nothing needs a UV -- and the parts of this figure
+## are rings and blobs that have no useful UVs to give. Cached because it is a
+## generated texture and twenty-two men would otherwise each pay for one.
+static var _thumbed: Texture2D = null
+
+
+static func clay_bump() -> Texture2D:
+	if _thumbed != null:
+		return _thumbed
+	var noise := FastNoiseLite.new()
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	noise.frequency = 0.030
+	noise.fractal_octaves = 3
+	noise.fractal_gain = 0.42
+	var tex := NoiseTexture2D.new()
+	tex.noise = noise
+	tex.width = 256
+	tex.height = 256
+	tex.seamless = true
+	tex.as_normal_map = true
+	tex.bump_strength = 5.0
+	_thumbed = tex
+	return _thumbed
+
+
+## Clay: a flat colour, a thumbed surface and no gloss at all. `TOY_ROUGHNESS`
+## has the argument.
 static func toy_material(colour: Color) -> StandardMaterial3D:
+	return _clay(colour, CLAY_SCALE, CLAY_BUMP)
+
+
+static func _clay(colour: Color, scale: float, bump: float) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = colour
 	m.roughness = TOY_ROUGHNESS
@@ -257,15 +315,14 @@ static func toy_material(colour: Color) -> StandardMaterial3D:
 	m.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
 	m.metallic_specular = TOY_SPECULAR
 	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
-	# The clear coat, and it is what the reference photographs have that a flat
-	# specular does not: a **second, tighter highlight** riding over the colour,
-	# travelling across the forehead and down the shin as the man turns. Moulded
-	# vinyl is pigment under a gloss, not pigment with a sheen mixed into it, and
-	# the two read differently -- one belongs to the surface and the other to the
-	# object. Kept small; at 0.5 the figures are wet.
-	m.clearcoat_enabled = true
-	m.clearcoat = TOY_CLEARCOAT
-	m.clearcoat_roughness = TOY_CLEARCOAT_ROUGHNESS
+	m.normal_enabled = true
+	m.normal_texture = clay_bump()
+	m.normal_scale = bump
+	m.uv1_triplanar = true
+	m.uv1_scale = Vector3(scale, scale, scale)
+	m.rim_enabled = true
+	m.rim = CLAY_RIM
+	m.rim_tint = 0.4
 	return m
 
 
@@ -300,40 +357,58 @@ static func dress_face(m: StandardMaterial3D, face: int, eyes: int, mouth: int) 
 	m.albedo_texture = SimFaceAtlas.texture_for(face, eyes, mouth)
 
 
-## The eye: near-black, and the shiniest thing on the whole figure.
+## The eye: a **white ball with a dark pupil**, and it is the loudest thing on
+## this branch.
 ##
-## In the reference photographs the eye is the one surface that is properly wet,
-## and the catch light in it is most of what makes it an eye rather than a hole.
-## It is geometry so that the highlight is *real* -- it travels as the man turns
-## and it goes out when he walks into shade, neither of which a painted dot does.
+## Every clay figure worth naming has them -- Wallace, Gromit, the sculpted man
+## in the owner's reference -- and they are not painted on. They are two balls
+## pressed onto the face, they stand proud enough to cast a shadow of their own,
+## and the pupil is a smaller ball pressed onto *those*. It is the single
+## strongest signal in the register and it costs one extra mesh per eye.
 ##
-## Not pure black: at zero albedo there is nothing for the diffuse term to do and
-## the bead reads as a hole punched in the face, which is the thing the reference
-## specifically is not.
+## The vinyl figure's eye was the opposite: one near-black bead, no white, on the
+## argument that a white with a pupil in it is a grey smudge at match distance.
+## That argument still holds and this branch takes the hit knowingly -- at twenty
+## metres these will be a pale dot. The parade is where the register is judged.
+##
+## Not pure white, and glossy but not wet: clay eyes are painted beads, so they
+## have a sheen where the rest of the figure has none, and that contrast is doing
+## the work rather than the brightness.
 static func eye_material() -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.06, 0.055, 0.075)
+	m.albedo_color = Color(0.93, 0.92, 0.88)
 	m.metallic = 0.0
-	m.roughness = 0.08
+	m.roughness = 0.22
+	m.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
+	m.metallic_specular = 0.7
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+	return m
+
+
+## The pupil, pressed onto the white. Darker and glossier than anything else.
+static func pupil_material() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.05, 0.045, 0.06)
+	m.metallic = 0.0
+	m.roughness = 0.10
 	m.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
 	m.metallic_specular = 1.0
 	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
 	m.clearcoat_enabled = true
 	m.clearcoat = 1.0
-	m.clearcoat_roughness = 0.05
+	m.clearcoat_roughness = 0.06
 	return m
 
 
 ## Hair and boot: the figure's colour with a broad weak sheen and no clear coat.
 ## `MATTE_ROUGHNESS` has the argument.
 static func matte_material(colour: Color) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = colour
+	# Coarser thumbing and more of it. Hair on a clay figure is rolled in the
+	# hand rather than pressed flat, so it carries bigger marks than a shirt
+	# does, and a boot is the one part that is properly scuffed.
+	var m := _clay(colour, CLAY_SCALE * 0.55, CLAY_BUMP * 1.7)
 	m.roughness = MATTE_ROUGHNESS
-	m.metallic = 0.0
-	m.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
 	m.metallic_specular = MATTE_SPECULAR
-	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
 	return m
 
 
@@ -786,10 +861,18 @@ static func _eyes(head: Node3D, head_r: float) -> void:
 	head.add_child(node)
 	var unit := head_r * FACE_QUAD / SimFaceAtlas.GRID
 	var mat := eye_material()
+	var ink := pupil_material()
 	for side in [-1.0, 1.0]:
 		var bead := _sphere(unit, mat, true)
 		bead.name = "Eye" + ("L" if side < 0.0 else "R")
 		node.add_child(bead)
+		# A child, so it goes wherever `_pose_eyes` puts the white and squashes
+		# with it. Sat on the front of the ball rather than inside it: a pupil
+		# printed on a sphere is a decal, one pressed onto it is a bead.
+		var pupil := _sphere(unit * PUPIL_SIZE, ink, true)
+		pupil.name = "Pupil" + ("L" if side < 0.0 else "R")
+		pupil.position = Vector3(0.0, 0.0, unit * (1.0 - PUPIL_SIZE * 0.55))
+		bead.add_child(pupil)
 
 
 ## Puts the beads where the drawing used to put the ovals.
@@ -823,7 +906,7 @@ static func _pose_eyes(root: Node3D, face: int) -> void:
 		if shut:
 			continue
 		var side := -1.0 if String(bead.name).ends_with("L") else 1.0
-		var x_grid: float = 16.0 + side * float(pose["gap"])
+		var x_grid: float = 16.0 + side * float(pose["gap"]) * EYE_SPREAD
 		var yaw: float = (x_grid / SimFaceAtlas.GRID - 0.5) * size / radius
 		var pitch: float = (SimFaceAtlas.EYE_ROW - float(pose["y"])) \
 			/ SimFaceAtlas.GRID * size / radius
@@ -833,7 +916,8 @@ static func _pose_eyes(root: Node3D, face: int) -> void:
 		bead.rotation = Vector3(-pitch, yaw, 0.0)
 		# Flattened front to back: a ball on a cheek is a googly eye, and the
 		# reference eye is a shallow dome with most of it inside the head.
-		bead.scale = Vector3(float(pose["rx"]), float(pose["ry"]), EYE_DEPTH)
+		bead.scale = Vector3(float(pose["rx"]) * EYE_SWELL,
+			float(pose["ry"]) * EYE_SWELL, EYE_DEPTH * EYE_SWELL)
 
 
 static func _brows(head: Node3D, head_r: float, appearance: SimAppearance) -> void:

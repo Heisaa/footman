@@ -20,6 +20,12 @@ from . import mesh as M
 
 HAIR = "hair"
 
+## How far a rolled shell wanders off true, as a fraction of its own radius, and
+## how big a lump is. `M.roughen` has the argument; these two numbers are the
+## whole of the clay register in the hair.
+ROLLED = 0.055
+ROLL_SCALE = 3.1
+
 # The cuts. Row for row with `presentation/character_builder.gd:HAIR_LIBRARY` --
 # the **index** is the cut and has to agree, because a man keeps his hair across
 # the two builders. The parameters do not have to agree and no longer do.
@@ -223,6 +229,7 @@ def cuts(look, h, segs, coarse):
     out = []
     for i, style in enumerate(LIBRARY):
         name = "Hair%02d" % i
+        style = dict(style, seed=i)
         mesh = one(look, h, style, segs, coarse, name)
         if mesh is not None:
             out.append((name, mesh))
@@ -283,6 +290,20 @@ def one(look, h, style, segs, coarse, name):
     count = style.get("curls", 0)
     if count:
         _curls(mesh, look, h, style, count, coarse)
+
+    # **Rolled, not machined.** The one thing every clay head in the reference
+    # stills has and a lathed shell has not: the hair is not true anywhere. It
+    # is worked in the hand, so its outline wanders by a few millimetres all the
+    # way round, and that wander is what the eye reads as *material* before it
+    # reads any shape. A normal map cannot do it -- it does not touch the
+    # silhouette, and a head of hair is almost entirely silhouette.
+    #
+    # Radial about the middle of the skull, so a cut keeps its shape and its
+    # hairline and only stops being smooth. The seed is the cut's own index, so
+    # two men in the same cut are lumpy in the same places -- which is right,
+    # they came out of the same mould -- while eighteen cuts differ.
+    M.roughen(mesh, ROLLED, (0.0, 0.0, h * 0.80),
+              seed=float(style.get("seed", 0)) * 3.7, scale=ROLL_SCALE / h)
     return mesh
 
 

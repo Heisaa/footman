@@ -104,6 +104,34 @@ def rotation_z(angle):
     return np.array([[c, -s, 0, 0], [s, c, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1.0]])
 
 
+def roughen(mesh, amount, centre, seed=0.0, scale=16.0):
+    """Thumbs a surface: pushes every vertex in or out along its own radius.
+
+    A machined shell and a rolled one differ in exactly one way -- the rolled
+    one is not true anywhere. A normal map fakes that at the pixel and it is
+    most of what sells clay, but it cannot bend a silhouette, and hair is all
+    silhouette. This moves the vertices instead, so the outline goes lumpy too.
+
+    Radial, from a centre the caller names, because that keeps the shape: every
+    vertex moves along the line it already sits on, so a shell stays a shell and
+    a hairline stays where it was drawn.
+
+    The noise is three sines of incommensurable frequency multiplied together,
+    plus a finer copy. Not a real noise field, and it does not need to be: it is
+    smooth, it is deterministic from the seed, and its zero crossings are far
+    enough apart at this scale to read as thumbs rather than as sandpaper.
+    """
+    cx, cy, cz = centre
+    for i, (x, y, z) in enumerate(mesh.verts):
+        dx, dy, dz = x - cx, y - cy, z - cz
+        u, v, w = x * scale + seed, y * scale + seed * 1.7, z * scale + seed * 2.3
+        n = (math.sin(u * 1.00) * math.sin(v * 0.87) * math.sin(w * 0.73)
+             + 0.45 * math.sin(u * 2.13) * math.sin(v * 1.91) * math.sin(w * 2.37))
+        k = 1.0 + amount * n * 0.7
+        mesh.verts[i] = (cx + dx * k, cy + dy * k, cz + dz * k)
+    return mesh
+
+
 def along(a, b):
     """A frame whose +Z runs from `a` to `b`, with the length baked in as 1.
 

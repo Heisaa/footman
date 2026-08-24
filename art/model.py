@@ -46,7 +46,8 @@ PLACEHOLDER = {
     # Outside the game's slot table on purpose, like `face`: an eye is black in
     # every kit. The game swaps in a glossy version of this, because the gloss
     # is the whole point and a glTF material cannot carry Godot's clear coat.
-    "eye": Color("101014"),
+    "eye": Color("eeece6"),
+    "pupil": Color("101014"),
     # The face placeholder is the skin, so a render shows the head and not a
 # white plate. In the game the atlas replaces it and carries its own alpha.
     "face": Color("e8bd95"),
@@ -220,7 +221,14 @@ def eyes(head, head_r, depth, slots, pivot, head_pivot):
     for side in ("L", "R"):
         bead = M.blob((0.0, 0.0, 0.0), (unit, unit, unit), 12, 8, "eye",
                       name="Eye" + side)
-        upload(bead, node, (0.0, 0.0, 0.0), slots)
+        obj = upload(bead, node, (0.0, 0.0, 0.0), slots)
+        # The pupil is a child of the white, not a sibling, so it goes wherever
+        # the game poses the eye and squashes with it. `PUPIL_SIZE` and the
+        # offset are `SimCharacterBuilder`'s, because that file poses both.
+        at = unit * (1.0 - 0.46 * 0.55)
+        pupil = M.blob((0.0, -at, 0.0), (unit * 0.46,) * 3, 10, 6, "pupil",
+                       name="Pupil" + side)
+        upload(pupil, obj, (0.0, 0.0, 0.0), slots)
     return node
 
 

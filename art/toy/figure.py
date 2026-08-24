@@ -354,9 +354,17 @@ def _head(fig, look, h, fine, coarse):
 
     # The nose is geometry, never a drawn mark: at this size a drawn one is a
     # smudge and a bump catches the light and does the whole job.
-    nose = look.nose * h
-    fig.put("Head", M.blob((0.0, -hd * 0.96, h * 0.764),
-                           (nose * 0.90, nose * 1.05, nose * 1.25),
+    # **Bigger, and pressed on rather than moulded in.** A clay nose is a ball
+    # of the stuff squeezed onto the face and smoothed at the join -- Wallace's
+    # is a third of his face -- where a vinyl one is a button that only has to
+    # catch the light. Half again on every axis and further out.
+    # Wider than it is long, and rounder than it is tall. At 1.10 deep by 1.20
+    # high it came out as a beak: a cone pointing at the camera, which is the
+    # one nose shape the reference never has. A ball squashed slightly flat is
+    # what a thumb leaves.
+    nose = look.nose * h * 1.35
+    fig.put("Head", M.blob((0.0, -hd * 0.98, h * 0.760),
+                           (nose * 1.05, nose * 0.90, nose * 1.00),
                            coarse, coarse // 2, SKIN, name="nose"))
 
     fig.head_r = hw * FACE_RADIUS
