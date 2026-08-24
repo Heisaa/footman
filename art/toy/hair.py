@@ -313,17 +313,25 @@ def one(look, h, style, segs, coarse, name):
         # times the overlap that was left. A join that has to be computed
         # exactly is a join that comes apart.
         #
-        # Answering that by stretching it upwards made a strap down the cheek.
-        # A sideburn is a **short fat thing** sitting just in front of the ear,
-        # so the margin comes out of its width and depth instead: a centimetre
-        # of it is buried in the shell at the top, its back edge stops where the
-        # ear starts, and there is enough of it that a wandering rim has
-        # somewhere to land.
+        # Answering that by stretching it upwards made a strap down the cheek,
+        # and by pulling it forward to the temple made a tab on the outline. It
+        # is a **short fat thing beside the ear** and it was always in the right
+        # place; the only thing wrong with it was that it sat a centimetre too
+        # low to reach the hair.
+        #
+        # So the only number that moved is the height, and it moved past what
+        # the arithmetic asks for. The hairline where this thing meets it is
+        # `base + lift`, less the cut's side drop scaled by where round the ring
+        # it is, plus the cut's tilt scaled the same way -- and those two run in
+        # opposite directions, so the answer swings by a couple of centimetres
+        # across the eighteen cuts before `M.roughen` has moved anything. A
+        # third of a head-height of the burn is inside the shell now, which
+        # covers every cut and the wander on top of it.
         base = h * (HAIRLINE + style.get("recede", 0.0))
+        rim = base + lift - hh * style.get("sides", 0.19)
         for side in (-1.0, 1.0):
-            mesh.merge(M.blob((side * hw * 0.93, -hd * 0.44,
-                               base + lift - hh * 0.10),
-                              (hw * 0.130, hd * 0.27, hh * 0.30),
+            mesh.merge(M.blob((side * hw * 0.99, -hd * 0.22, rim + hh * 0.06),
+                              (hw * 0.115, hd * 0.30, hh * 0.27),
                               coarse, coarse // 2, HAIR, name="burn"))
     if style.get("mass"):
         # Down the back, not round the sides: a mass that wraps is a hood.
