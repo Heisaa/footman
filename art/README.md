@@ -28,6 +28,17 @@ body, and five bodies that are still one body.
 ./art/export.sh --seed 41 --shot /tmp/a.png  one player, and a look at him first
 ```
 
+`model.sh` renders too, and its `--shot` takes `--yaw` and `--head`. A face is
+judged from the side as much as from the front -- head-on it reads by its
+shading, in profile it *is* the outline -- and until these existed there was no
+way to look at one:
+
+```sh
+./art/model.sh --seed 41 --head --yaw 90 --shot /tmp/a.png   his profile
+./art/model.sh --seed 41 --head --yaw 45 --shot /tmp/b.png   the game's angle
+./art/model.sh --seed 41 --sheet /tmp/c.png                  every cut, one head each
+```
+
 Godot has to import a new `.glb` before `ResourceLoader.exists` can see it:
 `godot --headless --import --path .` once, then `./run.sh parade --seed 7`.
 `SimCharacterModel.models_enabled = false` draws everybody procedurally whatever
@@ -274,6 +285,120 @@ contrast is most of what reads as a football kit.
   one out of the sock to stop the two surfaces fighting and the sock is hollowed
   from the knee down and the buried capsule becomes the leg. What shows is not
   the shape.
+- **One scale per ring is a head with no face in it.** Every row of `SKULL`
+  sized its width and its depth together, so the front of the head was a dead
+  vertical wall from the brow to the cheek -- a centimetre of variation over
+  twenty -- and the jaw fell straight off it in one arc. Head-on that is
+  invisible, because head-on a face reads by its shading; in profile it is a
+  plain egg with a button on it. Depth is its own column now and the table is
+  the profile itself: a chin that comes forward, a cheek that is the furthest
+  point, a forehead that falls away while the back of the skull does not.
+- **A section cannot carry a face, however many columns it has.** Depth and
+  forward bought a profile of four per cent of a head-depth -- brow to cheek,
+  four millimetres over twenty centimetres -- and that is still a wall. A ring
+  is one closed section and its front is as flat as its `power` says; the mass a
+  mouth and an upper lip sit on is not a section at any height. So `SKULL`
+  carries two more columns, and `M.swell` pushes the **front** of a ring forward
+  at its middle and fades it to nothing by its widest points. Only the front
+  moves: the back of the skull, the ears, the hairline at the sides and the
+  sideburns are all untouched, which is why a mouth costs a hairline nothing.
+- **One fade cannot carry both the face and the mouth.** `bulge` fades over the
+  whole width, because the mass it builds is the whole face: fullest at the
+  mouth, a third of it left at the brow, a tenth at the chin, a muzzle over a
+  jaw that recedes. A groove cut with that same fade is a crease from ear to
+  ear, so `lip` is a second column over a quarter of the width -- the chin, the
+  two lips, and the **negative** rows between them. The negatives are the point:
+  a lip that only swells is a swelling, and what says mouth in a profile is the
+  line between the lips and the dip under the lower one. Three rows were added
+  to hold them; at four and a half centimetres apart the table could not.
+- **The drawn mouth and the moulded one are the same mouth.** `MOUTH_STYLES`'
+  row 23.2, projected onto this skull, lands at 0.708 of height -- so that is
+  where the groove is, and the atlas's line sits in it rather than beside it.
+  The face patch got twice the rows for the same reason: at sixteen it spanned
+  the whole mouth in two of them and bridged the crease flat.
+- **Anything measured off the front of the face has to ask where the front is.**
+  The nose and both pairs of moustache lobes were placed at a number typed once,
+  and a swell laid on the face buries every one of them. `skull_front` is the
+  question. `brow_stand` and `eye_stand` are the same bill paid the other way:
+  the game poses brows and eyes on a sphere, the sphere does not move with the
+  face, so each asks the skull what the swell is worth at its own height and its
+  own distance out. They are functions and not constants on purpose -- typed in,
+  they are two numbers to re-fit by hand every time the face changes shape.
+- **A push back that slides the whole ring puts nine centimetres of hair behind
+  the nape.** `back` is what buries a shell's rim in the forehead, and a
+  hairline on a forehead is the whole of what it is for -- but added to the
+  ring's `cy` it moved the *back* of the ring by the same three tenths of a
+  head-depth. So every cut stood off the skull at the nape and ended there in
+  the rim's own hard edge: a helmet with the lid cut off. The shell was never
+  too big; the back of it was in the wrong place. `M.Ring.slide` tapers the push
+  to nothing at the very back, and the nape gets the hair the shell's `r` gives
+  it, about three centimetres.
+- **It tapers in `y`, and the first try faded it in `x` like `bulge` and cost an
+  ear.** Fading sideways takes the push off at the ring's widest points, which
+  is exactly where an ear is: the hairline came forward six centimetres at the
+  temple and swallowed it. The sides have to keep the push. Only the back gives
+  it up.
+- **A sideburn as deep as it is tall is a disc.** At 0.34 of a head-depth it was
+  round in the one view it is looked at from. Halved front to back and longer
+  down, it is a strip in front of the ear, which is what a sideburn is. The
+  overlap that guarantees its join to the shell is still six centimetres of
+  depth and `BURN_DROP` vertically.
+- **An eye bead is fitted at its rim, not at its pole.** `EYE_STAND` was set so
+  the pole stood a few millimetres proud, and the bead is a flat dome -- a
+  hundred millimetres across, thirty-five deep -- laid on a head that curves
+  away from the sphere the game poses it on. Pole twelve millimetres inside the
+  skull, **rim twenty-two millimetres outside** at the top and the nose side,
+  which from the side is daylight between an eye and a face. The two numbers do
+  not even have the same sign; measuring the one that was easy to measure hid it
+  for as long as it existed. Sunk ten, and what stops it going further is the
+  bead's outer edge: six millimetres of it are still proud, and at twenty the
+  rim is flush and the eye is a sliver.
+- **Sinking it cannot fix a lean, and the lean was most of it.** With the bead
+  sunk, its top rim still stood six to eight millimetres out while its bottom
+  was twenty in -- because the game aims each bead along a radius of a shell
+  centred on the eye row, and the face at the eye row is leaning back as it
+  climbs to the brow. Nothing about how deep the bead sits changes that; the
+  spread just slides. Leaning the whole `Eyes` node puts the top of the rim
+  five to seven millimetres **inside**, which is an eye set in a face.
+- **The lean is the secant, not the tangent.** The face's slope at the eye row
+  is six degrees; the bead reaches a third of a head-width above and below it,
+  and over that span the face falls back fourteen. Fitted to the tangent it
+  would have closed less than half the gap. `eye_node` measures the face at the
+  bead's own top and bottom, so it re-fits itself when the head changes shape.
+- **A lean about the node is a lean about a point behind the face**, a third of
+  a metre back, so on its own it swings both eyes down the cheek. `eye_node`
+  returns the offsets that put them back. Both beads take the same one: they
+  differ only in `x`, which a lean about `x` does not touch. A per-eye yaw would
+  need the same treatment and cannot have it -- the game writes each bead's own
+  rotation, so the node is the only lever the model owns.
+- **A profile shot on a short lens is a picture of the near cheek.** At 110 mm
+  the camera stands two metres from a head half a metre deep, and the outline at
+  `--yaw 90` is the cheek nearest the lens, magnified by being a quarter of a
+  metre closer -- not the face's own centre line. A mouth plainly in the mesh
+  and plainly in the game was simply not in that picture, and two hours went on
+  believing the picture. `--head` shoots at 320 mm now, which is near enough to
+  orthographic that the profile is the profile.
+- **The brow ridge belongs to the posed bars, not to the skull.** A bump on the
+  forehead is the single thing that reads best in a still, and 0.805 of height
+  is also exactly where a receding hairline sits: eight millimetres of ridge
+  came through the hair as bare scalp on a third of the seventeen cuts. Above
+  the cheek the skull's front recedes all the way to the crown and never turns
+  back. The game poses two brow bars a centimetre proud of it, and that is the
+  ridge.
+- **A hairline is buried on purpose, so anything that moves the forehead moves
+  it.** The shell's front is pushed *into* the skull near its rim -- that is
+  what puts a hairline on a forehead rather than a fringe over the eyes -- so
+  taking the forehead back out from under it let `M.roughen`'s wobble through
+  as two specks of hair on bare skin. The fall of the forehead is kept above
+  0.835 for that reason.
+- **A rim ring has to enclose every height it reaches, not the one its `z`
+  names.** `tilt` carries a hairline's front up and `drop` carries its sides
+  down, so one ring spans three centimetres of skull. Sized at one height and
+  centred at another it was fine while the skull was the same shape all the way
+  up that band, and dipped inside the moment the face had a profile in it.
+- **A nose is judged in profile and sized from the front.** Buried to its centre
+  it stood five centimetres off a head fifty-three deep. Longer, not bigger:
+  depth is the only axis a profile sees, and the front view was already right.
 - **Cut with a plane and mind the sign.** The interior is the side the normal
   points *away* from. Backwards, the shirt is a 13mm sliver at the waist and the
   socks are worn at the knee.

@@ -229,6 +229,47 @@ class Ring:
         # slope is most of the silhouette. Without it the top of a torso is a
         # dome, and a dome on straight sides is a postbox.
         self.drop = drop
+        # How far the front of the ring is pushed forward, at its middle,
+        # fading to nothing at its two widest points.
+        #
+        # A ring is one closed section and its front is as flat as its `power`
+        # says. Stack a column of them and the front of the stack is a wall --
+        # which is what a face was: a plane from the brow to the chin varying by
+        # a centimetre over twenty, with nothing on it but a nose. This is the
+        # face's own mass, the swell a mouth and an upper lip sit on, and it is
+        # the one thing a section cannot carry because it is not a section.
+        #
+        # It is only the front. The back of the skull, the ears and the sides
+        # are where they were, so a hairline, a sideburn and an ear are not
+        # asked to move for a mouth.
+        self.bulge = 0.0
+        # The same push, over a **quarter of the width**: the lips and the chin.
+        #
+        # `bulge` fades over the whole face because the mass it builds is the
+        # whole face. A mouth is not: a groove cut with the broad fade is a
+        # crease running from ear to ear, and a lip laid on with it is a shelf.
+        # So the narrow term is a second column with its own fade, and the two
+        # sum -- one carries the muzzle, the other carries what is on it.
+        #
+        # It goes **negative**, which is the whole point of having it: the line
+        # between the lips and the dip under the lower one are grooves, and a
+        # groove is the only thing in a profile that says mouth. A lip alone is
+        # a swelling.
+        self.lip = 0.0
+        # How far the ring is carried **backwards**, in full across its front
+        # half and tapering to nothing at the very back.
+        #
+        # This is a head of hair's push back, and the taper is the whole of it.
+        # Added to `cy` the push slid the ring bodily, so burying a hairline in
+        # a forehead by three tenths of a head-depth carried the *nape* the same
+        # three tenths outward: nine centimetres of hair standing off the back
+        # of the skull and ending in the rim's own hard edge.
+        #
+        # Tapered in `y` rather than faded in `x` like `bulge`, because the
+        # sides have to keep the push: it is what leaves an ear standing out
+        # past the cut, and an ear swallowed by its own hairline is what the
+        # `x` fade cost on the first try.
+        self.slide = 0.0
         # How far the ring rises towards the back. A hairline is not level --
         # it sits high on the forehead and low on the nape -- and one number
         # per ring says so without a second shape to align.
@@ -252,7 +293,23 @@ def tube(rings, segments, material, power=2.0, cap_lo=True, cap_hi=True,
                       ring.power if ring.power is not None else power)
         wide = max(ring.rx, 1e-9)
         deep = max(ring.ry, 1e-9)
-        loops.append([(x, y + ring.cy,
+        # `bulge` is a function of `x` alone, and of the sign of `y`: the front
+        # half moves and the back half does not, and the two meet at the ring's
+        # widest points where the fade has already reached nothing. A push that
+        # depended on `y` would be a scale of the front rather than a swell laid
+        # on it, and it would not invert -- `_inside_skull` has to undo this to
+        # find the surface, and undoing it is why the shape of the fade is in
+        # `x`.
+        #
+        # The exponents are the two features' widths. `BROAD` is under one on
+        # purpose -- the face is a rounded box and its front is meant to stay
+        # broad; at a square fade the swell is a ridge down the middle of it,
+        # which is a snout. `NARROW` is fitted to the drawn mouth: at four it is
+        # down to half by four tenths of a half-width, and the widest mouth in
+        # `SimFaceAtlas.MOUTH_STYLES` reaches a quarter.
+        loops.append([(x, y + ring.cy
+                       + ring.slide * (1.0 - max(0.0, y / deep) ** 1.5)
+                       - (_swell(ring, x / wide) if y < 0.0 else 0.0),
                        ring.z - ring.drop * (abs(x) / wide) ** 2
                        + ring.tilt * (y / deep))
                       for x, y in pts])
@@ -276,6 +333,33 @@ def tube(rings, segments, material, power=2.0, cap_lo=True, cap_hi=True,
     if cap_hi:
         mesh.faces.append((list(lower), rings[-1].material or material, False))
     return mesh
+
+
+BROAD = 0.7
+NARROW = 4.0
+
+
+def swell(bulge, lip, u):
+    """How far forward the front of a ring moves, `u` sideways in half-widths.
+
+    Both terms fade to nothing at `|u| = 1`, so the two sides of a ring always
+    meet whatever the columns say and no `bulge` can tear a section open.
+    """
+    fade = max(0.0, 1.0 - u * u)
+    return bulge * fade ** BROAD + lip * fade ** NARROW
+
+
+def _swell(ring, u):
+    return swell(ring.bulge, ring.lip, u)
+
+
+def slide(back, v):
+    """`Ring.slide`'s taper, for a loose piece that has to ride the same shell.
+
+    `v` is where the piece sits front to back, in half-depths: -1 at the face,
+    0 at the ear, +1 at the nape.
+    """
+    return back * (1.0 - max(0.0, v) ** 1.5)
 
 
 def mesh_ring(mesh, loop):

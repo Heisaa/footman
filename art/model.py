@@ -77,6 +77,10 @@ def parse_args(argv):
     p.add_argument("--hair", type=int, default=7,
                    help="which cut a --shot shows; the file always holds them all")
     p.add_argument("--shot", default="", help="render the figure as well")
+    p.add_argument("--yaw", type=float, default=0.0,
+                   help="turn the camera round the man: 90 is his profile")
+    p.add_argument("--head", action="store_true",
+                   help="frame a --shot on the head instead of the figure")
     p.add_argument("--sheet", default="",
                    help="render every hair cut side by side instead of a figure")
     p.add_argument("--blend", default="")
@@ -166,7 +170,7 @@ def upload(part, parent, pivot, slots, recalc=True):
     return obj
 
 
-def brows(head, head_r, depth, slots, pivot, head_pivot):
+def brows(head, head_r, depth, stand, slots, pivot, head_pivot):
     """`Brows`, and the two bars the game poses on it.
 
     `SimCharacterBuilder._pose_brows` sets the position, roll and scale of two
@@ -180,14 +184,16 @@ def brows(head, head_r, depth, slots, pivot, head_pivot):
     # The sphere the poser works on, centred so **its front sits on the face**.
     # Centred on the eye row instead, the sphere's front lands on the middle of
     # the skull and both brows are posed inside the man's head.
-    # Forward by `BROW_STAND`, which is the whole of what makes a brow a ridge.
+    # Forward by `toy.brow_stand`, which is the whole of what makes a brow a
+    # ridge -- the fixed sphere-against-a-box part plus whatever the face's own
+    # swell is worth at the brow's height on this figure.
     # The game poses these on a sphere and this head is a rounded box, flatter
     # across the face than any sphere through the same points -- so a shell that
     # touches at the nose is *inside* the skull by the time it has climbed to
     # the brow, and the squad has no eyebrows. Standing the sphere off the face
     # fixes that without making it bigger, which would only put the brows back
     # up in the hairline.
-    node.location = (0.0, head_r * toy.FACE_SHELL - depth - toy.BROW_STAND,
+    node.location = (0.0, head_r * toy.FACE_SHELL - depth - stand,
                      pivot[2] - head_pivot[2])
     unit = head_r * toy.FACE_QUAD / 32.0
     from toy import mesh as M
@@ -203,7 +209,7 @@ def brows(head, head_r, depth, slots, pivot, head_pivot):
     return node
 
 
-def eyes(head, head_r, depth, slots, pivot, head_pivot):
+def eyes(head, head_r, depth, stand, look, h, slots, pivot, head_pivot):
     """`Eyes`, and the two beads the game poses on it.
 
     The same shape as `brows` above and for the same reason: the game owns where
@@ -219,8 +225,16 @@ def eyes(head, head_r, depth, slots, pivot, head_pivot):
     node.empty_display_size = 0.02
     bpy.context.collection.objects.link(node)
     node.parent = head
-    node.location = (0.0, head_r * toy.FACE_SHELL - depth - toy.EYE_STAND,
-                     pivot[2] - head_pivot[2])
+    # **Leaned to the face, not just stood off it.** The game aims each bead
+    # along a radius of a shell centred on the eye row, and the face is leaning
+    # back as it climbs to the brow -- so the top of a bead's rim stood outside
+    # the skull while its bottom was buried, which reads as daylight over an
+    # eye. `toy.eye_node` has the argument and the numbers; the offsets put the
+    # beads back where the lean would otherwise have swung them.
+    tilt, dy, dz = toy.eye_node(look, h)
+    node.rotation_euler = (tilt, 0.0, 0.0)
+    node.location = (0.0, head_r * toy.FACE_SHELL - depth - stand + dy,
+                     pivot[2] - head_pivot[2] + dz)
     unit = head_r * toy.FACE_QUAD / 32.0
     from toy import mesh as M
     for side in ("L", "R"):
@@ -297,9 +311,11 @@ def main():
 
     eye_z = look.height * (toy.CHIN + toy.CROWN) * 0.5 \
         - look.head_h * look.height * 0.06
-    brows(nodes["Head"], built.head_r, look.head_d * look.height, slots,
+    brows(nodes["Head"], built.head_r, look.head_d * look.height,
+          toy.brow_stand(look, look.height), slots,
           (0.0, 0.0, eye_z), pivots["Head"])
-    eyes(nodes["Head"], built.head_r, look.head_d * look.height, slots,
+    eyes(nodes["Head"], built.head_r, look.head_d * look.height,
+         toy.eye_stand(look, look.height), look, look.height, slots,
          (0.0, 0.0, eye_z), pivots["Head"])
     print("  %d triangles, head_r %.4f" % (total, built.head_r))
 
@@ -323,7 +339,7 @@ def main():
         tache = bpy.data.objects.get("Moustache")
         if tache is not None:
             tache.hide_render = not args.tache
-        shot(args.shot, look)
+        shot(args.shot, look, args.yaw, args.head)
     if args.blend:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(args.blend))
         print("saved " + args.blend)
@@ -382,14 +398,43 @@ def sheet(path, look, quality):
     print("sheet " + studio.render_to(os.path.abspath(path)))
 
 
-def shot(path, look):
+def shot(path, look, yaw=0.0, head=False):
+    """One figure, from wherever `--yaw` puts the camera.
+
+    **A profile is the one view the face has to be judged from.** Head-on the
+    skull is a silhouette and every feature reads by its shading; turned side on
+    it is the outline itself -- brow, nose, lip, chin -- and a face that is a
+    flat wall in profile cannot be seen to be one from the front.
+    """
     studio.cyclorama()
     studio.lights()
-    target = (0.0, 0.0, look.height * 0.50)
     lens = 110.0
-    distance = studio.fit_distance(look.height * 0.30, look.height * 0.54,
-                                   lens, 760, 1040)
-    studio.camera(target, distance, 0.0, math.radians(2.0), lens)
+    if head:
+        # **A long lens, and it is not a taste in lenses.** At 110 mm the camera
+        # stands about two metres from a head half a metre deep, and at
+        # `--yaw 90` the outline you get is the **near cheek**, magnified by
+        # being a quarter of a metre closer -- not the face's own centre line.
+        # A mouth that is plainly there in the mesh, and plainly there in the
+        # game, is simply not in that picture; two hours went on believing the
+        # picture. Long enough to be near-orthographic, the profile is the
+        # profile.
+        lens = 320.0
+    if head:
+        # The head's own span, not `head_h`: this figure's head runs from
+        # `CHIN` to `CROWN` and `head_h` is only one of the numbers that shape
+        # it, so framing on it puts the camera inside the man's ear.
+        span = look.height * (toy.CROWN - toy.CHIN)
+        target = (0.0, 0.0, look.height * (toy.CHIN + toy.CROWN) * 0.5)
+        # Wide enough for the **profile**, which is the widest the head gets:
+        # face to nape is more than the head is tall once there is a nose on
+        # the front of it, and at 0.52 a `--yaw 90` shot cut the nose off at
+        # the frame -- the one view it was added for.
+        half_w, half_h = span * 0.62, span * 0.70
+    else:
+        target = (0.0, 0.0, look.height * 0.50)
+        half_w, half_h = look.height * 0.30, look.height * 0.54
+    distance = studio.fit_distance(half_w, half_h, lens, 760, 1040)
+    studio.camera(target, distance, math.radians(yaw), math.radians(2.0), lens)
     studio.render_settings(48, 760, 1040, "CYCLES")
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     print("shot " + studio.render_to(os.path.abspath(path)))

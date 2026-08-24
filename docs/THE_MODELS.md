@@ -205,6 +205,13 @@ army the day those landed.
   **height** and `BROW_STAND` pushes the whole shell forward for **clearance**.
   `tools/_brow_probe.gd` prints where a bar actually lands.
 
+  Both stand-offs owe the face's swell (`SKULL`'s `bulge` and `lip`) whatever it
+  is worth at their own height and their own distance out from the middle: the
+  front of the face moves and the sphere does not, so a swell not paid for is a
+  brow or an eye that much less proud. `toy.brow_stand` and `toy.eye_stand` ask
+  the skull rather than carrying a fitted number, because a fitted number is one
+  to re-fit by hand every time the face changes shape.
+
   A man with `brow_style` 0 still has none at rest, which is the design: a
   strong expression lends him a plain pair.
 

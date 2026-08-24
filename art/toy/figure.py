@@ -121,6 +121,12 @@ FACE_RADIUS = 1.02
 ##
 ## Measured, not guessed: `tools/_brow_probe.gd` prints where a built brow
 ## actually lands against the skull's own surface.
+##
+## **This is the fixed part only.** The face's own swell moves the surface a
+## brow stands off, and the sphere the game poses on does not move with it, so
+## `brow_stand` adds whatever `SKULL` is worth at the brow's height. Typed in
+## here instead it would be a number to re-fit by hand every time the face
+## changed shape, which is the mistake this file has made twice.
 BROW_STAND = 0.020
 
 ## How far the eye bead's node stands off the face, in metres.
@@ -132,7 +138,23 @@ BROW_STAND = 0.020
 ## cheek by the time it has moved out to where an eye is, and all that shows is a
 ## slanted sliver of its inner edge. Standing the whole node forward puts the
 ## front of the bead a few millimetres proud, which is where the mould has it.
-EYE_STAND = 0.018
+##
+## The fixed part only, the same as `BROW_STAND`: `eye_stand` adds the face's
+## own swell at the eye row, which is more than the brows get because the swell
+## is fullest at the mouth and an eye is nearer it than a brow is.
+##
+## **Down ten millimetres, and it is the bead's rim that says so, not its pole.**
+## Fitted so the *pole* stood a few millimetres proud, the bead is a flat dome --
+## a hundred millimetres across and thirty-five deep -- laid on a head that
+## curves away from the sphere it is posed on. Its pole was twelve millimetres
+## inside the skull and its rim was **twenty-two millimetres outside** at the
+## top and the nose side, which from the side is daylight between an eye and a
+## face. Sunk ten, the worst of the rim is twelve and the outer edge of the bead
+## still stands six millimetres proud, which is what has to be left: at twenty
+## the rim is flush and the eye is a sliver.
+##
+## `tools/_brow_probe.gd` measures the pole. The rim is what to look at.
+EYE_STAND = 0.008
 FACE_QUAD = 1.5      # SimCharacterBuilder.FACE_QUAD
 FACE_SHELL = 1.02    # SimCharacterBuilder.FACE_SHELL
 EYE_ROW = 14.6 / 32.0   # SimFaceAtlas.EYE_ROW / GRID
@@ -294,24 +316,111 @@ SKULL = [
     # is a rounded *box* at the jaw -- 3.4 and up, which is what gives a cheek a
     # corner to catch the light on -- and rounder than a sketch's 2.6 through
     # the cranium, where a boxy section is what makes a head read as square.
-    # (z, half-width, forward, plan power)
-    (0.632, 0.595, -0.003, 2.2),
-    (0.650, 0.705, -0.011, 3.4),
-    (0.670, 0.843, -0.020, 4.2),
-    (0.695, 0.949, -0.020, 4.0),
-    (0.720, 1.000, -0.017, 3.6),
-    (0.745, 1.018, -0.013, 3.2),
-    (0.775, 1.014, -0.006, 2.8),
-    (0.805, 1.000, -0.001, 2.5),
-    (0.835, 0.998, 0.000, 2.4),
-    (0.862, 0.967, 0.000, 2.4),
-    (0.885, 0.909, 0.000, 2.45),
-    (0.905, 0.829, 0.000, 2.5),
-    (0.921, 0.738, 0.000, 2.6),
-    (0.934, 0.636, 0.000, 2.7),
-    (0.944, 0.526, 0.000, 2.9),
-    (0.951, 0.414, 0.000, 3.2),
-    (0.956, 0.268, 0.000, 4.0),
+    #
+    # **A ring's depth is its own number, not its width.** Every row used to
+    # scale width and depth together, and one scale cannot make a face: the
+    # front of the head came out a dead vertical wall from the brow to the
+    # cheek, varying by a centimetre over twenty, and the jaw fell straight back
+    # off it in one arc. Head-on that is invisible -- head-on a face reads by
+    # its shading -- and in profile it is a plain egg with a button on it. Front
+    # and back are set apart now, `depth` giving the ring its own front-to-back
+    # size and `forward` sliding it, so this table is the profile itself:
+    #
+    #     cheek   0.745  out to 1.032, the widest and the furthest forward
+    #     eye     0.775  back to 1.014
+    #     forehead 0.862 back to 0.952, while the back carries on out to 0.982
+    #     chin    0.632  out to 0.805 from 0.598, so there is a jaw under it
+    #
+    # Most of the forehead's fall is kept above 0.835, because that is where a
+    # hairline sits: the shell's front is deliberately buried in the skull down
+    # there -- that is what puts a hairline on a forehead instead of a fringe
+    # over the eyes -- and taking the skull back out from under it let
+    # `M.roughen`'s wobble through as two dark specks of hair on bare skin.
+    #
+    # The forehead falling away while the back of the skull does not is what
+    # makes a head an egg rather than a ball, and the chin is what puts a jaw
+    # under the cheek instead of one arc closing off the bottom. Nothing here is
+    # more than three per cent of a head-depth except the chin. A profile does
+    # not need much; it needs any at all.
+    #
+    # **There is no brow ridge in this table and there was, for an afternoon.**
+    # A bump at 0.805 is the one thing that reads best in a still and it is also
+    # exactly where a receding hairline sits: the shell skims the skull there,
+    # and eight millimetres of ridge came through the hair as bare scalp on a
+    # third of the seventeen cuts. Above the cheek the front recedes all the way
+    # to the crown and never turns back. The ridge is the game's job -- it poses
+    # two brow bars a good centimetre proud of this surface, which is what a
+    # brow is here.
+    #
+    # **The last column is the face's own mass, and it is not a section.**
+    # Everything above shapes rings, and a ring is as flat across its front as
+    # its `power` says. So the front of the stack came out a plane: from the
+    # brow at 0.992 to the cheek at 1.032, four per cent of a head-depth over
+    # twenty centimetres, which is a wall with a nose on it. In profile there
+    # was no mouth -- the mouth is drawn on the atlas, and a drawing on a wall
+    # is invisible edge-on however well it is drawn.
+    #
+    # `bulge` pushes the **front** of the ring forward at its middle, fading to
+    # nothing at its two widest points (`M.Ring.bulge`). Only the front: the
+    # back of the skull, the ears, the sideburns and the hairline at the sides
+    # are all where they were, so none of them has to move for a mouth.
+    #
+    # Fullest at 0.720, which is the upper lip, and falling away above and below,
+    # so what it builds is a muzzle: a mouth standing over a jaw that recedes.
+    # The brow keeps a third of it and the chin a tenth, because a swell that
+    # stops dead is a step.
+    #
+    # Nine per cent of a head-depth is a little under two and a half centimetres
+    # on this head. At seven it was invisible in the game -- the head is over
+    # half a metre deep and a mouth is a few pixels of it at match distance --
+    # and this is still only the mass; the mouth itself is the column below.
+    #
+    # **`lip` is the same push over a quarter of the width, and it is the mouth.**
+    # `bulge` fades over the whole face because the mass it builds *is* the
+    # whole face; a groove cut with that fade is a crease from ear to ear. So
+    # the narrow column carries what sits **on** the mass -- the chin, the two
+    # lips, and the grooves between them -- and `M.NARROW` is fitted to the
+    # drawn mouth: `SimFaceAtlas.MOUTH_STYLES` reaches a quarter of a
+    # half-width at its widest, and the fade is down to half at four tenths.
+    #
+    # **The negatives are the mouth.** A lip that only swells is a swelling; what
+    # says mouth in a profile is the line between the lips and the dip under the
+    # lower one, and both of those are grooves. 0.708 is where the atlas draws
+    # the mouth -- measured by projecting `MOUTH_STYLES`' row 23.2 onto this
+    # skull, not guessed -- so the drawn line lands in the moulded crease
+    # instead of beside it.
+    #
+    # Three rows were added for it. A lip is two centimetres of a face and the
+    # table's rows were four and a half apart through the mouth, which cannot
+    # hold a groove at all; 0.682, 0.708 and 0.734 are the dip, the mouth and
+    # the philtrum, and their first four columns are interpolated off the rows
+    # that were already there so the head's own shape is untouched.
+    #
+    # The whole face reads, top to bottom: forehead 0.956, brow 1.033, eye
+    # 1.072, the cheek and the nose's base at 1.118, the philtrum back to 1.122,
+    # the upper lip out to 1.149, the mouth in at 1.075, the lower lip 1.094,
+    # the dip under it 1.020, the chin 1.044, and the jaw away to 0.827.
+    # (z, half-width, forward, plan power, half-depth, bulge, lip)
+    (0.632, 0.595, -0.145, 2.2, 0.660, 0.010, 0.012),
+    (0.650, 0.705, -0.145, 3.4, 0.760, 0.030, 0.032),
+    (0.670, 0.843, -0.105, 4.2, 0.865, 0.050, 0.024),
+    (0.682, 0.894, -0.081, 4.10, 0.899, 0.060, -0.020),
+    (0.695, 0.949, -0.055, 4.0, 0.935, 0.072, 0.032),
+    (0.708, 0.976, -0.045, 3.79, 0.958, 0.082, -0.010),
+    (0.720, 1.000, -0.035, 3.6, 0.980, 0.090, 0.044),
+    (0.734, 1.010, -0.027, 3.38, 0.997, 0.088, 0.010),
+    (0.745, 1.018, -0.021, 3.2, 1.011, 0.082, 0.004),
+    (0.775, 1.014, -0.003, 2.8, 1.011, 0.058, 0.000),
+    (0.805, 1.000, 0.006, 2.5, 1.007, 0.032, 0.000),
+    (0.835, 0.998, 0.007, 2.4, 0.999, 0.013, 0.000),
+    (0.862, 0.967, 0.015, 2.4, 0.967, 0.004, 0.000),
+    (0.885, 0.909, 0.011, 2.45, 0.909, 0.000, 0.000),
+    (0.905, 0.829, 0.006, 2.5, 0.829, 0.000, 0.000),
+    (0.921, 0.738, 0.003, 2.6, 0.738, 0.000, 0.000),
+    (0.934, 0.636, 0.000, 2.7, 0.636, 0.000, 0.000),
+    (0.944, 0.526, 0.000, 2.9, 0.526, 0.000, 0.000),
+    (0.951, 0.414, 0.000, 3.2, 0.414, 0.000, 0.000),
+    (0.956, 0.268, 0.000, 4.0, 0.268, 0.000, 0.000),
 ]
 
 
@@ -328,15 +437,168 @@ def skull_power(z):
                            [row[3] for row in SKULL]))
 
 
+def skull_depth(z):
+    """The front-to-back half-size of the skull at this height.
+
+    Its own column since the face was given a profile: anything that has to sit
+    **on** the head has to ask for the depth rather than reuse the width, or it
+    rides a few millimetres inside the skull wherever the two differ -- which at
+    the jaw is three centimetres, and a hair rim that dips inside the skull is
+    the hairline sawtooth all over again.
+    """
+    return float(np.interp(z, [row[0] for row in SKULL],
+                           [row[4] for row in SKULL]))
+
+
+def skull_forward(z):
+    """How far the ring at this height is slid forward, in head half-depths."""
+    return float(np.interp(z, [row[0] for row in SKULL],
+                           [row[2] for row in SKULL]))
+
+
+def skull_bulge(z):
+    """The face's broad swell at this height, in head half-depths.
+
+    At the middle of the face only: it fades to nothing by the ring's widest
+    points, so anything out at the temple or the ear should ignore it.
+    """
+    return float(np.interp(z, [row[0] for row in SKULL],
+                           [row[5] for row in SKULL]))
+
+
+def skull_lip(z):
+    """The narrow swell -- the chin, the lips and the grooves -- in half-depths.
+
+    Negative wherever the face has a groove in it, which is most of what makes a
+    mouth. `M.NARROW` is how far out from the middle it reaches.
+    """
+    return float(np.interp(z, [row[0] for row in SKULL],
+                           [row[6] for row in SKULL]))
+
+
+def skull_swell(z, u=0.0):
+    """Both swells together at this height, `u` sideways in half-widths."""
+    return M.swell(skull_bulge(z), skull_lip(z), u)
+
+
+def skull_front(z, u=0.0):
+    """Where the front of the face is, in head half-depths. Negative is forward.
+
+    The nose and the moustache are placed against this rather than against a
+    number typed once, because the front of the face is a thing that moves now:
+    a swell put on it is a swell that buries anything measured off the old one.
+    """
+    return skull_forward(z) - skull_depth(z) - skull_swell(z, u)
+
+
+## Where the game's two posed features sit on this head, as a height in
+## fractions of the figure and a sideways offset in head half-widths.
+##
+## Read off `SimFaceAtlas`: the eye row is the datum the whole face is drawn
+## from, the brows sit about three and a half grid units above it, and
+## `EYE_STYLES`' gap times `EYE_SPREAD` puts both a third of a half-width out.
+## They are here because `brow_stand` and `eye_stand` have to ask the skull how
+## far the face has moved at exactly those two places.
+EYE_AT = (0.778, 0.333)
+BROW_AT = (0.804, 0.333)
+
+## The game's own eye numbers, mirrored so this file can work out where a bead
+## lands: `SimCharacterBuilder.EYE_SPREAD` and `EYE_SWELL`, and the middle row
+## of `SimFaceAtlas.EYE_STYLES` for the gap and the height. Only the *nominal*
+## style is needed -- what they are used for is leaning the whole `Eyes` node,
+## which is shared by both beads and every expression.
+EYE_SPREAD = 1.12
+EYE_SWELL = 1.35
+EYE_PROUD = 0.002
+EYE_GAP = 6.8
+EYE_HIGH = 3.1       # the middle of EYE_STYLES' `ry`, before `EYE_VARY`
+GRID = 32.0
+
+
+def brow_stand(look, h):
+    """How far the brow shell stands off the face, in metres, on this figure.
+
+    `BROW_STAND` is the sphere-against-a-box part and never changes. The rest is
+    the face's own swell at the brow's height and the brow's own distance out
+    from the middle -- a number that moves whenever `SKULL` does, which is why it
+    is asked for rather than typed.
+    """
+    return BROW_STAND + look.head_d * h * skull_swell(*BROW_AT)
+
+
+def eye_stand(look, h):
+    """The same, for the eye beads. `EYE_STAND` is the fixed part."""
+    return EYE_STAND + look.head_d * h * skull_swell(*EYE_AT)
+
+
+def skull_face(look, h, z, u):
+    """Where the front of the face is, in metres, at this height and offset.
+
+    `u` is sideways in head half-widths. `skull_front` answers the same question
+    down the middle of the face; this one answers it out where an eye is, which
+    is a different number on a rounded box and a different one again once the
+    face has a swell on it.
+    """
+    hw, hd = look.head_w * h, look.head_d * h
+    scale = float(np.interp(z, [row[0] for row in SKULL],
+                            [row[1] for row in SKULL]))
+    rx, ry = hw * scale, hd * skull_depth(z)
+    e = skull_power(z)
+    x = u * hw
+    t = max(0.0, 1.0 - abs(x / rx) ** e) ** (1.0 / e)
+    return -ry * t + hd * skull_forward(z) - hd * skull_swell(z, x / rx)
+
+
+def eye_node(look, h):
+    """`(tilt, dy, dz)` for the `Eyes` node: lean it, then put it back.
+
+    **A bead is aimed along a radius and a face is not a sphere.** The game
+    poses each bead on a shell centred at the eye row, so its axis comes
+    straight out of the middle of the head -- and the face at the eye row is
+    leaning back as it climbs to the brow. The bead is a wide flat dome, so that
+    mismatch shows at its **rim**: measured, the top of the rim stood six to
+    eight millimetres outside the skull while the bottom was twenty inside,
+    which is an eye with daylight over it and its chin sunk in a cheek. Sinking
+    it further only trades one for the other -- the whole rim goes in and the
+    eye becomes a sliver.
+
+    The lean is the **secant** of the face over the bead's own height, not the
+    tangent at its centre: the bead reaches a third of a head-width up and down,
+    over which the face falls back three times what the slope at the eye row
+    says. About fourteen degrees, and it halves the rim's spread.
+
+    The lean is about the node's origin, which sits a third of a metre behind
+    the face -- so on its own it swings both eyes down the cheek. `dy` and `dz`
+    put them back. Both beads take the same correction because they differ only
+    in `x`, which a lean about `x` does not touch.
+    """
+    hw = look.head_w * h
+    eye_z = h * (CHIN + CROWN) * 0.5 - look.head_h * h * 0.06
+    # How far the bead reaches up and down, in metres.
+    reach_z = hw * FACE_RADIUS * FACE_QUAD / GRID * EYE_HIGH * EYE_SWELL
+    lo = skull_face(look, h, (eye_z - reach_z) / h, EYE_AT[1])
+    hi = skull_face(look, h, (eye_z + reach_z) / h, EYE_AT[1])
+    tilt = -math.atan2(hi - lo, 2.0 * reach_z)
+
+    head_r = hw * FACE_RADIUS
+    radius = head_r * FACE_SHELL
+    yaw = ((16.0 + EYE_GAP * EYE_SPREAD) / GRID - 0.5) * FACE_QUAD / FACE_SHELL
+    py = -math.cos(yaw) * (radius + EYE_PROUD)
+    return tilt, py - py * math.cos(tilt), -py * math.sin(tilt)
+
+
 def skull_rings(look, h, scale=1.0, lift=0.0, back=0.0, first=0, squash=1.0):
     hw = look.head_w * h * scale
     hd = look.head_d * h * scale
     base = h * SKULL[first][0]
     out = []
-    for z, s, cy, power in SKULL[first:]:
-        out.append(M.Ring(base + (h * z - base) * squash + lift,
-                          hw * s, hd * s,
-                          cy=hd * cy + back, power=power))
+    for z, s, cy, power, d, bulge, lip in SKULL[first:]:
+        ring = M.Ring(base + (h * z - base) * squash + lift,
+                      hw * s, hd * d,
+                      cy=hd * cy + back, power=power)
+        ring.bulge = hd * bulge
+        ring.lip = hd * lip
+        out.append(ring)
     return out
 
 
@@ -381,9 +643,19 @@ def _head(fig, look, h, fine, coarse):
     # high it came out as a beak: a cone pointing at the camera, which is the
     # one nose shape the reference never has. A ball squashed slightly flat is
     # what a thumb leaves.
+    # **A nose is judged in profile and sized from the front.** At a ball buried
+    # to its centre in the face it stood five centimetres off a head fifty-three
+    # deep -- a tenth -- and in profile that is a button on an egg. Longer, not
+    # bigger: the depth is what shows from the side, the width and the height
+    # are what show from the front, and the front view was already right.
+    # **Buried to its centre in the face, wherever the face now is.** At a
+    # number typed once it was buried to its centre in the face as the face was
+    # then; the swell in `SKULL`'s last column moved that surface forward by a
+    # centimetre and a half, and a nose that does not move with it is a nose a
+    # centimetre and a half shorter. `skull_front` is where the face is.
     nose = look.nose * h * 1.35
-    fig.put("Head", M.blob((0.0, -hd * 0.98, h * 0.760),
-                           (nose * 1.05, nose * 0.90, nose * 1.00),
+    fig.put("Head", M.blob((0.0, hd * skull_front(0.760), h * 0.760),
+                           (nose * 1.05, nose * 1.18, nose * 1.00),
                            coarse, coarse // 2, SKIN, name="nose"))
 
     fig.head_r = hw * FACE_RADIUS
@@ -405,7 +677,13 @@ def _face(look, h, segs):
     head_r = hw * FACE_RADIUS
     size = head_r * FACE_QUAD
     radius = head_r * FACE_SHELL
-    rows, cols = max(6, segs - 4), max(6, segs - 4)
+    # **Twice as many rows as columns, because the mouth is a horizontal thing.**
+    # The patch is a chord between its own vertices, and at sixteen rows it
+    # spanned the whole mouth in two of them -- a flat plate bridging the crease
+    # the skull now has, with the drawn line floating a centimetre above the
+    # groove it is meant to sit in. Columns are left alone: nothing on this face
+    # is narrow enough sideways to need them.
+    rows, cols = max(12, (segs - 4) * 2), max(6, segs - 4)
     v_max = 0.86
     eye_z = h * (CHIN + CROWN) * 0.5 - look.head_h * h * 0.06
 
@@ -460,12 +738,21 @@ def _inside_skull(look, h, p):
     # covers matters, so this is the middle of the stack in `_head`.
     z = p[2] / h
     scale = np.interp(z, [row[0] for row in SKULL], [row[1] for row in SKULL])
-    cy = np.interp(z, [row[0] for row in SKULL], [row[2] for row in SKULL]) * hd
-    rx, ry = hw * scale, hd * scale
+    cy = skull_forward(z) * hd
+    rx, ry = hw * scale, hd * skull_depth(z)
     if rx <= 0.0 or ry <= 0.0:
         return False
     e = skull_power(z)
-    return (abs(p[0] / rx) ** e + abs((p[1] - cy) / ry) ** e) <= 1.0
+    # Undo the face's swell before asking the section, because the section does
+    # not know about it: `M.tube` pushes the front of the ring forward by a
+    # fade in `x`, and the front of the ring is exactly where a face patch
+    # lands. Left out, the whole atlas is projected onto the skull the swell was
+    # laid on -- a centimetre and a half inside the head it is drawn on, which
+    # is a man with no face.
+    q = p[1] - cy
+    if q < 0.0:
+        q += hd * skull_swell(z, p[0] / rx)
+    return (abs(p[0] / rx) ** e + abs(q / ry) ** e) <= 1.0
 
 
 def extras(look, h, segs, coarse):
@@ -511,16 +798,19 @@ def extras(look, h, segs, coarse):
     # pair sit further out and lower, and the fall between them is the shape.
     tache = M.Mesh("Moustache")
     for side in (-1.0, 1.0):
-        tache.merge(M.blob((side * hw * 0.185, -hd * 1.02, h * 0.7285),
+        tache.merge(M.blob((side * hw * 0.185, hd * skull_front(0.7285),
+                            h * 0.7285),
                            (hw * 0.205, hd * 0.100, hh * 0.088),
                            coarse, max(4, coarse // 2), HAIR, name="tache"))
-        # **The same depth as the inner pair, not less.** Set back at 0.92 on
-        # the reasoning that the face curves away out there, these came out as
-        # two loose diamonds with skin between them and the moustache. It does
-        # not curve away: the head is a rounded *box*, so its front is within a
-        # per cent of flat until well past where a moustache ends, and a lobe
-        # set back at all is a lobe buried in the cheek.
-        tache.merge(M.blob((side * hw * 0.390, -hd * 1.00, h * 0.7165),
+        # **Barely set back, and against the face's own front.** Set back at
+        # 0.92 on the reasoning that the face curves away out there, these came
+        # out as two loose diamonds with skin between them and the moustache. It
+        # hardly curves away: the swell in `SKULL` fades by a tenth over the
+        # width a moustache covers, so a lobe set back by more than that is a
+        # lobe buried in the cheek. Both pairs hang off `skull_front` now, so
+        # neither is left behind when the face moves.
+        tache.merge(M.blob((side * hw * 0.390,
+                            hd * (skull_front(0.7165) + 0.011), h * 0.7165),
                            (hw * 0.165, hd * 0.090, hh * 0.108),
                            coarse, max(4, coarse // 2), HAIR, name="tache"))
     out.append(("Moustache", tache))

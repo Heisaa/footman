@@ -144,6 +144,10 @@ def _shell(look, h, style, r, lift, back, squash):
     zs = [row[0] for row in F.SKULL]
     scales = [row[1] for row in F.SKULL]
     depths = [row[2] for row in F.SKULL]
+    # The skull's front-to-back size is its own number now -- the face has a
+    # profile in it -- and a shell sized on the width alone is inside the head
+    # wherever the two differ. At the temple that is where a sideburn hangs.
+    thicks = [row[4] for row in F.SKULL]
 
     # Where the hairline sits, before the cut's own lift moves it.
     base = h * (HAIRLINE + style.get("recede", 0.0))
@@ -207,8 +211,14 @@ def _shell(look, h, style, r, lift, back, squash):
         # takes the crown's own width, so a cut closes exactly the way the head
         # under it does and there is nothing left on top to read.
         scale = float(np.interp((z - rise) / h, zs, scales))
-        cy = float(np.interp((z - rise) / h, zs, depths)) * hd \
-            + back * (1.0 - t) ** 1.5
+        thick = float(np.interp((z - rise) / h, zs, thicks))
+        cy = float(np.interp((z - rise) / h, zs, depths)) * hd
+        # **The push back tapers off at the nape now.** See `M.Ring.slide`: it
+        # is the front and the sides that need burying, and carrying the back
+        # with them stood nine centimetres of hair off the skull there and cut
+        # it off with the rim's own hard edge. The shell was never too big; the
+        # back of it was in the wrong place.
+        push = back * (1.0 - t) ** 1.5
         if i == 0:
             # **Sized for the highest the rim gets, not for its base.** `tilt`
             # lifts the front of the rim to where the skull is narrower, and a
@@ -216,17 +226,37 @@ def _shell(look, h, style, r, lift, back, squash):
             # sawtooth again, in the one place a hairline is actually looked at.
             # Sized for the top of its own travel, the rim is outside the skull
             # all the way round, by more at the nape than at the brow.
-            widest = float(np.interp((z - rise - max(slope, side_drop)) / h, zs, scales))
+            # **The rim has to enclose every height it reaches, not the one
+            # its `z` names.** `tilt` carries its front up by `slope` and
+            # `drop` carries its sides down, so one ring spans a band of the
+            # skull -- and the skull is no longer the same shape up and down
+            # that band: the face has a profile in it now, and the forehead
+            # falls back over the same three centimetres the hairline covers.
+            # Sized at one height and centred at another, the rim dipped inside
+            # the skull at the brow on a third of the cuts, which is the
+            # hairline sawtooth back again.
+            band = np.linspace((z - rise - max(slope, side_drop)) / h,
+                               (z - rise + slope) / h, 9)
+            widest = float(np.interp(band, zs, scales).max())
+            slide = np.interp(band, zs, depths)
+            reach = np.interp(band, zs, thicks)
+            front = float((slide - reach).min())
+            behind = float((slide + reach).max())
             width = widest + 0.0080 / hw
+            depth = (behind - front) * 0.5 + 0.0080 / hd
+            cy = (behind + front) * 0.5 * hd
         else:
-            width = scale * r * (1.0 + flare * (1.0 - t) * (1.0 - t))
+            grow = r * (1.0 + flare * (1.0 - t) * (1.0 - t))
+            width = scale * grow
+            depth = thick * grow
         # **The rim takes the skull's own section, not the cut's.** A shell that
         # is boxier or rounder than the head is a *differently shaped* ring at
         # the same radius: wider than the skull at the diagonals or narrower,
         # and the narrow case dips inside and saws the hairline up at four
         # points. Only from the second ring on does the cut get its own shape.
-        ring = M.Ring(z, hw * width, hd * width, cy=cy,
+        ring = M.Ring(z, hw * width, hd * depth, cy=cy,
                       power=F.skull_power((z - rise) / h) if i == 0 else square)
+        ring.slide = push
         # A hairline is not level. It is highest on the forehead, comes down
         # over the ears and lowest at the nape -- three different heights on one
         # ring, which is what `tilt` (front to back) and `drop` (at the sides)
@@ -337,15 +367,25 @@ def one(look, h, style, segs, coarse, name):
         # ear** and it has been in the right place all along; what was wrong was
         # that the hair stopped a centimetre short of it, so `BURN_DROP` brings
         # the hair down instead, and this is left exactly where it was.
+        # **Front to back it is half what it was.** At 0.34 of a head-depth it
+        # was as far through as it was tall -- a disc laid on the side of the
+        # head, and a disc reads as a disc however dark it is. A sideburn is a
+        # narrow strip in front of the ear, so the depth comes down and the
+        # height goes up, and what is left in the outline is a vertical thing.
+        # It still overlaps the shell by six centimetres front to back, which is
+        # the join, and `BURN_DROP` is what guarantees it vertically.
         for side in (-1.0, 1.0):
             mesh.merge(M.blob((side * hw * 0.99, -hd * 0.15,
-                               burn_rim - hh * 0.17),
-                              (hw * 0.115, hd * 0.34, hh * 0.27),
+                               burn_rim - hh * 0.18),
+                              (hw * 0.115, hd * 0.185, hh * 0.32),
                               coarse, coarse // 2, HAIR, name="burn"))
     if style.get("mass"):
         # Down the back, not round the sides: a mass that wraps is a hood.
+        # **No `back` on it any more.** It rode the shell's old bodily slide;
+        # the shell's back is where the skull's is now, so a mass carrying the
+        # push as well is a lump hanging in the air behind the hair.
         long = style["mass"]
-        mesh.merge(M.blob((0.0, hd * r * 0.62 + back, h * (0.790 - 0.055 * long)),
+        mesh.merge(M.blob((0.0, hd * r * 0.62, h * (0.790 - 0.055 * long)),
                           (hw * r * 0.86, hd * 0.44, hh * (0.34 + 0.22 * long)),
                           segs, coarse, HAIR, name="mass"))
     for i in range(style.get("tufts", 0)):
@@ -394,9 +434,17 @@ def _curls(mesh, look, h, style, count, coarse):
     for z, spread in rows:
         for i in range(count):
             turn = math.tau * (i + 0.5 * (z * 37 % 2)) / count
+            # The same taper the shell's rings get (`M.Ring.slide`): a curl on
+            # the forehead or over an ear rides the push back, one on the nape
+            # does not, because that is what the shell under them does now.
+            slide = M.slide(back, math.cos(turn))
+            # **A little bigger and a little further out than they were.** The
+            # rows show the shell between them, and at the back that used to be
+            # hidden by the shell standing out past the curls rather than by the
+            # curls covering it. It is not hidden any more, so they cover it.
             mesh.merge(M.blob(
-                (hw * r * spread * math.sin(turn) * 0.94,
-                 hd * r * spread * math.cos(turn) * 0.94 + back,
+                (hw * r * spread * math.sin(turn) * 0.97,
+                 hd * r * spread * math.cos(turn) * 0.97 + slide,
                  h * z + lift),
-                (hw * size * 0.62, hd * size * 0.62, hh * size * 0.60),
+                (hw * size * 0.67, hd * size * 0.67, hh * size * 0.64),
                 max(5, coarse - 3), max(4, coarse // 2 - 1), HAIR, name="curl"))
