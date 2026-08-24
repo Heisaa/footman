@@ -30,6 +30,16 @@ ROLLED = 0.085
 ## normal map. `M._lumps` says why the mistake is silent.
 ROLL_SCALE = 62.0
 
+## How much further down the sides a hairline runs on a cut that wears
+## sideburns, in head heights.
+##
+## **A sideburn is the hairline carried on past the temple**, so the shell comes
+## down to meet the burn rather than the burn climbing to meet the shell. Sized
+## to close the gap and about that much again: measured at the depth the burn
+## sits, the rim clears its top by six hundredths of a head height, and
+## `M.roughen` moves the rim by rather more than that on its own.
+BURN_DROP = 0.22
+
 # The cuts. Row for row with `presentation/character_builder.gd:HAIR_LIBRARY` --
 # the **index** is the cut and has to agree, because a man keeps his hair across
 # the two builders. The parameters do not have to agree and no longer do.
@@ -258,6 +268,14 @@ def one(look, h, style, segs, coarse, name):
     # is tilted -- high on the forehead, low on the nape -- because a level one
     # is a swimming cap, and a separate fringe piece does not work: far enough
     # forward to show it is a slug, far enough back it lands on the brows.
+    # **Off the cut's own side drop, before the boost below moves it.** The burn
+    # hangs where it always hung; it is the hairline that comes down. Read after
+    # the boost, both of them drop and the sideburn ends up on a man's jaw.
+    burn_rim = (h * (HAIRLINE + style.get("recede", 0.0)) + lift
+                - hh * style.get("sides", 0.19))
+    if style.get("burns"):
+        style = dict(style, sides=style.get("sides", 0.19) + BURN_DROP)
+
     rings = _shell(look, h, style, r, lift, back, squash)
     mesh = M.tube(rings, segs, HAIR, power=style.get("square", F.HEAD_POWER),
                   name=name)
@@ -314,24 +332,15 @@ def one(look, h, style, segs, coarse, name):
         # exactly is a join that comes apart.
         #
         # Answering that by stretching it upwards made a strap down the cheek,
-        # and by pulling it forward to the temple made a tab on the outline. It
-        # is a **short fat thing beside the ear** and it was always in the right
-        # place; the only thing wrong with it was that it sat a centimetre too
-        # low to reach the hair.
-        #
-        # So the only number that moved is the height, and it moved past what
-        # the arithmetic asks for. The hairline where this thing meets it is
-        # `base + lift`, less the cut's side drop scaled by where round the ring
-        # it is, plus the cut's tilt scaled the same way -- and those two run in
-        # opposite directions, so the answer swings by a couple of centimetres
-        # across the eighteen cuts before `M.roughen` has moved anything. A
-        # third of a head-height of the burn is inside the shell now, which
-        # covers every cut and the wander on top of it.
-        base = h * (HAIRLINE + style.get("recede", 0.0))
-        rim = base + lift - hh * style.get("sides", 0.19)
+        # by pulling it forward to the temple made a tab on the outline, and by
+        # lifting it put it above the ear. It is a **short fat thing beside the
+        # ear** and it has been in the right place all along; what was wrong was
+        # that the hair stopped a centimetre short of it, so `BURN_DROP` brings
+        # the hair down instead, and this is left exactly where it was.
         for side in (-1.0, 1.0):
-            mesh.merge(M.blob((side * hw * 0.99, -hd * 0.22, rim + hh * 0.06),
-                              (hw * 0.115, hd * 0.30, hh * 0.27),
+            mesh.merge(M.blob((side * hw * 0.99, -hd * 0.15,
+                               burn_rim - hh * 0.17),
+                              (hw * 0.115, hd * 0.34, hh * 0.27),
                               coarse, coarse // 2, HAIR, name="burn"))
     if style.get("mass"):
         # Down the back, not round the sides: a mass that wraps is a hood.

@@ -360,9 +360,15 @@ def _head(fig, look, h, fine, coarse):
     # only a tenth of it was inside the skull, and this route cannot fillet the
     # rest away. Pushed in to 0.94 it is mostly buried; taller than it is deep
     # it is an ear rather than a knob.
+    # **It has to clear the hair, not just the skull.** At 0.94 with a tenth of
+    # a head-width of reach it finished a hair inside the shell, so on a cut
+    # whose hairline runs below it the tip came through the hair as a single
+    # skin-coloured speck -- an ear half swallowed, which is worse than either
+    # showing or hidden. `art/figure/body.py` puts it at 1.08 for this reason:
+    # on the references an ear sticks out past the cut.
     for side in (-1.0, 1.0):
-        fig.put("Head", M.blob((side * hw * 0.94, -hd * 0.05, h * 0.788),
-                               (hw * 0.13, hd * 0.14, hd * 0.27),
+        fig.put("Head", M.blob((side * hw * 0.98, -hd * 0.05, h * 0.788),
+                               (hw * 0.15, hd * 0.14, hd * 0.27),
                                coarse, coarse // 2, SKIN, name="ear"))
 
     # The nose is geometry, never a drawn mark: at this size a drawn one is a
