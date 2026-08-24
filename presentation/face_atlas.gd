@@ -152,15 +152,25 @@ const BROW_STYLES := [
 ## spanned a sixth and sat under a nose and two big eyes looking like a stitch.
 ## `w` is the full width for a line and the half-width for an arc, so the two
 ## columns are not the same number for the same mouth.
+##
+## **Straight is the standard, six rows of eight.** A resting clay face is
+## deadpan -- that is most of the comedy in the reference, a man to whom things
+## are happening rather than a man reacting -- and a squad drawn evenly from
+## smiles, frowns and open mouths is a squad pulling faces at nothing. The mouth
+## is where the moment goes: `_draw_face` swaps in a grin for delight and a
+## grimace for effort, and that swap only reads against a straight line.
+##
+## The variety that is left is in the *width*, which is the half of this table
+## that was doing the work anyway.
 const MOUTH_STYLES := [
 	{"kind": "line", "w": 8.0, "y": 23.2},
-	{"kind": "smile", "w": 5.2, "y": 22.6},
-	{"kind": "frown", "w": 4.6, "y": 23.8},
-	{"kind": "open", "w": 2.4, "y": 23.2},
+	{"kind": "line", "w": 6.4, "y": 23.4},
+	{"kind": "line", "w": 9.2, "y": 23.2},
+	{"kind": "line", "w": 7.2, "y": 23.0},
 	{"kind": "line", "w": 10.4, "y": 23.2},
-	{"kind": "smile", "w": 6.6, "y": 22.2},
-	{"kind": "line", "w": 6.0, "y": 23.2},
-	{"kind": "open", "w": 1.8, "y": 23.4},
+	{"kind": "smile", "w": 5.6, "y": 22.4},
+	{"kind": "line", "w": 5.6, "y": 23.4},
+	{"kind": "open", "w": 2.0, "y": 23.4},
 ]
 
 ## How deep the groove is, in grid units.

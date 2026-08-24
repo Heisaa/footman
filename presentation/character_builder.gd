@@ -76,6 +76,15 @@ const FACE_ROWS := 14
 ## to stay inside the nose: the nose reaches about 1.09 head-radii and a brow
 ## that stands further out than a man's nose is a brow ridge on a hominid.
 const BROW_DEPTH := 0.6
+## How much bigger a rolled brow is than the drawn bar it replaced, in length
+## and in thickness.
+##
+## More in the thickness than the length. `BROW_STYLES` was fitted to an ink
+## line, and a strip of clay laid on a forehead is a *chunky* thing -- the
+## reference brows are nearly as deep as an eye is tall. Lengthened a little as
+## well, because a short fat brow is a caterpillar.
+const BROW_LONGER := 1.12
+const BROW_FATTER := 1.35
 ## How far the eye bead stands off the face shell, and how flat it is.
 ##
 ## Only a hair, and that is not the same number the models use. This figure's
@@ -184,7 +193,7 @@ const TOY_SPECULAR := 0.20
 ## How deep the thumbing reads, and how big a thumb is. The scale is in the
 ## figure's own space -- object triplanar, not world -- so the marks stay put on
 ## a man as he runs instead of swimming through him.
-const CLAY_BUMP := 0.85
+const CLAY_BUMP := 1.05
 const CLAY_SCALE := 7.0
 ## Softness at the grazing edge: light that got into the clay and came back out.
 const CLAY_RIM := 0.35
@@ -952,7 +961,12 @@ static func _brows(head: Node3D, head_r: float, appearance: SimAppearance) -> vo
 	var unit := head_r * FACE_QUAD / SimFaceAtlas.GRID
 	var mat := matte_material(appearance.hair_colour)
 	for side in [-1.0, 1.0]:
-		var bar := _sphere(unit, mat, true)
+		# **A strip, not a bead.** An ellipsoid has no straight run in it, so a
+		# brow made of one is a lozenge that tapers away at both ends and reads
+		# as a smudge. Clay brows are rolled flat and laid on: they have a top
+		# edge that stays at one height for most of their length, and that edge
+		# is the whole of what makes a brow readable at this size.
+		var bar := _slab(unit, mat)
 		bar.name = "Brow" + ("L" if side < 0.0 else "R")
 		node.add_child(bar)
 
@@ -1001,7 +1015,8 @@ static func _pose_brows(root: Node3D, face: int) -> void:
 		# it. Godot's default euler order applies Z, then X, then Y -- which is
 		# that order exactly, and lands the bar flat on the surface.
 		bar.rotation = Vector3(-pitch, yaw, side * roll)
-		bar.scale = Vector3(half, thick, thick * BROW_DEPTH)
+		bar.scale = Vector3(half * BROW_LONGER, thick * BROW_FATTER,
+			thick * BROW_FATTER * BROW_DEPTH)
 
 
 ## A jaw. One sphere is an egg: it tapers to the same point at the bottom as at
@@ -1364,6 +1379,16 @@ static func _capsule(
 	mesh.height = maxf(height, radius * 2.05)
 	mesh.radial_segments = HEAD_SEGMENTS if smooth else SEGMENTS
 	mesh.rings = HEAD_RINGS if smooth else RINGS
+	var node := MeshInstance3D.new()
+	node.mesh = mesh
+	node.material_override = material
+	return node
+
+
+## A cube of half-extent `half`, so it scales the same way `_sphere` does.
+static func _slab(half: float, material: Material) -> MeshInstance3D:
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3.ONE * (half * 2.0)
 	var node := MeshInstance3D.new()
 	node.mesh = mesh
 	node.material_override = material

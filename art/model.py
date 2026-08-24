@@ -192,8 +192,11 @@ def brows(head, head_r, depth, slots, pivot, head_pivot):
     unit = head_r * toy.FACE_QUAD / 32.0
     from toy import mesh as M
     for side in ("L", "R"):
-        bar = M.blob((0.0, 0.0, 0.0), (unit, unit, unit), 8, 6, "hair",
-                     name="Brow" + side)
+        # `power` 4.2 is a rounded box in the plane the brow is read in, which
+        # is what a rolled strip of clay is. At 2 it is an ellipsoid and tapers
+        # away at both ends; `SimCharacterBuilder._brows` has the argument.
+        bar = M.blob((0.0, 0.0, 0.0), (unit, unit, unit), 12, 8, "hair",
+                     power=4.2, name="Brow" + side)
         upload(bar, node, (0.0, 0.0, 0.0), slots)
     return node
 

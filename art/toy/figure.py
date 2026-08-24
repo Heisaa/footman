@@ -62,7 +62,7 @@ ARM_IN = 0.050
 ## Every part is seeded off its own name and side, so the two arms are not
 ## mirror images of each other -- two identical lumpy arms read as a moulding
 ## fault rather than as something made by hand.
-LIMB_ROLL = 0.038
+LIMB_ROLL = 0.058
 ROLL_SCALE = 68.0
 
 # How round each thing is in plan: 2 is an ellipse, 4 a rounded rectangle. The

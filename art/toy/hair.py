@@ -23,7 +23,7 @@ HAIR = "hair"
 ## How far a rolled shell wanders off true, as a fraction of its own radius, and
 ## how big a lump is. `M.roughen` has the argument; these two numbers are the
 ## whole of the clay register in the hair.
-ROLLED = 0.060
+ROLLED = 0.085
 ## Radians per metre: a lump about ten centimetres across on a head half a metre
 ## wide. This was 3.1 in the first pass, which put the entire figure inside one
 ## lobe of the noise and displaced nothing -- the lumpiness that showed was all
