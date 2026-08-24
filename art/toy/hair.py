@@ -305,19 +305,25 @@ def one(look, h, style, segs, coarse, name):
         # shell whatever the cut's slope and side drop do to the rim -- being
         # swallowed up there costs nothing and is what guarantees the join.
         #
-        # **And it has to reach a long way up.** Sized to finish a few
-        # millimetres above where the rim is *calculated* to be, it still came
+        # **It buys the overlap with volume, not with length.** Sized to finish a
+        # few millimetres above where the rim is *calculated* to be, it came
         # away: the hairline at the temple is lifted by the cut's own `tilt` and
         # dropped by its `sides`, both of which vary, and then `M.roughen`
         # wanders every vertex of the shell by a couple of centimetres -- twenty
         # times the overlap that was left. A join that has to be computed
-        # exactly is a join that comes apart. Its top is a third of a head-height
-        # inside the hair now and none of those numbers can reach it.
+        # exactly is a join that comes apart.
+        #
+        # Answering that by stretching it upwards made a strap down the cheek.
+        # A sideburn is a **short fat thing** sitting just in front of the ear,
+        # so the margin comes out of its width and depth instead: a centimetre
+        # of it is buried in the shell at the top, its back edge stops where the
+        # ear starts, and there is enough of it that a wandering rim has
+        # somewhere to land.
         base = h * (HAIRLINE + style.get("recede", 0.0))
         for side in (-1.0, 1.0):
-            mesh.merge(M.blob((side * hw * 0.92, -hd * 0.45,
-                               base + lift - hh * 0.11),
-                              (hw * 0.115, hd * 0.24, hh * 0.42),
+            mesh.merge(M.blob((side * hw * 0.93, -hd * 0.44,
+                               base + lift - hh * 0.10),
+                              (hw * 0.130, hd * 0.27, hh * 0.30),
                               coarse, coarse // 2, HAIR, name="burn"))
     if style.get("mass"):
         # Down the back, not round the sides: a mass that wraps is a hood.
