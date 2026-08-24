@@ -286,11 +286,38 @@ def one(look, h, style, segs, coarse, name):
         # the cut's own lift, less its own side drop -- and the burn is hung
         # from there, overlapping it. It also comes forward: a sideburn runs
         # down **in front of** the ear, and this one used to sit behind it.
+        # **Hung off the temple, which is the only place the hairline is in
+        # front of the ear.**
+        #
+        # The rim of a shell is pushed back by `back` -- that is what puts a
+        # hairline on a forehead rather than a fringe over the eyes -- and the
+        # push is a constant round the whole ring, so at the *sides* it carries
+        # the hairline three tenths of a head-depth behind centre, which is
+        # behind the ear. There is no hair in front of an ear on this head to
+        # join a sideburn to, and two goes at moving the sideburn could not fix
+        # that because the thing it was reaching for was not there.
+        #
+        # Where the hairline *is* forward is round the front of the ring, at the
+        # temple: solve the rim's own superellipse at four tenths of a
+        # head-depth forward and it comes out at about 0.9 of a head half-width,
+        # clear in front of the ear and a little above it. The burn hangs from
+        # there, and it is built tall enough that its top is buried in the
+        # shell whatever the cut's slope and side drop do to the rim -- being
+        # swallowed up there costs nothing and is what guarantees the join.
+        #
+        # **And it has to reach a long way up.** Sized to finish a few
+        # millimetres above where the rim is *calculated* to be, it still came
+        # away: the hairline at the temple is lifted by the cut's own `tilt` and
+        # dropped by its `sides`, both of which vary, and then `M.roughen`
+        # wanders every vertex of the shell by a couple of centimetres -- twenty
+        # times the overlap that was left. A join that has to be computed
+        # exactly is a join that comes apart. Its top is a third of a head-height
+        # inside the hair now and none of those numbers can reach it.
         base = h * (HAIRLINE + style.get("recede", 0.0))
-        rim = base + lift - hh * style.get("sides", 0.19)
         for side in (-1.0, 1.0):
-            mesh.merge(M.blob((side * hw * 0.99, -hd * 0.22, rim - hh * 0.17),
-                              (hw * 0.115, hd * 0.30, hh * 0.27),
+            mesh.merge(M.blob((side * hw * 0.92, -hd * 0.45,
+                               base + lift - hh * 0.11),
+                              (hw * 0.115, hd * 0.24, hh * 0.42),
                               coarse, coarse // 2, HAIR, name="burn"))
     if style.get("mass"):
         # Down the back, not round the sides: a mass that wraps is a hood.
