@@ -613,8 +613,11 @@ func _build_world() -> void:
 	sun.rotation_degrees = Vector3(-58.0, -35.0, 0.0)
 	sun.light_energy = 0.9
 	sun.shadow_enabled = true
-	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
-	SimCharacterBuilder.soften_shadow(sun)
+	# As far as a shadow is worth drawing from a broadcast camera. Past this a
+	# man is a dozen pixels and his shadow is one; buying those costs every man
+	# near the camera a crosshatch of self-shadow, which is the trade the 100 m
+	# default was making without being asked.
+	SimCharacterBuilder.soften_shadow(sun, 70.0)
 	add_child(sun)
 	SimCharacterBuilder.add_fill_light(self, -35.0)
 

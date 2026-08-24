@@ -76,6 +76,17 @@ const FACE_ROWS := 14
 ## to stay inside the nose: the nose reaches about 1.09 head-radii and a brow
 ## that stands further out than a man's nose is a brow ridge on a hominid.
 const BROW_DEPTH := 0.6
+## How far the eye bead stands off the face shell, and how flat it is.
+##
+## Only a hair, and that is not the same number the models use. This figure's
+## head **is** a sphere, so the shell is exact on it and a bead laid on the shell
+## already sits where it should; a built head is a rounded box and needs
+## `art/toy/figure.py:EYE_STAND`, which is baked into the model's `Eyes` node
+## rather than applied here. Same split as the brows.
+const EYE_PROUD := 0.002
+## Flat, front to back. A ball on a cheek is a googly eye; the reference eye is
+## a shallow dome with most of it inside the head.
+const EYE_DEPTH := 0.55
 ## The shorts, as shares of the shoulder half-width so that every build keeps the
 ## same shape.
 ##
@@ -132,6 +143,18 @@ const TOY_SPECULAR := 0.45
 ## roughness and less of it.
 const TOY_CLEARCOAT := 0.20
 const TOY_CLEARCOAT_ROUGHNESS := 0.22
+## Hair and boots, which are not painted vinyl and must not read as it.
+##
+## The clear coat above is pigment under gloss, and on a *kit* that is exactly
+## right. Put it on a head of black hair and the man is wearing a crash helmet:
+## a tight white highlight on the one part of the figure the references keep
+## matte, and it was doing more to break the register than any shape on the
+## body. A boot is leather and goes the same way.
+##
+## Not flat, though -- `flat_material` is scenery, and hair with no sheen at all
+## is a hole in the silhouette. A broad, weak one, and no coat over it.
+const MATTE_ROUGHNESS := 0.74
+const MATTE_SPECULAR := 0.30
 
 ## The fill light, and the colour is not white on purpose: a shadow side lit by
 ## the same colour as the key is a grey copy of the lit side, and the reference's
@@ -169,9 +192,49 @@ static func add_crease_shading(env: Environment) -> void:
 ## The sun a moulded figure wants: a soft-edged shadow rather than a stencil.
 ## Vinyl in a photograph is lit through something broad, and the giveaway is the
 ## edge of the shadow it casts, not its brightness.
-static func soften_shadow(sun: DirectionalLight3D) -> void:
+##
+## `far` is how deep the shadow has to reach, in metres, and it is not a detail.
+## A directional shadow spreads one map over `directional_shadow_max_distance`,
+## so the texel is that distance over the atlas: left at the 100 m default a
+## parade of four men two metres tall was being shadowed at about 2 cm a texel,
+## and every surface that leans towards the sun -- the shoulders, the forehead,
+## the front of the shorts -- came out under a crosshatch of self-shadow. It
+## reads as a dither pattern printed on the vinyl and it was the ugliest thing
+## on the figure. `shadow_blur` then smears the crosshatch into a weave, so the
+## soft edge above was making it worse.
+##
+## The models cost this where the primitives did not: a smooth-shaded 20k
+## triangle body has a shading normal that leans away from its own faces
+## everywhere, which is exactly what self-shadow bias is fighting.
+##
+## Ask for the distance the camera actually needs and no more. `PSSM` splits buy
+## nothing once the range is tight, and a single orthogonal map has no seams
+## across a figure.
+static func soften_shadow(sun: DirectionalLight3D, far: float = 40.0) -> void:
 	sun.light_angular_distance = 1.6
-	sun.shadow_blur = 1.4
+	# **The soft edge comes from the sun's size, not from the blur.** Down from
+	# 1.4, and it is what finally cleared the last of the crosshatch off the
+	# shoulders and the collar. `shadow_blur` widens the PCF kernel, so every
+	# sample is taken further from the fragment it is shading -- across a surface
+	# that leans, half of them land the wrong side of the depth it is being
+	# compared against, and no amount of bias fixes a sample taken somewhere
+	# else. `light_angular_distance` softens the edge the way the reference
+	# photograph's broad light does, and it costs none of this.
+	sun.shadow_blur = 0.6
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
+	sun.directional_shadow_max_distance = far
+	# Both scaled off the texel the range above implies, because a bias that
+	# clears the acne at 14 m is a shadow floating clear of the boot at 70.
+	#
+	# `shadow_normal_bias` is measured in texels, so a constant one is a
+	# different offset at every range. What wants to be constant is the offset in
+	# metres -- it is standing in for how far a smooth-shaded normal leans away
+	# from the face it belongs to, and on this figure that is about four
+	# centimetres whatever the camera is doing. Hence the division: 168 is
+	# 0.041 m times the 4096-texel atlas, and it was arrived at by turning it up
+	# until the crosshatch left the chest and then checking the studs still cast.
+	sun.shadow_bias = maxf(0.01, far * 0.0022)
+	sun.shadow_normal_bias = clampf(168.0 / maxf(far, 1.0), 2.0, 14.0)
 
 
 ## Flat, unlit-looking material for scenery: the pitch, the goals, the stands.
@@ -203,6 +266,74 @@ static func toy_material(colour: Color) -> StandardMaterial3D:
 	m.clearcoat_enabled = true
 	m.clearcoat = TOY_CLEARCOAT
 	m.clearcoat_roughness = TOY_CLEARCOAT_ROUGHNESS
+	return m
+
+
+## The face patch: the atlas is features on nothing, so this is alpha, two-sided
+## and carries no specular of its own.
+##
+## **No highlight of its own, and it casts nothing.** Two things were making
+## this patch read as a plate stuck on the face rather than as features drawn
+## on it. It carried `toy_material`'s specular and clear coat, so a second
+## highlight rode over the skull's and lit the whole quad including the 99 per
+## cent of it that is transparent; and an alpha-blended surface still casts a
+## solid shadow, so the patch was dropping a rectangle of self-shadow across
+## the forehead -- which is where the crosshatch on the face came from. Ink
+## features want the skull's own shading and nothing added to it.
+static func face_material() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color.WHITE
+	m.metallic = 0.0
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	# No specular, and an alpha-blended surface would not give any if it were
+	# asked -- `SimFaceAtlas` has the measurement. What is left on this patch is
+	# a mouth, a socket and a closed eye, and all three are creases.
+	m.roughness = TOY_ROUGHNESS
+	m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	return m
+
+
+## Puts a face on a material made by `face_material`.
+static func dress_face(m: StandardMaterial3D, face: int, eyes: int, mouth: int) -> void:
+	m.albedo_texture = SimFaceAtlas.texture_for(face, eyes, mouth)
+
+
+## The eye: near-black, and the shiniest thing on the whole figure.
+##
+## In the reference photographs the eye is the one surface that is properly wet,
+## and the catch light in it is most of what makes it an eye rather than a hole.
+## It is geometry so that the highlight is *real* -- it travels as the man turns
+## and it goes out when he walks into shade, neither of which a painted dot does.
+##
+## Not pure black: at zero albedo there is nothing for the diffuse term to do and
+## the bead reads as a hole punched in the face, which is the thing the reference
+## specifically is not.
+static func eye_material() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.06, 0.055, 0.075)
+	m.metallic = 0.0
+	m.roughness = 0.08
+	m.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
+	m.metallic_specular = 1.0
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+	m.clearcoat_enabled = true
+	m.clearcoat = 1.0
+	m.clearcoat_roughness = 0.05
+	return m
+
+
+## Hair and boot: the figure's colour with a broad weak sheen and no clear coat.
+## `MATTE_ROUGHNESS` has the argument.
+static func matte_material(colour: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = colour
+	m.roughness = MATTE_ROUGHNESS
+	m.metallic = 0.0
+	m.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
+	m.metallic_specular = MATTE_SPECULAR
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
 	return m
 
 
@@ -246,7 +377,7 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	var shorts := toy_material(shorts_colour)
 	var trim := toy_material(second_colour)
 	var skin := toy_material(appearance.skin)
-	var boot := toy_material(SimPalette.INK)
+	var boot := matte_material(SimPalette.INK)
 
 	# --- Torso, on a pivot so the whole upper body can lean ------------------
 	var spine := Node3D.new()
@@ -381,6 +512,8 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	_ears(head, head_r, skin)
 	_brows(head, head_r, appearance)
 	_pose_brows(root, SimAppearance.Face.NEUTRAL)
+	_eyes(head, head_r)
+	_pose_eyes(root, SimAppearance.Face.NEUTRAL)
 
 	var hair := _hair(appearance, head_r)
 	if hair != null:
@@ -642,13 +775,74 @@ static func _nose(appearance: SimAppearance, head_r: float) -> MeshInstance3D:
 ## table, and `_pose_brows` turns its four numbers into a position, a roll and a
 ## scale. Children of the head, so a long face stretches them with everything
 ## else.
+## Eyes, moulded rather than drawn, on the same unit grid the face is drawn in.
+##
+## Two unit spheres under an `Eyes` node, exactly as `_brows` does it: the shell
+## arithmetic that lands a brow on this head lands an eye on it too, and the eye
+## row is the datum that arithmetic was fitted to in the first place.
+static func _eyes(head: Node3D, head_r: float) -> void:
+	var node := Node3D.new()
+	node.name = "Eyes"
+	head.add_child(node)
+	var unit := head_r * FACE_QUAD / SimFaceAtlas.GRID
+	var mat := eye_material()
+	for side in [-1.0, 1.0]:
+		var bead := _sphere(unit, mat, true)
+		bead.name = "Eye" + ("L" if side < 0.0 else "R")
+		node.add_child(bead)
+
+
+## Puts the beads where the drawing used to put the ovals.
+##
+## `SimFaceAtlas.eye_pose` is the table and this is the same two angles
+## `_pose_brows` works in -- a place on a face is a yaw and a pitch, never an
+## offset and a depth, because the head draws in as it rises.
+##
+## `EYE_PROUD` is the one number that is not shared with the brows: a brow is a
+## ridge and stands off, an eye is set into the head and only its front shows.
+## Sunk to the shell it disappears into the cheek at the outer edge, where the
+## head has curved away from the sphere the shell is; standing a little proud is
+## what the mould does anyway.
+static func _pose_eyes(root: Node3D, face: int) -> void:
+	var eyes := root.find_child("Eyes", true, false)
+	if eyes == null:
+		return
+	var head_r: float = root.get_meta("head_r", 0.0)
+	if head_r <= 0.0:
+		return
+	var pose := SimFaceAtlas.eye_pose(int(root.get_meta("eye_style", 0)), face)
+	var radius := head_r * FACE_SHELL
+	var size := head_r * FACE_QUAD
+	var shut: bool = pose["shut"]
+	for child in eyes.get_children():
+		var bead := child as MeshInstance3D
+		if bead == null:
+			continue
+		# A shut eye is a crease the atlas draws; the bead would show through it.
+		bead.visible = not shut
+		if shut:
+			continue
+		var side := -1.0 if String(bead.name).ends_with("L") else 1.0
+		var x_grid: float = 16.0 + side * float(pose["gap"])
+		var yaw: float = (x_grid / SimFaceAtlas.GRID - 0.5) * size / radius
+		var pitch: float = (SimFaceAtlas.EYE_ROW - float(pose["y"])) \
+			/ SimFaceAtlas.GRID * size / radius
+		bead.position = Vector3(
+			sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)) \
+			* (radius + EYE_PROUD)
+		bead.rotation = Vector3(-pitch, yaw, 0.0)
+		# Flattened front to back: a ball on a cheek is a googly eye, and the
+		# reference eye is a shallow dome with most of it inside the head.
+		bead.scale = Vector3(float(pose["rx"]), float(pose["ry"]), EYE_DEPTH)
+
+
 static func _brows(head: Node3D, head_r: float, appearance: SimAppearance) -> void:
 	var node := Node3D.new()
 	node.name = "Brows"
 	head.add_child(node)
 	# A unit sphere in grid units, scaled to length and thickness when posed.
 	var unit := head_r * FACE_QUAD / SimFaceAtlas.GRID
-	var mat := toy_material(appearance.hair_colour)
+	var mat := matte_material(appearance.hair_colour)
 	for side in [-1.0, 1.0]:
 		var bar := _sphere(unit, mat, true)
 		bar.name = "Brow" + ("L" if side < 0.0 else "R")
@@ -750,7 +944,7 @@ static func _ears(head: Node3D, head_r: float, skin: Material) -> void:
 ## Under the nose and clear of the mouth, in hair colour. Two of the six figures
 ## in the reference wear one.
 static func _moustache(head: Node3D, head_r: float, appearance: SimAppearance) -> void:
-	var mat := toy_material(appearance.hair_colour)
+	var mat := matte_material(appearance.hair_colour)
 	# Two lobes rather than one bar, so it has a shape rather than a moustache
 	# sticker.
 	for side in [-1.0, 1.0]:
@@ -853,7 +1047,7 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 	var shell_r: float = style.get("r", 0.0)
 	if shell_r <= 0.0:
 		return null
-	var mat := toy_material(appearance.hair_colour)
+	var mat := matte_material(appearance.hair_colour)
 	var root := Node3D.new()
 	root.name = "Hair"
 
@@ -1029,11 +1223,6 @@ static func _accessory(
 			var band := _band(head_r * 0.93, head_r * 0.14, toy_material(kit[0]))
 			band.position = Vector3(0.0, head_r * 0.40, 0.0)
 			head.add_child(band)
-		"cap":
-			var cap := _sphere(head_r * 1.05, toy_material(kit[0]), true)
-			cap.position = Vector3(0.0, head_r * 0.24, 0.0)
-			cap.scale = Vector3(1.0, 0.5, 1.0)
-			head.add_child(cap)
 		_:
 			pass
 
@@ -1048,12 +1237,12 @@ static func set_expression(player_root: Node3D, face: int) -> void:
 	var mat := quad.material_override as StandardMaterial3D
 	if mat == null:
 		return
-	mat.albedo_texture = SimFaceAtlas.texture_for(
-		face,
-		player_root.get_meta("eye_style", 0),
-		player_root.get_meta("mouth_style", 0))
+	dress_face(mat, face,
+		int(player_root.get_meta("eye_style", 0)),
+		int(player_root.get_meta("mouth_style", 0)))
 	# The brows are geometry now, so swapping the texture is only half of it.
 	_pose_brows(player_root, face)
+	_pose_eyes(player_root, face)
 
 
 # --- Primitives -------------------------------------------------------------
@@ -1207,10 +1396,9 @@ static func _face_shell(head_r: float, appearance: SimAppearance) -> MeshInstanc
 	# `toy_material` rather than `flat_material` for the same reason. The head
 	# carries a sheen; a matte patch across the front of a glossy skull is the
 	# same tell one step quieter.
-	var m := toy_material(Color.WHITE)
-	m.cull_mode = BaseMaterial3D.CULL_DISABLED
-	m.albedo_texture = SimFaceAtlas.texture_for(
-		SimAppearance.Face.NEUTRAL, appearance.eye_style, appearance.mouth_style)
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	var m := face_material()
+	dress_face(m, SimAppearance.Face.NEUTRAL,
+		appearance.eye_style, appearance.mouth_style)
 	node.material_override = m
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return node

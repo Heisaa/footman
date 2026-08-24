@@ -81,8 +81,9 @@ kit ever wants its own.
 - Hair: one mesh per cut, named `Hair0`, `Hair1`, … The seed picks which is
   visible and the rest are hidden. Match `SimCharacterBuilder.HAIR_LIBRARY` for
   order if you want the same man to keep his hair across the two builders.
-- Accessories: `Accessory0` is a headband, `Accessory1` a cap. No accessory
-  hides both.
+- Accessories: `Accessory0` is a headband, and it is the only one. A cap was
+  here and came out -- sized to clear a head of hair it covers the whole skull
+  in kit colour and reads as a hard hat. No accessory hides it.
 - Face: a mesh named `Face` whose albedo texture the game replaces —
   `SimFaceAtlas` draws all five expressions at runtime, so the model needs a
   face-shaped surface and no face art.
@@ -158,7 +159,7 @@ is its own document and this one does not govern how a shape is arrived at.
 There are two routes out of it, and the second is the one that ships.
 
 **`./art/model.sh` — built to the count.** `art/toy/` assembles the same man out
-of rings at the density he ships at: about 3,200 triangles drawn, 12,000 in the
+of rings at the density he ships at: about 5,900 triangles drawn, 31,000 in the
 file because every hair cut is in there and one is shown.
 
     ./art/model.sh --body standard              one of the five

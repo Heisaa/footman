@@ -32,6 +32,7 @@ first -- see `docs/THE_MODELS.md`.
 
 import numpy as np
 
+from .body import ANKLE_X, ARM_IN, HIP_X
 from .sdf import Capsule, Prim
 
 
@@ -134,11 +135,11 @@ def skeleton(look, h):
         # the sleeve -- which hangs off the shirt's shoulder slope, above and
         # inboard of the arm -- falls outside the arm's cell and stays behind
         # when the arm lifts. Set inside the sleeve, the sleeve goes with it.
-        shoulder_at = (side * w * 0.68, 0.0, h * 0.545)
-        arm_top = (side * w * 0.74, 0.0, h * 0.515)
-        wrist = (side * w * 0.90, 0.0, h * 0.295)
+        shoulder_at = (side * w * (0.68 - ARM_IN), 0.0, h * 0.545)
+        arm_top = (side * w * (0.74 - ARM_IN), 0.0, h * 0.515)
+        wrist = (side * w * (0.90 - ARM_IN), 0.0, h * 0.295)
         elbow_at = _along(arm_top, wrist, 0.56)
-        hand_at = (side * w * 0.92, 0.0, h * 0.258)
+        hand_at = (side * w * (0.92 - ARM_IN), 0.0, h * 0.258)
 
         joints.append(Joint("Shoulder" + tag, "Spine", shoulder_at, Capsule(
             shoulder_at, elbow_at, limb * 1.55, limb * 1.15), depth=1))
@@ -146,13 +147,16 @@ def skeleton(look, h):
             elbow_at, hand_at, limb * 1.15, limb * 1.35), depth=2))
 
         # --- Leg -------------------------------------------------------------
-        hip_at = (side * w * 0.40, 0.0, h * 0.305)
-        ankle_at = (side * w * 0.44, 0.0, h * 0.095)
+        # `body.HIP_X` and `body.ANKLE_X`, not copies of them: a pivot that
+        # does not sit where the leg was built is a joint in the middle of
+        # nothing, and this file said so about the numbers it was duplicating.
+        hip_at = (side * w * HIP_X, 0.0, h * 0.305)
+        ankle_at = (side * w * ANKLE_X, 0.0, h * 0.095)
         knee_at = _along(hip_at, ankle_at, 0.548)
         # Forward and down, under the instep: the boot is a wedge with its heel
         # under the ankle, so a bone straight down would leave the toe nearer
         # the shin than the foot.
-        toe = (side * w * 0.44, -h * 0.100, h * 0.030)
+        toe = (side * w * ANKLE_X, -h * 0.100, h * 0.030)
 
         # Fat enough to take the leg of the shorts with the thigh. The tube is
         # w*0.31 across, which is about the same as limb*1.75 at any build.

@@ -7,8 +7,10 @@ The other export, `art/export.py`, cuts the distance-field figure into joints
 and thins it to a budget. This one does not thin anything: `art/toy/` builds the
 same man to a triangle count in the first place, so a hem is a hem, a sock hoop
 is a band of the sock, and no seam has two copies of one surface to fight over.
-About three thousand triangles against that one's twenty, and it is the better
-looking of the two.
+About six thousand triangles drawn -- a body of 4,300 and one head of hair --
+against that one's twenty, and it is the better looking of the two. The file
+itself is thirty thousand because it carries all eighteen cuts and the game
+shows one.
 
 `docs/THE_MODELS.md` is the contract and this answers all of it: the axes, the
 1.78 m reference, materials named for their slot, the joints the animation poses
@@ -41,6 +43,10 @@ REFERENCE_HEIGHT = 1.78
 PLACEHOLDER = {
     "shirt": Color("c8202b"), "shorts": Color("f4f2ee"), "trim": Color("f4f2ee"),
     "skin": Color("e8bd95"), "hair": Color("4a2f1e"), "boot": Color("1a1a1c"),
+    # Outside the game's slot table on purpose, like `face`: an eye is black in
+    # every kit. The game swaps in a glossy version of this, because the gloss
+    # is the whole point and a glTF material cannot carry Godot's clear coat.
+    "eye": Color("101014"),
     # The face placeholder is the skin, so a render shows the head and not a
 # white plate. In the game the atlas replaces it and carries its own alpha.
     "face": Color("e8bd95"),
@@ -64,7 +70,7 @@ def parse_args(argv):
     p.add_argument("--out", default=DEFAULT_OUT)
     p.add_argument("--name", default="")
     p.add_argument("--extra", type=int, default=-1,
-                   help="which accessory a --shot shows: 0 headband, 1 cap, -1 none")
+                   help="which accessory a --shot shows: 0 headband, -1 none")
     p.add_argument("--tache", type=int, default=1,
                    help="whether a --shot wears the moustache")
     p.add_argument("--hair", type=int, default=7,
@@ -191,6 +197,33 @@ def brows(head, head_r, depth, slots, pivot, head_pivot):
     return node
 
 
+def eyes(head, head_r, depth, slots, pivot, head_pivot):
+    """`Eyes`, and the two beads the game poses on it.
+
+    The same shape as `brows` above and for the same reason: the game owns where
+    a feature goes, because it is the game that knows the man's eye style and
+    what has just happened to him. All this writes is two unit spheres in a node
+    at the right place, and `SimCharacterBuilder._pose_eyes` does the rest.
+
+    They wear a material named `eye`, which is **not** in the game's slot table
+    on purpose -- an eye is black in every kit, and a name outside the table
+    keeps the colour it was authored in.
+    """
+    node = bpy.data.objects.new("Eyes", None)
+    node.empty_display_size = 0.02
+    bpy.context.collection.objects.link(node)
+    node.parent = head
+    node.location = (0.0, head_r * toy.FACE_SHELL - depth - toy.EYE_STAND,
+                     pivot[2] - head_pivot[2])
+    unit = head_r * toy.FACE_QUAD / 32.0
+    from toy import mesh as M
+    for side in ("L", "R"):
+        bead = M.blob((0.0, 0.0, 0.0), (unit, unit, unit), 12, 8, "eye",
+                      name="Eye" + side)
+        upload(bead, node, (0.0, 0.0, 0.0), slots)
+    return node
+
+
 def main():
     args = parse_args(sys.argv)
     clear()
@@ -243,12 +276,14 @@ def main():
         node = upload(part, nodes["Head"], pivots["Head"], slots)
         node.name = name
         total += part.tris()
-    print("  %-10s %s" % ("extras", "Moustache Accessory0 Accessory1"))
+    print("  %-10s %s" % ("extras", "Moustache Accessory0 Eyes"))
 
     eye_z = look.height * (toy.CHIN + toy.CROWN) * 0.5 \
         - look.head_h * look.height * 0.06
     brows(nodes["Head"], built.head_r, look.head_d * look.height, slots,
           (0.0, 0.0, eye_z), pivots["Head"])
+    eyes(nodes["Head"], built.head_r, look.head_d * look.height, slots,
+         (0.0, 0.0, eye_z), pivots["Head"])
     print("  %d triangles, head_r %.4f" % (total, built.head_r))
 
     if args.shot:
@@ -263,9 +298,8 @@ def main():
         face = bpy.data.objects.get("Face")
         if face is not None:
             face.hide_render = True
-        # The accessories are one-of, and the moustache is a coin toss. Showing
-        # them all at once is a man in a cap under a headband.
-        for i in (0, 1):
+        # The accessory is worn or it is not, and the moustache is a coin toss.
+        for i in (0,):
             obj = bpy.data.objects.get("Accessory%d" % i)
             if obj is not None:
                 obj.hide_render = i != args.extra

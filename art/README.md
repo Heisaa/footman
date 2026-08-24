@@ -6,7 +6,7 @@ instead of a Godot launch. It is not a port of
 see *Why a distance field* below.
 
 **Two ways out, and `./art/model.sh` is the one that ships.** `art/toy/` builds
-the same man out of rings at the density he ships at -- about 3,200 triangles --
+the same man out of rings at the density he ships at -- about 5,900 triangles --
 so nothing is thinned and no hem, trim or seam is ever rewritten by a decimator.
 `docs/THE_MODELS.md` has the argument and what is still open in it.
 

@@ -49,7 +49,30 @@ const WHITE := Color(1.0, 1.0, 1.0, 1.0)
 ## rather than grey -- shadow on skin is skin with the light taken out of it, and
 ## a neutral grey over a tan face reads as dirt.
 const SOCKET := Color(0.24, 0.13, 0.10, 0.58)
-const GLOSS := Color(1.0, 1.0, 1.0, 0.72)
+## **A drawn catch light was the wrong answer and a shine map was the wrong fix
+## for it.** A painted dot is fixed to the head: it does not move when the sun
+## does, it is brightest where the eye is turning away, and it stays put when the
+## man walks into shade -- the one thing on a moulded figure that says *sticker*.
+##
+## Telling the material where the wet part is instead -- a roughness texture,
+## smooth over the eyes and dead matte everywhere else -- does not work either,
+## and the reason is worth keeping: **this patch is alpha-blended and carries no
+## specular at all.** Set the whole quad to a roughness of 0.12 with full
+## specular and not one pixel of it lights up, while the nose beside it, which is
+## geometry, catches the key light and travels with it.
+##
+## So the eye is geometry, the way the renders build it.
+## `SimCharacterBuilder._eyes` is the bead and `eye_pose` below is where it goes.
+## The mouth, and it is **not ink**.
+##
+## Every reference mouth is a *groove in the skin*: a shallow warm-brown crease
+## the light runs along, not a black line laid on the face. Drawn in `INK` at
+## the thickness of a pen the man has a mark on him -- against an eye that is
+## genuinely black it reads as a second, smaller eye, and against dark skin it
+## reads as a hole. Warm, and translucent so the skin it is cut into still shows
+## through: on a pale face it is brown and on a dark one it is a shade of that
+## face, which is what a crease is.
+const GROOVE := Color(0.30, 0.16, 0.12, 0.72)
 
 ## Eyes, and they are black shapes: `rx`/`ry` are the half-axes, `gap` half the
 ## distance between them, `y` how far down the face they sit. No whites, no
@@ -101,30 +124,47 @@ const EYE_STYLES := [
 ## `half` near 4 read as brows and the ones near 3 read as a second pair of eyes:
 ## against eyes this big a short bar is just another dark oval on the face. The
 ## lifts come down a little with it -- a brow belongs close over the eye.
+##
+## **A resting face is level-browed.** The tilts here used to run -1.4 to +0.9,
+## which on a brow 3.6 units long is up to twenty degrees -- so a quarter of any
+## squad scowled or fretted permanently, before anything had happened to them.
+## Every reference figure has level brows and the whole Mii trick is that the
+## brows carry the *moment*: `brow_pose` swings them by 1.6 to 3.2 for effort,
+## delight, despair and anger, and that swing is invisible if a man starts
+## halfway there. Halved, the styles still tell each other apart close up and
+## nobody is angry at kick-off.
 const BROW_STYLES := [
 	{"lift": 0.0, "tilt": 0.0, "half": 0.0, "thick": 0.0},
 	{"lift": 5.3, "tilt": 0.0, "half": 3.6, "thick": 1.0},
 	{"lift": 5.3, "tilt": 0.0, "half": 3.9, "thick": 1.25},
-	{"lift": 5.8, "tilt": -0.7, "half": 3.8, "thick": 1.0},
-	{"lift": 5.3, "tilt": 0.7, "half": 3.9, "thick": 1.25},
-	{"lift": 6.1, "tilt": -1.4, "half": 3.6, "thick": 0.9},
-	{"lift": 5.0, "tilt": 0.9, "half": 3.6, "thick": 1.4},
+	{"lift": 5.8, "tilt": -0.3, "half": 3.8, "thick": 1.0},
+	{"lift": 5.3, "tilt": 0.3, "half": 3.9, "thick": 1.25},
+	{"lift": 6.1, "tilt": -0.6, "half": 3.6, "thick": 0.9},
+	{"lift": 5.0, "tilt": 0.4, "half": 3.6, "thick": 1.4},
 	{"lift": 5.8, "tilt": 0.0, "half": 4.2, "thick": 0.9},
 ]
 
 ## Mouths, for the face a player wears when nothing is happening. They sit
 ## closer under the nose than they did: the features were spread over the whole
 ## face and read as a long jaw with a mouth lost at the bottom of it.
+##
+## Wider, all of them. A reference mouth spans about a third of the face; ours
+## spanned a sixth and sat under a nose and two big eyes looking like a stitch.
+## `w` is the full width for a line and the half-width for an arc, so the two
+## columns are not the same number for the same mouth.
 const MOUTH_STYLES := [
-	{"kind": "line", "w": 5.0, "y": 23.2},
-	{"kind": "smile", "w": 4.0, "y": 22.6},
-	{"kind": "frown", "w": 3.4, "y": 23.8},
-	{"kind": "open", "w": 2.1, "y": 23.2},
-	{"kind": "line", "w": 7.4, "y": 23.2},
-	{"kind": "smile", "w": 5.6, "y": 22.2},
-	{"kind": "line", "w": 3.0, "y": 23.2},
-	{"kind": "open", "w": 1.5, "y": 23.4},
+	{"kind": "line", "w": 8.0, "y": 23.2},
+	{"kind": "smile", "w": 5.2, "y": 22.6},
+	{"kind": "frown", "w": 4.6, "y": 23.8},
+	{"kind": "open", "w": 2.4, "y": 23.2},
+	{"kind": "line", "w": 10.4, "y": 23.2},
+	{"kind": "smile", "w": 6.6, "y": 22.2},
+	{"kind": "line", "w": 6.0, "y": 23.2},
+	{"kind": "open", "w": 1.8, "y": 23.4},
 ]
+
+## How deep the groove is, in grid units.
+const MOUTH_THICK := 1.9
 
 static var _cache := {}
 
@@ -147,6 +187,33 @@ static func texture_for(face: int, eyes: int = 0, mouth: int = 0) -> Texture2D:
 	var tex := ImageTexture.create_from_image(image)
 	_cache[key] = tex
 	return tex
+
+
+## Where a man's eye bead sits for a given moment, in the same unit grid the
+## face is drawn in: `gap` half the distance between them, `y` down the face,
+## `rx`/`ry` the half-axes, and `shut` when the moment draws a crease over the
+## top and the bead has to get out of the way.
+##
+## **The single table, the way `brow_pose` is.** The drawn face and the moulded
+## eye have to agree about where an eye is or a man's socket and his eye are in
+## two different places.
+static func eye_pose(eye_style: int, face: int) -> Dictionary:
+	var eye: Dictionary = EYE_STYLES[posmod(eye_style, EYE_STYLES.size())]
+	var rx: float = eye["rx"]
+	var ry: float = eye["ry"]
+	var y: float = eye["y"]
+	match face:
+		SimAppearance.Face.DESPAIR:
+			# Wide open: the eyes grow rather than change shape.
+			rx += 0.5
+			ry += 0.7
+		SimAppearance.Face.ANGER:
+			# Narrowed, not shut: squashed to seven tenths they stop being ovals.
+			ry *= 0.85
+			y += 0.4
+	var shut: bool = (face == SimAppearance.Face.EFFORT
+		or face == SimAppearance.Face.DELIGHT)
+	return {"gap": float(eye["gap"]), "y": y, "rx": rx, "ry": ry, "shut": shut}
 
 
 ## Where a man's brows sit for a given moment, in unit-grid numbers: `lift` above
@@ -208,43 +275,52 @@ static func _draw_face(image: Image, face: int, eye_style: int, mouth_style: int
 	_socket(image, left, y, rx, ry)
 	_socket(image, right, y, rx, ry)
 
+	_draw_eyes(image, face, eye, INK)
+
+	# The moments wear the same groove the resting mouths do, or a man changes
+	# material when something happens to him.
+	match face:
+		SimAppearance.Face.EFFORT:
+			_ellipse(image, 16.0, 23.4, 2.8, 3.2, GROOVE)
+		SimAppearance.Face.DELIGHT:
+			_arc(image, 16.0, 22.6, 6.0, true, MOUTH_THICK, GROOVE, 0.34)
+		SimAppearance.Face.DESPAIR:
+			_arc(image, 16.0, 24.4, 4.8, false, MOUTH_THICK, GROOVE, 0.34)
+		SimAppearance.Face.ANGER:
+			_line(image, 11.0, 23.6, 21.0, 23.6, MOUTH_THICK, GROOVE)
+		_:
+			_mouth(image, mouth)
+
+
+## The eye shapes, in whatever colour is asked for.
+##
+## Only the shut ones reach here now; an open eye is a moulded bead. Kept as its
+## own function because it is still two shapes and a `match`, and because the
+## socket underneath has to be drawn either way.
+static func _draw_eyes(
+	image: Image, face: int, eye: Dictionary, colour: Color
+) -> void:
+	var gap: float = eye["gap"]
+	var left: float = 16.0 - gap
+	var right: float = 16.0 + gap
+	var y: float = eye["y"]
+	var rx: float = eye["rx"]
+	var ry: float = eye["ry"]
+	# **Only the shut ones are drawn.** An open eye is a moulded bead now --
+	# `SimCharacterBuilder._eyes` -- because that is the one way it catches the
+	# light, and catching the light is the whole of what makes an eye read as
+	# wet. A closed eye is a crease and a crease is a drawing, so those two stay
+	# here and the bead is hidden under them.
 	match face:
 		SimAppearance.Face.EFFORT:
 			# Screwed shut, whatever shape they are open.
-			_line(image, left - rx, y, left + rx, y, 1.4)
-			_line(image, right - rx, y, right + rx, y, 1.4)
+			_line(image, left - rx, y, left + rx, y, 1.4, colour)
+			_line(image, right - rx, y, right + rx, y, 1.4, colour)
 		SimAppearance.Face.DELIGHT:
-			_arc(image, left, y, rx + 0.8, false, 1.3)
-			_arc(image, right, y, rx + 0.8, false, 1.3)
-		SimAppearance.Face.DESPAIR:
-			# Wide open: the eyes grow rather than change shape.
-			_ellipse(image, left, y, rx + 0.5, ry + 0.7, INK)
-			_ellipse(image, right, y, rx + 0.5, ry + 0.7, INK)
-			_gloss(image, left, y, rx + 0.5, ry + 0.7)
-			_gloss(image, right, y, rx + 0.5, ry + 0.7)
-		SimAppearance.Face.ANGER:
-			# Narrowed, not shut: squashed to seven tenths they stop being ovals.
-			_ellipse(image, left, y + 0.4, rx, ry * 0.85, INK)
-			_ellipse(image, right, y + 0.4, rx, ry * 0.85, INK)
-			_gloss(image, left, y + 0.4, rx, ry * 0.85)
-			_gloss(image, right, y + 0.4, rx, ry * 0.85)
+			_arc(image, left, y, rx + 0.8, false, 1.3, colour)
+			_arc(image, right, y, rx + 0.8, false, 1.3, colour)
 		_:
-			_ellipse(image, left, y, rx, ry, INK)
-			_ellipse(image, right, y, rx, ry, INK)
-			_gloss(image, left, y, rx, ry)
-			_gloss(image, right, y, rx, ry)
-
-	match face:
-		SimAppearance.Face.EFFORT:
-			_ellipse(image, 16.0, 23.4, 2.8, 3.2, INK)
-		SimAppearance.Face.DELIGHT:
-			_arc(image, 16.0, 22.6, 4.6, true, 1.5)
-		SimAppearance.Face.DESPAIR:
-			_arc(image, 16.0, 24.4, 3.6, false, 1.4)
-		SimAppearance.Face.ANGER:
-			_line(image, 12.8, 23.6, 19.2, 23.6, 1.4)
-		_:
-			_mouth(image, mouth)
+			pass
 
 
 ## The shading a recess would have cast, drawn because there is no recess.
@@ -273,32 +349,23 @@ static func _socket(image: Image, cx: float, cy: float, rx: float, ry: float) ->
 			_blend(image, x, y, SOCKET, fade * SOCKET.a)
 
 
-## The wet highlight. One dot, up and inboard, the same on every eye.
-##
-## The reference eye is the glossiest thing on the whole figure and the catch
-## light is most of what makes it read as an eye rather than a hole. Ours is a
-## flat texture and cannot catch anything, so it is painted -- which fixes it
-## relative to the head instead of to the sun, and at this size nobody will ever
-## know. Small: at twice this it is a cartoon sparkle.
-static func _gloss(image: Image, cx: float, cy: float, rx: float, ry: float) -> void:
-	_ellipse(image, cx - rx * 0.36, cy - ry * 0.38,
-		maxf(rx * 0.21, 0.26), maxf(ry * 0.21, 0.26), GLOSS)
-
-
 ## One brow. `inner` is +1 for the left eye and -1 for the right, so a positive
 ## tilt drops the inner ends on both sides and the man scowls.
+## A moulded groove, wide and shallow. `GROOVE` and `_arc`'s `depth` have the
+## argument; `MOUTH_THICK` is the third part of it -- a crease has a width you
+## can see the light sit in, and at 1.4 this was a pen line.
 static func _mouth(image: Image, mouth: Dictionary) -> void:
 	var w: float = mouth["w"]
 	var y: float = mouth["y"]
 	match mouth["kind"]:
 		"smile":
-			_arc(image, 16.0, y, w, true, 1.4)
+			_arc(image, 16.0, y, w, true, MOUTH_THICK, GROOVE, 0.26)
 		"frown":
-			_arc(image, 16.0, y, w, false, 1.4)
+			_arc(image, 16.0, y, w, false, MOUTH_THICK, GROOVE, 0.26)
 		"open":
-			_ellipse(image, 16.0, y, w, w * 1.15, INK)
+			_ellipse(image, 16.0, y, w, w * 1.15, GROOVE)
 		_:
-			_line(image, 16.0 - w * 0.5, y, 16.0 + w * 0.5, y, 1.4)
+			_line(image, 16.0 - w * 0.5, y, 16.0 + w * 0.5, y, MOUTH_THICK, GROOVE)
 
 
 # --- Drawing ----------------------------------------------------------------
@@ -347,29 +414,38 @@ static func _ellipse(
 
 
 static func _line(
-	image: Image, x0: float, y0: float, x1: float, y1: float, thickness: float
+	image: Image, x0: float, y0: float, x1: float, y1: float, thickness: float,
+	colour := INK
 ) -> void:
-	_stroke(image, PackedVector2Array([Vector2(x0, y0), Vector2(x1, y1)]), thickness)
+	_stroke(image, PackedVector2Array([Vector2(x0, y0), Vector2(x1, y1)]),
+		thickness, colour)
 
 
 ## A half-ellipse. `up` lifts the ends relative to the middle -- a smile, or an
 ## eye squinting shut; `up` false lifts the middle -- a frown, or an eye arched
 ## in delight. The image's y grows downward, and every caller had this the wrong
 ## way round once: delight was drawn as despair, and despair as delight.
+## `depth` is the rise at the middle as a fraction of the half-width. Half is a
+## deep bowl and it is what the mouths were drawn at; the reference smile is a
+## long shallow curve, nearer a quarter. The eyes keep the deep one -- a squint
+## is a bowl.
 static func _arc(
-	image: Image, cx: float, cy: float, radius: float, up: bool, thickness: float
+	image: Image, cx: float, cy: float, radius: float, up: bool, thickness: float,
+	colour := INK, depth := 0.5
 ) -> void:
 	var points := PackedVector2Array()
 	var steps := 14
 	for i in steps + 1:
 		var t := -1.0 + 2.0 * float(i) / float(steps)
-		var offset := (1.0 - t * t) * radius * 0.5
+		var offset := (1.0 - t * t) * radius * depth
 		points.append(Vector2(cx + t * radius, cy + (offset if up else -offset)))
-	_stroke(image, points, thickness)
+	_stroke(image, points, thickness, colour)
 
 
-## A polyline in ink with round caps and joins, drawn from the distance to it.
-static func _stroke(image: Image, points: PackedVector2Array, thickness: float) -> void:
+## A polyline with round caps and joins, drawn from the distance to it.
+static func _stroke(
+	image: Image, points: PackedVector2Array, thickness: float, colour := INK
+) -> void:
 	if points.size() < 2:
 		return
 	var half: float = maxf(thickness * 0.5 * SCALE, 0.5)
@@ -391,7 +467,7 @@ static func _stroke(image: Image, points: PackedVector2Array, thickness: float) 
 			var best := INF
 			for i in pixels.size() - 1:
 				best = minf(best, _distance_to_segment(at, pixels[i], pixels[i + 1]))
-			_blend(image, x, y, INK, clampf(half - best + 0.5, 0.0, 1.0))
+			_blend(image, x, y, colour, clampf(half - best + 0.5, 0.0, 1.0))
 
 
 static func _distance_to_segment(p: Vector2, a: Vector2, b: Vector2) -> float:

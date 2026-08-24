@@ -103,6 +103,35 @@ class Look:
         return 0.032 + 0.010 * self.build
 
 
+## Where a man stands, in fractions of trunk half-width.
+##
+## **The stance is one number and three files copy it.** `toy/figure.py` builds
+## the legs, `rig.py` puts the pivots on them and this file moulds them, and a
+## hip moved in one and not the others is a joint in the middle of nothing.
+##
+## In from 0.40 and 0.44. A thigh at 0.40 with the leg of the shorts round it
+## finished wider than the shirt hem above it, so the shorts came out through
+## the shirt instead of under it and the two crossed in a ragged zigzag all the
+## way round the waist -- and the seat, at w*0.66, was the widest thing on the
+## whole figure. The references stand with the legs close and the shirt hanging
+## over the shorts, and this is what buys both.
+HIP_X = 0.355
+ANKLE_X = 0.395
+
+## How far the whole arm is pulled in towards the body, in the same units.
+##
+## **Subtracted from every x on the arm, never from one of them.** The shoulder,
+## the top of the arm, the wrist and the hand were 0.68, 0.74, 0.90 and 0.92 --
+## an axis leaning out at a fixed angle -- and moving any one of them changes
+## that angle instead of the position. Taking the same amount off all four
+## slides the limb inboard and leaves the lean exactly as it was.
+##
+## What it buys is the shoulder. The sleeve *is* the shoulder on this figure, so
+## how far out the arm hangs is how pronounced the shoulder is; at 0.68 the
+## sleeve stood off the shirt as a separate lump on each side. Buried a little
+## further into the trunk it is a shoulder again.
+ARM_IN = 0.050
+
 # Heights, in fractions of total height, off the references.
 BOOT_TOP = 0.095
 SOCK_TOP = 0.225
@@ -186,8 +215,8 @@ def _body(skin, look, h):
         # Arms hang almost straight, a few degrees out. Straight down and the
         # arm merges with the trunk in silhouette; that gap is cheap daylight.
         # Outside the trunk, not inside it, with daylight between the two.
-        top = (side * w * 0.74, 0.0, h * (SHOULDER - 0.090))
-        wrist = (side * w * 0.90, 0.0, h * 0.295)
+        top = (side * w * (0.74 - ARM_IN), 0.0, h * (SHOULDER - 0.090))
+        wrist = (side * w * (0.90 - ARM_IN), 0.0, h * 0.295)
         # Measured: the reference arm is .060 of figure height in radius where
         # it passes the chest. Ours was .0706 -- and an arm that much thicker
         # closes the gap to the body on its own, whatever its centre line does.
@@ -202,7 +231,7 @@ def _body(skin, look, h):
         # with a small enough fillet to leave a crease between the two. No
         # fingers -- the reference has none either, and the thumb is the whole
         # of what says hand rather than the end of an arm.
-        hand = (side * w * 0.92, 0.0, h * 0.258)
+        hand = (side * w * (0.92 - ARM_IN), 0.0, h * 0.258)
         skin.add(Ellipsoid(hand, (limb * 1.12, limb * 1.02, limb * 1.30)),
                  k=h * 0.014)
         skin.add(Ellipsoid((hand[0] - side * limb * 0.72, -limb * 0.34, h * 0.276),
@@ -212,8 +241,8 @@ def _body(skin, look, h):
         # have it and the opposite of what a constant limb radius gives.
         # Inside the leg of the shorts, or the thigh comes through the front of
         # them as a patch of bare skin.
-        hip = (side * w * 0.40, 0.0, h * (SHORTS_HEM + 0.06))
-        ankle = (side * w * 0.44, 0.0, h * BOOT_TOP)
+        hip = (side * w * HIP_X, 0.0, h * (SHORTS_HEM + 0.06))
+        ankle = (side * w * ANKLE_X, 0.0, h * BOOT_TOP)
         # Small, for the same reason the arm's is: a fillet this wide blends the
         # leg into everything already in the solid, the arm included, and welds
         # the two together across a gap that should be daylight.
@@ -602,12 +631,14 @@ def _kit(shirt, trim, collar, shorts, socks, boots, stripes, hoops, look, h):
     shorts_round = h * 0.072
     crotch = h * (SHORTS_HEM + 0.070)
     shorts_high = h * SHIRT_HEM + h * 0.030
-    seat_half = w * 0.66
+    # In from 0.66. `HIP_X` has the argument: the seat was the widest thing on
+    # the figure and the shirt hem could not hang over it.
+    seat_half = w * 0.600
     shorts.add(Barrel(
         (0.0, 0.0, (crotch + shorts_high) * 0.5),
         (seat_half, h * 0.082), (shorts_high - crotch) * 0.5,
         round=shorts_round))
-    leg_r = w * 0.31
+    leg_r = w * 0.285
     for side in (-1.0, 1.0):
         leg_x = side * (seat_half - leg_r)
         shorts.add(Capsule((leg_x, 0.0, crotch + h * 0.030),
@@ -619,8 +650,8 @@ def _kit(shirt, trim, collar, shorts, socks, boots, stripes, hoops, look, h):
     # Everyone wears them and they are pulled up. A flat top, level on both
     # legs, is the third of the three hard edges the kit is made of.
     for side in (-1.0, 1.0):
-        top = (side * w * 0.43, 0.0, h * (SOCK_TOP + 0.02))
-        ankle = (side * w * 0.44, 0.0, h * (BOOT_TOP - 0.005))
+        top = (side * w * (ANKLE_X - 0.010), 0.0, h * (SOCK_TOP + 0.02))
+        ankle = (side * w * ANKLE_X, 0.0, h * (BOOT_TOP - 0.005))
         socks.add(Capsule(top, ankle, limb * 1.52, limb * 1.28))
     socks.cut(Plane((0.0, 0.0, h * SOCK_TOP), (0.0, 0.0, -1.0)), k=h * 0.004)
 
@@ -645,7 +676,7 @@ def _kit(shirt, trim, collar, shorts, socks, boots, stripes, hoops, look, h):
     for side in (-1.0, 1.0):
         for i in range(look.sock_hoops):
             at = h * (SOCK_TOP - 0.024 - i * 0.030)
-            hoops.add(RoundBox((side * w * 0.44, 0.0, at),
+            hoops.add(RoundBox((side * w * ANKLE_X, 0.0, at),
                                (limb * 2.2, limb * 2.2, h * 0.009),
                                radius=h * 0.0026))
     # Standing a little proud of it, the way the stripes stand off the boot.
@@ -662,7 +693,7 @@ def _kit(shirt, trim, collar, shorts, socks, boots, stripes, hoops, look, h):
     # and a shadow under the sole, and that is most of what says football boot.
     sole = h * 0.017
     for side in (-1.0, 1.0):
-        x = side * w * 0.44
+        x = side * w * ANKLE_X
         # The last: heel under the ankle, toe forward and lower, so the boot is
         # a wedge rather than a sausage lying down. A broad round toe -- the
         # reference boot is wide and blunt at the front, never pointed.
@@ -682,7 +713,7 @@ def _kit(shirt, trim, collar, shorts, socks, boots, stripes, hoops, look, h):
     # Studs, added after the sole is cut so the cut does not take them off with
     # it -- ops run in order, and a plane cut applies to the whole solid.
     for side in (-1.0, 1.0):
-        x = side * w * 0.44
+        x = side * w * ANKLE_X
         for at_y, spread in ((-h * 0.104, 0.52), (-h * 0.058, 0.62),
                              (h * 0.030, 0.42)):
             for out in (-1.0, 1.0):
@@ -695,7 +726,7 @@ def _kit(shirt, trim, collar, shorts, socks, boots, stripes, hoops, look, h):
     # curved instep at their ends, and no amount of placing them by hand fixes
     # that on a surface this round.
     for side in (-1.0, 1.0):
-        x = side * w * 0.44
+        x = side * w * ANKLE_X
         for i in range(4):
             # On the **instep**, well in front of the ankle collar. The slab
             # runs across the whole boot, so any of it that reaches back as far

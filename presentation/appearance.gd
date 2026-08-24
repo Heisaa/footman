@@ -75,7 +75,10 @@ const LIGHT_HAIR_CHANCE := 0.08
 ## Beards were here and came out: a sphere on the jaw is a blob whatever size it
 ## is, and it swallowed the mouth, which is half the expression. Facial hair
 ## belongs on the drawn face if it comes back at all.
-const ACCESSORIES := ["none", "none", "none", "none", "headband", "cap"]
+##
+## The cap went the same way. Sized to clear a head of hair it covered the whole
+## skull in kit colour and read as a hard hat, and no reference wears one.
+const ACCESSORIES := ["none", "none", "none", "none", "headband"]
 
 var height := 1.78
 var head_fraction := 0.37
@@ -261,11 +264,12 @@ static func face_for_anim(anim: int, stamina: float) -> int:
 ## A two- or three-colour kit palette for a club, drawn from the master palette
 ## so the game stays coherent and can be re-skinned per competition.
 static func kit_for(primary: Color) -> PackedColorArray:
-	# Shirt, trim, shorts. The trim stays black or white -- it is the collar, the
-	# cuffs, the sock hoops and the number, and all four have to read against the
-	# shirt at any distance -- while the shorts are free to be a colour.
+	# Shirt, trim, shorts. The trim is the collar V, the cuffs, the sock hoops
+	# and the boot stripes, and `SimPalette.trim_for` says why it is white on
+	# almost every shirt rather than whichever of black and white contrasts.
+	# The shorts are free to be a colour.
 	return PackedColorArray([
-		primary, SimPalette.contrast_for(primary), SimPalette.shorts_for(primary)])
+		primary, SimPalette.trim_for(primary), SimPalette.shorts_for(primary)])
 
 
 ## Picks an away kit that will not be mistaken for the home one.

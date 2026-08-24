@@ -40,6 +40,18 @@ SHIRT_HEM = 0.380
 CHIN = 0.625
 CROWN = 0.950
 
+## Where a man stands, in fractions of trunk half-width. `figure/body.py` holds
+## the same two numbers and the argument for them; `figure/rig.py` puts the
+## pivots on them. All three have to agree or a joint sits in the middle of
+## nothing.
+HIP_X = 0.355
+ANKLE_X = 0.395
+
+## How far the whole arm is pulled in towards the body. `figure/body.py` holds
+## the same number and the argument for it; `figure/rig.py` puts the shoulder
+## and elbow pivots on it.
+ARM_IN = 0.050
+
 # How round each thing is in plan: 2 is an ellipse, 4 a rounded rectangle. The
 # head is the one that matters -- a ball head is the single easiest way to lose
 # the register, and the references are emphatically boxes with the corners off.
@@ -49,7 +61,12 @@ LIMB_POWER = 2.0
 
 # Segments round a part. The head and the trunk carry the silhouette; a sock
 # seen from twenty metres does not.
-FINE = 16
+#
+# Up from 16, and `SKULL`'s plan powers are why: a jaw at 3.4 and up has corners
+# in its section, which is the point -- a cheek needs an edge for the light to
+# turn on -- but sixteen segments render those corners as facets. Twenty costs a
+# few hundred triangles on a figure that ships at twenty thousand.
+FINE = 20
 COARSE = 10
 
 ## Segments round a head of hair, and it is deliberately double the head's.
@@ -92,6 +109,17 @@ FACE_RADIUS = 1.02
 ## Measured, not guessed: `tools/_brow_probe.gd` prints where a built brow
 ## actually lands against the skull's own surface.
 BROW_STAND = 0.020
+
+## How far the eye bead's node stands off the face, in metres.
+##
+## The same problem `BROW_STAND` solves and measured the same way. `_pose_eyes`
+## lays the beads on a **sphere** of `head_r * FACE_SHELL`, and this head is a
+## rounded box that is flatter across the face than any sphere through the same
+## points -- so a bead sized to sit on the sphere is a centimetre inside the
+## cheek by the time it has moved out to where an eye is, and all that shows is a
+## slanted sliver of its inner edge. Standing the whole node forward puts the
+## front of the bead a few millimetres proud, which is where the mould has it.
+EYE_STAND = 0.018
 FACE_QUAD = 1.5      # SimCharacterBuilder.FACE_QUAD
 FACE_SHELL = 1.02    # SimCharacterBuilder.FACE_SHELL
 EYE_ROW = 14.6 / 32.0   # SimFaceAtlas.EYE_ROW / GRID
@@ -136,10 +164,13 @@ def _trunk(fig, look, h, w, segs):
     # is the silhouette -- vertical sides and a domed lid is a postbox, whatever
     # the radius, and the sandbox spent a week finding that out.
     rings = [
-        M.Ring(h * SHIRT_HEM, w * 0.620, h * 0.088, hard=True),
-        M.Ring(h * 0.400, w * 0.624, h * 0.088),
-        M.Ring(h * 0.470, w * 0.628, h * 0.086),
-        M.Ring(h * 0.520, w * 0.640, h * 0.082),
+        # Out from 0.620. The shirt hem is the widest thing on the trunk below
+        # the shoulder in every reference, and it has to be wider than the seat
+        # under it or it does not hang over the shorts -- it crosses them.
+        M.Ring(h * SHIRT_HEM, w * 0.640, h * 0.088, hard=True),
+        M.Ring(h * 0.400, w * 0.642, h * 0.088),
+        M.Ring(h * 0.470, w * 0.644, h * 0.086),
+        M.Ring(h * 0.520, w * 0.650, h * 0.082),
         # The torso stops at the armpit and **the sleeve is the shoulder**.
         # Tried the other way round -- one tube carrying the shoulder out to the
         # arm -- and a ring wide enough to reach the sleeve has to come back in
@@ -147,10 +178,22 @@ def _trunk(fig, look, h, w, segs):
         # of daylight at each shoulder. `drop` is still what makes this a
         # shoulder and not a dome: about twenty degrees out to the arm, which is
         # what the reference measures.
-        M.Ring(h * 0.556, w * 0.645, h * 0.078),
+        M.Ring(h * 0.556, w * 0.655, h * 0.078),
         M.Ring(h * 0.578, w * 0.720, h * 0.068, drop=h * 0.030),
-        M.Ring(h * 0.598, w * 0.560, h * 0.052, drop=h * 0.020),
-        M.Ring(h * 0.612, w * 0.300, h * 0.040, drop=h * 0.006),
+        # Two rings where the neckline is, not one. `_vee` paints the V into
+        # these faces, so the number of rows between the shoulder and the collar
+        # **is** how many steps the V has to narrow in -- with one row it can
+        # only be a bar, and raising the collar turned it into one.
+        M.Ring(h * 0.592, w * 0.640, h * 0.058, drop=h * 0.024),
+        M.Ring(h * 0.606, w * 0.520, h * 0.050, drop=h * 0.018),
+        M.Ring(h * 0.618, w * 0.400, h * 0.044, drop=h * 0.010),
+        # **The collar has to reach the chin.** The references have no neck
+        # whatever -- the head sits straight on the shirt -- and the collar
+        # finishing at 0.612 against a chin at 0.630 left a band of bare skin
+        # nearly two centimetres deep under every jaw, which is a neck however
+        # short it is. Taken up to just under the chin, the jaw sits in the
+        # collar hole and closes it, which is what a collar does.
+        M.Ring(h * 0.626, w * 0.300, h * 0.040, drop=h * 0.006),
     ]
     shirt = M.tube(rings, segs, SHIRT, power=TRUNK_POWER, name="shirt")
     # The neckline, as a **V of the shirt's own faces**. A separate insert has
@@ -164,18 +207,28 @@ def _trunk(fig, look, h, w, segs):
     # have no neck whatever and this is not one -- it is the two centimetres the
     # jaw does not reach.
     fig.put("Spine", M.tube([
-        M.Ring(h * 0.592, w * 0.21, w * 0.20),
-        M.Ring(h * 0.648, w * 0.22, w * 0.21),
+        M.Ring(h * 0.606, w * 0.21, w * 0.20),
+        M.Ring(h * 0.652, w * 0.22, w * 0.21),
     ], segs, SKIN, power=2.6, name="neck"))
 
     # The shorts, seat only: the legs hang off the hips and run up inside this,
     # so the two never share a surface and the notch between them is real.
+    #
+    # **In from 0.658, and under the shirt hem.** Two things were wrong with the
+    # old width and they were the same thing. The seat was the widest part of
+    # the whole figure -- wider than the chest, wider than the shirt hem at
+    # 0.620 -- so the shirt did not hang over the shorts, it *crossed* them, and
+    # two faceted rounded boxes crossing gave a zigzag right round the waist.
+    # And the leg of the shorts, out at the thigh, broke back out through the
+    # seat's own side at the hem, which is the vertical crease down each hip.
+    # Narrowing the seat is only possible because `HIP_X` brought the legs in;
+    # the two go together.
     fig.put("Spine", M.tube([
-        M.Ring(h * 0.300, w * 0.630, h * 0.078, hard=True),
-        M.Ring(h * 0.318, w * 0.658, h * 0.082),
-        M.Ring(h * 0.386, w * 0.660, h * 0.082),
-        M.Ring(h * 0.412, w * 0.628, h * 0.078),
-        M.Ring(h * 0.424, w * 0.560, h * 0.070),
+        M.Ring(h * 0.300, w * 0.608, h * 0.078, hard=True),
+        M.Ring(h * 0.318, w * 0.614, h * 0.082),
+        M.Ring(h * 0.386, w * 0.616, h * 0.082),
+        M.Ring(h * 0.412, w * 0.588, h * 0.078),
+        M.Ring(h * 0.424, w * 0.528, h * 0.070),
     ], segs, SHORTS, power=TRUNK_POWER, name="seat"))
 
 
@@ -185,9 +238,9 @@ def _vee(shirt, w, h):
     Measured off the reference: thirty per cent of the shirt's width and a fifth
     of its height, which is half what it was first built at.
     """
-    top = h * 0.604
-    depth = h * 0.046
-    half = w * 0.230
+    top = h * 0.626
+    depth = h * 0.050
+    half = w * 0.235
     for i, (face, material, smooth) in enumerate(shirt.faces):
         pts = [shirt.verts[v] for v in face]
         cx = sum(p[0] for p in pts) / len(pts)
@@ -211,16 +264,55 @@ def _vee(shirt, w, h):
 # head's own half-extents. Hair is built off the same numbers, so a cut cannot
 # drift off the head it is meant to be on.
 SKULL = [
-    (0.630, 0.60, -0.05, 2.6),
-    (0.660, 0.84, -0.04, 2.9),
-    (0.700, 0.95, -0.02, None),
-    (0.745, 1.00, 0.00, None),
-    (0.800, 1.00, 0.00, None),
-    (0.856, 0.97, 0.00, None),
-    (0.902, 0.86, 0.00, None),
-    (0.932, 0.64, 0.00, 2.6),
-    (0.950, 0.26, 0.00, 2.2),
+    # **Measured off the mould, not guessed.** These are `art/figure/body.py`'s
+    # head -- two rounded boxes and a neck stub smooth-unioned at h*0.05 --
+    # solved for its own half-width, its forward offset and the superellipse
+    # power of its plan section, at seventeen heights. That figure is what
+    # `art/renders/` shows, and the numbers here used to be a nine-row sketch of
+    # it that missed the two things the eye actually reads.
+    #
+    # **The cheeks.** The mould is fullest at 0.745 and stays over 1.00 from
+    # 0.720 to 0.805 -- a face wider than the cranium above it. The sketch
+    # peaked at exactly 1.00 across 0.745 to 0.800 and gave the chin the
+    # difference, so the head came out narrow through the cheek and heavy at the
+    # jaw, which is the wrong way round.
+    #
+    # **The plan.** One power for the whole head was the other miss. The mould
+    # is a rounded *box* at the jaw -- 3.4 and up, which is what gives a cheek a
+    # corner to catch the light on -- and rounder than a sketch's 2.6 through
+    # the cranium, where a boxy section is what makes a head read as square.
+    # (z, half-width, forward, plan power)
+    (0.632, 0.595, -0.003, 2.2),
+    (0.650, 0.705, -0.011, 3.4),
+    (0.670, 0.843, -0.020, 4.2),
+    (0.695, 0.949, -0.020, 4.0),
+    (0.720, 1.000, -0.017, 3.6),
+    (0.745, 1.018, -0.013, 3.2),
+    (0.775, 1.014, -0.006, 2.8),
+    (0.805, 1.000, -0.001, 2.5),
+    (0.835, 0.998, 0.000, 2.4),
+    (0.862, 0.967, 0.000, 2.4),
+    (0.885, 0.909, 0.000, 2.45),
+    (0.905, 0.829, 0.000, 2.5),
+    (0.921, 0.738, 0.000, 2.6),
+    (0.934, 0.636, 0.000, 2.7),
+    (0.944, 0.526, 0.000, 2.9),
+    (0.951, 0.414, 0.000, 3.2),
+    (0.956, 0.268, 0.000, 4.0),
 ]
+
+
+def skull_power(z):
+    """The plan section of the skull at this height, in fractions of height.
+
+    `SKULL` carries a power per row now -- boxy at the jaw, round through the
+    cranium -- so anything that has to sit **on** the head has to ask for the
+    section there rather than assume one. A ring rounder than the skull dips
+    inside it at the diagonals and saws, which is the hairline sawtooth in its
+    original form.
+    """
+    return float(np.interp(z, [row[0] for row in SKULL],
+                           [row[3] for row in SKULL]))
 
 
 def skull_rings(look, h, scale=1.0, lift=0.0, back=0.0, first=0, squash=1.0):
@@ -248,9 +340,16 @@ def _head(fig, look, h, fine, coarse):
 
     # Ears. Two flat tabs and the head reads from the side, which nothing else
     # on it does.
+    #
+    # **A tab, and half of it buried.** As round as it was deep and set at 0.99
+    # of the skull's own width, it was a bead balanced on the side of the head:
+    # from behind it reads as a separate ball, because that is what it is --
+    # only a tenth of it was inside the skull, and this route cannot fillet the
+    # rest away. Pushed in to 0.94 it is mostly buried; taller than it is deep
+    # it is an ear rather than a knob.
     for side in (-1.0, 1.0):
-        fig.put("Head", M.blob((side * hw * 0.99, -hd * 0.02, h * 0.792),
-                               (hw * 0.10, hd * 0.20, hd * 0.20),
+        fig.put("Head", M.blob((side * hw * 0.94, -hd * 0.05, h * 0.788),
+                               (hw * 0.13, hd * 0.14, hd * 0.27),
                                coarse, coarse // 2, SKIN, name="ear"))
 
     # The nose is geometry, never a drawn mark: at this size a drawn one is a
@@ -333,22 +432,21 @@ def _inside_skull(look, h, p):
     # The skull's own profile, as a function of height. Only the part the face
     # covers matters, so this is the middle of the stack in `_head`.
     z = p[2] / h
-    scale = np.interp(z, [0.630, 0.660, 0.700, 0.745, 0.800, 0.856, 0.902, 0.932],
-                      [0.60, 0.84, 0.95, 1.00, 1.00, 0.97, 0.86, 0.64])
-    cy = np.interp(z, [0.630, 0.700, 0.745], [-0.05, -0.02, 0.0]) * hd
+    scale = np.interp(z, [row[0] for row in SKULL], [row[1] for row in SKULL])
+    cy = np.interp(z, [row[0] for row in SKULL], [row[2] for row in SKULL]) * hd
     rx, ry = hw * scale, hd * scale
     if rx <= 0.0 or ry <= 0.0:
         return False
-    e = HEAD_POWER
+    e = skull_power(z)
     return (abs(p[0] / rx) ** e + abs((p[1] - cy) / ry) ** e) <= 1.0
 
 
 def extras(look, h, segs, coarse):
     """[(name, Mesh)] for the parts the seed switches on and off.
 
-    `Moustache` is shown or hidden; `Accessory0` and `Accessory1` are the
-    headband and the cap, and `SimCharacterModel._choose_variant` picks between
-    them. All three hang off `Head`, so they turn with it.
+    `Moustache` is shown or hidden and `Accessory0` is the headband, which
+    `SimCharacterModel._choose_variant` shows or does not. Both hang off `Head`,
+    so they turn with it.
     """
     hw = look.head_w * h
     hd = look.head_d * h
@@ -361,10 +459,15 @@ def extras(look, h, segs, coarse):
     # whoever he is. And it has to stand *proud* -- set at the skull's own depth
     # only its two widest points showed, as a pair of dark dots either side of
     # the mouth, like a smirk drawn on.
+    # **Under the nose, not on the mouth.** At 0.729 it landed across the drawn
+    # mouth, so the atlas's mouth came out from under it as a black bead and the
+    # pair read as a beak. The reference wears it tucked up against the nose's
+    # underside with the mouth clear below, and that is 0.745 -- and wider, too:
+    # a moustache narrower than the nose is a smudge.
     tache = M.Mesh("Moustache")
     for side in (-1.0, 1.0):
-        tache.merge(M.blob((side * hw * 0.105, -hd * 1.00, h * 0.729),
-                           (hw * 0.145, hd * 0.062, hh * 0.055),
+        tache.merge(M.blob((side * hw * 0.120, -hd * 1.00, h * 0.745),
+                           (hw * 0.190, hd * 0.062, hh * 0.052),
                            coarse, max(4, coarse // 2), HAIR, name="tache"))
     out.append(("Moustache", tache))
 
@@ -373,10 +476,9 @@ def extras(look, h, segs, coarse):
     # **Above the brows and over the hairline**, which is where a headband is
     # worn -- it pushes the hair up. Set at the skull's own mid-height it lands
     # across the brows and the man is blindfolded.
-    # **Over the hair, not under it.** Both of these are worn on top of a head
-    # of hair and the shells are 1.10 of the skull, so anything sized to the
-    # skull is swallowed -- the cap vanished and left its peak poking out of the
-    # top of a man's head like a fin.
+    # **Over the hair, not under it.** A headband is worn on top of a head of
+    # hair and the shells are 1.10 of the skull, so anything sized to the skull
+    # is swallowed.
     # Sized to sit just off the **skull**, and it follows the skull's own curve
     # rather than running straight round. At 1.14, out where it would clear a
     # head of hair, it is a plank laid across a bald man's forehead. Under the
@@ -386,18 +488,15 @@ def extras(look, h, segs, coarse):
                    M.Ring(h * 0.840, hw * 1.075, hd * 1.075),
                    M.Ring(h * 0.858, hw * 1.060, hd * 1.060),
                    M.Ring(h * 0.872, hw * 1.010, hd * 1.010)],
-                  segs, SHIRT, power=HEAD_POWER,
+                  segs, SHIRT, power=skull_power(0.845),
                   cap_lo=False, cap_hi=False, name="Accessory0")
     out.append(("Accessory0", band))
 
-    # The cap: a dome off the same skull, and a peak. Without the peak it is a
-    # swimming cap.
-    cap = M.tube(skull_rings(look, h, scale=1.155, lift=hh * 0.105, first=4),
-                 segs, SHIRT, power=HEAD_POWER, cap_lo=False, name="Accessory1")
-    cap.merge(M.blob((0.0, -hd * 1.05, h * 0.858),
-                     (hw * 0.66, hd * 0.50, hh * 0.052),
-                     segs, max(4, coarse // 2), SHIRT, name="peak"))
-    out.append(("Accessory1", cap))
+    # The cap came out. Sized to clear a head of hair it is a dome over the whole
+    # skull in kit colour, and at any distance that is a hard hat rather than a
+    # cap -- no reference wears one, and the headband is the accessory that
+    # survives. `Accessory1` is deliberately not written: the game's
+    # `ACCESSORY_INDEX` no longer asks for it.
     return out
 
 
@@ -406,11 +505,11 @@ def extras(look, h, segs, coarse):
 def _arms(fig, look, h, w, limb, segs):
     for side in (-1.0, 1.0):
         tag = "L" if side < 0.0 else "R"
-        shoulder = np.array([side * w * 0.68, 0.0, h * 0.545])
-        arm_top = np.array([side * w * 0.74, 0.0, h * 0.515])
-        wrist = np.array([side * w * 0.90, 0.0, h * 0.295])
+        shoulder = np.array([side * w * (0.68 - ARM_IN), 0.0, h * 0.545])
+        arm_top = np.array([side * w * (0.74 - ARM_IN), 0.0, h * 0.515])
+        wrist = np.array([side * w * (0.90 - ARM_IN), 0.0, h * 0.295])
         elbow = arm_top + (wrist - arm_top) * 0.56
-        hand = np.array([side * w * 0.92, 0.0, h * 0.258])
+        hand = np.array([side * w * (0.92 - ARM_IN), 0.0, h * 0.258])
 
         # Upper arm, from inside the shoulder down past the elbow: a limb is
         # built long at both ends and buried in its neighbours, which is what
@@ -438,10 +537,17 @@ def _arms(fig, look, h, w, limb, segs):
         sleeve.transform(M.along(shoulder, elbow))
         fig.put("Shoulder" + tag, sleeve)
 
+        # **The forearm swells into the hand.** It used to taper to limb*0.80 and
+        # stop, with a mitten of limb*1.10 dropped on the end of it -- a step of
+        # thirty per cent at the wrist, and this route has no fillet to hide it,
+        # so the hand read as a ball stuck on an arm. Widening the last third of
+        # the forearm to meet the mitten turns the step into a swell, which is
+        # what a wrist is.
         fore = M.tube([
             M.Ring(-0.30, limb * 0.88, limb * 0.88),
-            M.Ring(0.20, limb * 0.84, limb * 0.84),
-            M.Ring(0.86, limb * 0.80, limb * 0.80),
+            M.Ring(0.20, limb * 0.86, limb * 0.86),
+            M.Ring(0.62, limb * 0.88, limb * 0.88),
+            M.Ring(0.86, limb * 0.98, limb * 0.98),
         ], segs, SKIN, power=LIMB_POWER, name="fore")
         fore.transform(M.along(elbow, hand))
         fig.put("Elbow" + tag, fore)
@@ -449,11 +555,13 @@ def _arms(fig, look, h, w, limb, segs):
         # A mitten, with a thumb. No fingers -- the reference has none, and the
         # thumb is the whole of what says hand rather than end of an arm.
         fig.put("Elbow" + tag, M.blob(
-            (hand[0], 0.0, hand[2]), (limb * 1.10, limb * 1.00, limb * 1.26),
+            (hand[0], 0.0, hand[2]), (limb * 1.06, limb * 0.98, limb * 1.22),
             segs, segs // 2, SKIN, name="hand"))
+        # Down the side of the mitten and forward, not sitting on top of it.
+        # Level with the middle of the hand it was a second knuckle.
         fig.put("Elbow" + tag, M.blob(
-            (hand[0] - side * limb * 0.74, -limb * 0.32, hand[2] + limb * 0.28),
-            (limb * 0.44, limb * 0.50, limb * 0.74),
+            (hand[0] - side * limb * 0.66, -limb * 0.42, hand[2] + limb * 0.08),
+            (limb * 0.38, limb * 0.46, limb * 0.62),
             max(6, segs - 2), max(4, segs // 2 - 1), SKIN, name="thumb"))
 
 
@@ -462,88 +570,146 @@ def _arms(fig, look, h, w, limb, segs):
 def _legs(fig, look, h, w, limb, segs):
     for side in (-1.0, 1.0):
         tag = "L" if side < 0.0 else "R"
-        hip = np.array([side * w * 0.40, 0.0, h * 0.305])
-        ankle = np.array([side * w * 0.44, 0.0, h * BOOT_TOP])
+        hip = np.array([side * w * HIP_X, 0.0, h * 0.305])
+        ankle = np.array([side * w * ANKLE_X, 0.0, h * BOOT_TOP])
         knee = hip + (ankle - hip) * 0.548
 
         # Thigh, bare between the shorts and the sock.
+        # Slimmer, because it has to fit inside a leg of the shorts that now
+        # fits inside the seat. It is the bare stretch between the hem and the
+        # sock top and nothing else stands next to it, so nobody can see the
+        # difference except by what stopped breaking through.
         thigh = M.tube([
-            M.Ring(-0.20, limb * 1.28, limb * 1.28),
-            M.Ring(0.30, limb * 1.26, limb * 1.26),
-            M.Ring(1.10, limb * 1.20, limb * 1.20),
+            M.Ring(-0.20, limb * 1.14, limb * 1.14),
+            M.Ring(0.30, limb * 1.12, limb * 1.12),
+            M.Ring(1.10, limb * 1.08, limb * 1.08),
         ], segs, SKIN, power=LIMB_POWER, name="thigh")
         thigh.transform(M.along(hip, knee))
         fig.put("Hip" + tag, thigh)
 
         # The leg of the shorts: up inside the seat, and hanging lower than it,
         # which is what puts a notch between the legs rather than a skirt.
+        #
+        # More segments than the rest of the leg gets: the hem is a hard ring
+        # and it is on the silhouette, so at ten segments a rounded box comes
+        # out of it as a visible stagger of flats rather than a line.
+        # **Widest at the hem.** It tapered towards the bottom, which is the
+        # wrong way round twice over: a leg opening is the widest part of a
+        # pair of shorts, and the thigh inside is at its fattest exactly where
+        # the shorts were at their narrowest -- so the bare leg broke out
+        # through the outer side of each hem, which is the skin showing at the
+        # bottom corners of the shorts. Flared instead, with the thigh trimmed
+        # to match, and there is a centimetre of daylight all the way round.
         leg = M.tube([
-            M.Ring(h * SHORTS_HEM, w * 0.300, w * 0.290, hard=True),
-            M.Ring(h * 0.262, w * 0.306, w * 0.296),
-            M.Ring(h * 0.352, w * 0.312, w * 0.302),
-        ], segs, SHORTS, power=2.2, name="shorts_leg")
-        leg.translate((side * w * 0.335, 0.0, 0.0))
+            M.Ring(h * SHORTS_HEM, w * 0.286, w * 0.276, hard=True),
+            M.Ring(h * 0.262, w * 0.282, w * 0.272),
+            M.Ring(h * 0.352, w * 0.278, w * 0.268),
+        ], max(segs, 14), SHORTS, power=2.2, name="shorts_leg")
+        leg.translate((side * w * 0.310, 0.0, 0.0))
         fig.put("Hip" + tag, leg)
 
         # Sock: a flat top, level on both legs, and its hoops are two of its own
         # bands. Nothing is laid on it, so nothing can come adrift from it.
-        hoop = look.sock_hoops
-        rings = [M.Ring(0.02, limb * 1.36, limb * 1.36),
-                 M.Ring(0.10, limb * 1.42, limb * 1.42),
-                 M.Ring(0.24, limb * 1.48, limb * 1.48)]
-        at = 0.34
-        for _ in range(max(0, min(hoop, 3))):
-            rings.append(M.Ring(at, limb * 1.50, limb * 1.50))
-            rings.append(M.Ring(at + 0.075, limb * 1.51, limb * 1.51, material=TRIM))
-            at += 0.150
-        rings.append(M.Ring(min(at + 0.06, 0.94), limb * 1.52, limb * 1.52))
-        rings.append(M.Ring(1.0, limb * 1.52, limb * 1.52, hard=True))
+        # **Fat hoops, and at most two.** Three bands 0.075 of the sock deep are
+        # pinstripes: at match distance they close up into one grey smear and at
+        # parade distance they read as a bandage. Every reference wears one or
+        # two of them and they are nearly twice as deep as the gap between, so
+        # the band is the sock and the gap is the stripe rather than the other
+        # way round. Hung off a fixed top instead of a fixed bottom, so one hoop
+        # and two sit in the same place on the shin.
+        # Trimmed with the sock. Two bands 0.140 deep were a third of a sock
+        # that has since come down under the knee, and they crowded it.
+        band, gap = 0.108, 0.072
+        hoop = max(0, min(look.sock_hoops, 2))
+        rings = [M.Ring(0.02, limb * 1.27, limb * 1.27),
+                 M.Ring(0.10, limb * 1.32, limb * 1.32),
+                 M.Ring(0.24, limb * 1.38, limb * 1.38)]
+        at = 0.84 - band - (hoop - 1) * (band + gap) if hoop else 0.34
+        for _ in range(hoop):
+            rings.append(M.Ring(at, limb * 1.40, limb * 1.40))
+            rings.append(M.Ring(at + band, limb * 1.41, limb * 1.41, material=TRIM))
+            at += band + gap
+        rings.append(M.Ring(min(at + 0.06, 0.94), limb * 1.42, limb * 1.42))
+        rings.append(M.Ring(1.0, limb * 1.42, limb * 1.42, hard=True))
         sock = M.tube(rings, segs, SHIRT, power=LIMB_POWER, name="sock")
         # Built up the leg from the ankle so the hoops sit near the top.
+        #
+        # **Lower and tighter.** Pulled to 0.62 of the way from ankle to hip the
+        # sock top was over the knee, and at limb*1.52 it was the fattest thing
+        # on the leg -- fatter than the thigh above it, which is a football sock
+        # nobody wears. 0.575 puts the top just under the knee, and a tenth off
+        # every radius leaves the shin slimmer than the thigh, the way round the
+        # renders have it.
         sock.transform(M.along(ankle - (knee - ankle) * 0.06,
-                               ankle + (hip - ankle) * 0.62))
+                               ankle + (hip - ankle) * 0.575))
         fig.put("Knee" + tag, sock)
 
         fig.put("Ankle" + tag, _boot(side, w, h, limb, segs))
 
 
+## How far the sole stands off the ground, and it is the length of a stud.
+SOLE = 0.018
+
+
 def _boot(side, w, h, limb, segs):
-    """A wedge with the heel under the ankle and a broad blunt toe.
+    """A wedge with the heel under the ankle, a broad blunt toe and a flat sole.
 
     The studs matter more than they sound: cut flat the boot sits on the floor
     like a clog, and on studs it stands with daylight and a shadow under the
     sole, which is most of what says football boot.
+
+    **The sole has to be flat or the studs float.** This is built lying down --
+    the rings run heel to toe, so a ring's half-depth is the boot's *height*
+    there and its `cy` is how far up or down that section sits. Left at zero,
+    each section hung from its own centre, so the underside followed the top:
+    the boot was 5 cm deep at the collar and 2.5 cm at the toe, its sole sloped
+    by a centimetre over its length, and studs all cut to one length reached it
+    in one place and hung in the air everywhere else. Hanging every section from
+    a **common underside** costs nothing and is what a sole is.
     """
-    x = side * w * 0.44
+    x = side * w * ANKLE_X
+    top = h * 0.052
+    sole = h * SOLE
+
+    def ring(at, rx, ry, material=None):
+        # `cy` becomes -z when the boot is stood up, so this puts the bottom of
+        # every section on `sole` whatever its depth.
+        return M.Ring(at, rx, ry, cy=top - sole - ry, material=material)
+
     rings = [
-        M.Ring(-h * 0.130, limb * 0.66, limb * 0.44, cy=h * 0.008),
-        M.Ring(-h * 0.100, limb * 1.16, limb * 0.62, cy=h * 0.004),
-        M.Ring(-h * 0.070, limb * 1.32, limb * 0.74),
+        ring(-h * 0.130, limb * 0.66, limb * 0.44),
+        ring(-h * 0.100, limb * 1.16, limb * 0.62),
+        ring(-h * 0.070, limb * 1.32, limb * 0.74),
     ]
     # The stripes, as bands of the boot's own surface. Three of them, and they
     # stop before the ankle collar: carried round that too, four bands read as a
     # bandage rather than as stripes on a boot.
     at = -h * 0.058
     for _ in range(3):
-        rings.append(M.Ring(at, limb * 1.34, limb * 0.80))
-        rings.append(M.Ring(at + h * 0.009, limb * 1.35, limb * 0.82,
-                            material=TRIM))
+        rings.append(ring(at, limb * 1.34, limb * 0.80))
+        rings.append(ring(at + h * 0.009, limb * 1.35, limb * 0.82,
+                          material=TRIM))
         at += h * 0.021
     rings += [
-        M.Ring(h * 0.004, limb * 1.34, limb * 0.92),
-        M.Ring(h * 0.032, limb * 1.26, limb * 0.98),
-        M.Ring(h * 0.054, limb * 1.10, limb * 0.94),
+        ring(h * 0.004, limb * 1.34, limb * 0.92),
+        ring(h * 0.032, limb * 1.26, limb * 0.98),
+        ring(h * 0.054, limb * 1.10, limb * 0.94),
     ]
     # Built lying down: the rings run front to back, so `power` is the section
     # of the foot and the last ring is the ankle collar.
     boot = M.tube(rings, segs, BOOT, power=2.6, name="boot")
     boot.transform(M.rotation_x(math.radians(-90.0)))
-    boot.transform(M.translation((x, 0.0, h * 0.052)))
+    boot.transform(M.translation((x, 0.0, top)))
+    # From the ground up **into** the boot, not up to where the sole happens to
+    # be. A stud that stops at the sole is a stud that stops short of it the
+    # moment anything about the boot moves; buried, the join can never open and
+    # the extra is inside a solid the same colour.
     for at_y, spread in ((-h * 0.100, 0.55), (-h * 0.056, 0.62), (h * 0.026, 0.44)):
         for out in (-1.0, 1.0):
             boot.merge(M.tube([
                 M.Ring(0.0, limb * 0.26, limb * 0.26, hard=True),
-                M.Ring(h * 0.016, limb * 0.30, limb * 0.30),
+                M.Ring(sole, limb * 0.30, limb * 0.30),
+                M.Ring(sole + h * 0.012, limb * 0.30, limb * 0.30),
             ], max(5, segs // 2), BOOT, power=2.0, name="stud")
                 .translate((x + out * limb * spread, at_y, 0.0)))
     return boot

@@ -37,6 +37,19 @@ const MODEL_HEAD_R := 0.2869
 ## `art/toy/figure.py:SKULL` is where it comes from: 0.630 to 0.950.
 const MODEL_HEAD_FRACTION := 0.32
 
+## Where the shirt number goes, in the model's own fractions of height.
+## `art/figure/rig.py` puts the `Spine` pivot at 0.335 and `art/toy/figure.py`
+## runs the shirt from a hem at 0.380 to a collar at 0.626, so this is between
+## the shoulder blades with the collar clear above it.
+const SPINE_AT := 0.335
+const NUMBER_AT := 0.478
+## The shirt's own half-depth there is 0.086 of height; a few millimetres more
+## and the label never sinks into the weave as the man turns.
+const NUMBER_BACK := 0.086 * REFERENCE_HEIGHT + 0.006
+## 128 px of font at this many metres a pixel is a digit about 14 cm tall, which
+## is what the references wear.
+const NUMBER_PIXEL_SIZE := 0.0016
+
 ## Material slots, in the order the Blender file has to declare them. Index is
 ## the slot; a model with fewer slots keeps its authored colours for the rest.
 const SLOT_SHIRT := 0
@@ -62,7 +75,7 @@ const SLOT_NAMES := {
 
 ## Which `AccessoryN` mesh each accessory is. `SimAppearance.ACCESSORIES` holds
 ## repeats of "none" to weight the draw, so the list itself is not the index.
-const ACCESSORY_INDEX := {"none": -1, "headband": 0, "cap": 1}
+const ACCESSORY_INDEX := {"none": -1, "headband": 0}
 
 ## Set false to draw every figure procedurally whatever is on disk -- the
 ## comparison you want while a model is being judged against the primitives.
@@ -145,8 +158,43 @@ static func build(seed_value: int, appearance: SimAppearance, kit: PackedColorAr
 	root.set_meta("head_r", MODEL_HEAD_R)
 	_shape_head(root, appearance)
 	_dress_face(root, appearance)
+	_dress_eyes(root)
 	set_expression(root, appearance.face)
+	_number(root, kit, shirt_number)
 	return root
+
+
+## The number on the back, the same Label3D the primitives get.
+##
+## `build` has taken `shirt_number` since it was written and a model threw it
+## away, so half a squad could be told apart and the other half could not. Three
+## of the four reference figures wear one and a crowd names a man by it.
+##
+## Geometry was the other option and it is the wrong one here: a digit moulded
+## in relief has to be moulded per digit, per body, in Blender, and it is unread
+## at match distance anyway. A label is one node and it is legible at both.
+static func _number(root: Node3D, kit: PackedColorArray, shirt_number: int) -> void:
+	if shirt_number <= 0:
+		return
+	var spine := root.find_child("Spine", true, false) as Node3D
+	if spine == null:
+		return
+	var digits := Label3D.new()
+	digits.name = "ShirtNumber"
+	digits.text = str(shirt_number)
+	digits.font_size = 128
+	digits.pixel_size = NUMBER_PIXEL_SIZE
+	digits.modulate = SimPalette.INK if kit.size() < 2 else kit[1]
+	digits.outline_size = 24
+	digits.outline_modulate = SimPalette.INK
+	# Facing out of the man's back, which is -Z: the figure looks down +Z.
+	digits.rotation_degrees = Vector3(0.0, 180.0, 0.0)
+	# Cut rather than blended: a blended quad this close to the shirt sorts
+	# against it and flickers as the figure turns.
+	digits.alpha_cut = Label3D.ALPHA_CUT_DISCARD
+	digits.position = Vector3(
+		0.0, (NUMBER_AT - SPINE_AT) * REFERENCE_HEIGHT, -NUMBER_BACK)
+	spine.add_child(digits)
 
 
 ## The head a man was born with, on a model that only has one.
@@ -181,17 +229,36 @@ static func _shape_head(root: Node3D, appearance: SimAppearance) -> void:
 ## -- and the atlas is drawn per player and again per expression. The material
 ## has to be an override rather than the file's own, or every man in the match
 ## shares one face; and it has to be alpha, because the atlas is features on
-## nothing.
+## nothing. `SimCharacterBuilder.face_material` is the rest of the argument.
 static func _dress_face(root: Node3D, appearance: SimAppearance) -> void:
 	var quad := root.find_child("Face", true, false) as MeshInstance3D
 	if quad == null:
 		return
-	var material := SimCharacterBuilder.toy_material(Color.WHITE)
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.albedo_texture = SimFaceAtlas.texture_for(
-		appearance.face, appearance.eye_style, appearance.mouth_style)
+	var material := SimCharacterBuilder.face_material()
+	SimCharacterBuilder.dress_face(
+		material, appearance.face, appearance.eye_style, appearance.mouth_style)
 	quad.material_override = material
+	quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## The eye beads get their own material, not the palette's.
+##
+## `_paint` cannot do it: the beads are named `eye` in the file precisely so they
+## fall outside `SLOT_NAMES` and keep a colour no kit can change -- but what the
+## exporter authors is a plain matte black, and the whole point of a moulded eye
+## is the gloss on it. `SimCharacterBuilder.eye_material` is the same material
+## the procedural figure's beads get.
+static func _dress_eyes(root: Node3D) -> void:
+	var eyes := root.find_child("Eyes", true, false)
+	if eyes == null:
+		return
+	var material := SimCharacterBuilder.eye_material()
+	for child in eyes.get_children():
+		var bead := child as MeshInstance3D
+		if bead == null:
+			continue
+		for slot in bead.get_surface_override_material_count():
+			bead.set_surface_override_material(slot, material)
 
 
 ## Takes a built model out of the wrapper glTF import puts it in.
@@ -234,7 +301,7 @@ static func set_expression(player_root: Node3D, face: int) -> void:
 	var material := quad.get_active_material(0) as StandardMaterial3D
 	if material != null:
 		var own := material.duplicate() as StandardMaterial3D
-		own.albedo_texture = SimFaceAtlas.texture_for(face)
+		SimCharacterBuilder.dress_face(own, face, 0, 0)
 		quad.set_surface_override_material(0, own)
 
 
@@ -258,11 +325,20 @@ static func _paint(root: Node3D, appearance: SimAppearance, kit: PackedColorArra
 				var name := _material_name(node, slot)
 				if SLOT_NAMES.has(name):
 					node.set_surface_override_material(
-						slot, SimCharacterBuilder.toy_material(colours[SLOT_NAMES[name]]))
+						slot, _material_for(SLOT_NAMES[name], colours))
 		return
 	for node in meshes:
 		for slot in mini(node.get_surface_override_material_count(), colours.size()):
-			node.set_surface_override_material(slot, SimCharacterBuilder.toy_material(colours[slot]))
+			node.set_surface_override_material(slot, _material_for(slot, colours))
+
+
+## Vinyl for the kit and the skin; matte for the hair and the boots, which are
+## not painted plastic. `SimCharacterBuilder.MATTE_ROUGHNESS` has the argument,
+## and the procedural figure makes the same distinction.
+static func _material_for(slot: int, colours: Dictionary) -> StandardMaterial3D:
+	if slot == SLOT_HAIR or slot == SLOT_BOOT:
+		return SimCharacterBuilder.matte_material(colours[slot])
+	return SimCharacterBuilder.toy_material(colours[slot])
 
 
 ## Does this model name its materials, or does it want the slot order?

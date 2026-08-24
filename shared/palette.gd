@@ -44,10 +44,29 @@ const KIT_COLOURS := [RED, CORAL, ORANGE, AMBER, LEMON, TEAL, SKY, BLUE, NAVY, V
 const BACKDROPS := [SALMON, CORAL, AMBER, SKY, VIOLET, TEAL, LIME]
 
 
-## A contrasting second kit colour for the given primary. Also what the
-## scoreboard writes on a coloured chip with, so it stays black or white.
+## What the scoreboard writes on a coloured chip with, so it stays black or
+## white. Legibility only: the midpoint is where text stops reading.
 static func contrast_for(primary: Color) -> Color:
 	return INK if primary.get_luminance() > 0.45 else CHALK
+
+
+## The kit's second colour: the collar V, the cuffs, the sock hoops and the boot
+## stripes.
+##
+## **Not `contrast_for`, and the difference was showing on nine kits of fifteen.**
+## That function is a legibility rule with its midpoint at 0.45 luminance, which
+## is where *text* stops reading -- so coral, orange, teal, sky, pink and slate
+## shirts were all being trimmed in near-black. On the figure that is not a
+## contrast, it is dirt: the V-neck reads as a hole cut in the shirt and the
+## boot stripes disappear into a black boot.
+##
+## Every reference photograph trims a coloured shirt in **white**, and only the
+## white shirt in `04-four-lads` goes the other way -- and that one is navy, not
+## black. So the threshold is not legibility, it is "is this shirt already
+## nearly white", and the answer is dark for the yellows and the chalk and white
+## for everything else.
+static func trim_for(primary: Color) -> Color:
+	return NAVY if primary.get_luminance() > 0.72 else CHALK
 
 
 ## Shorts a club might wear. A placeholder set to get the bottom half of the

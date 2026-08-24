@@ -155,7 +155,9 @@ func _build_world() -> void:
 	sun.rotation_degrees = Vector3(-52.0, -30.0, 0.0)
 	sun.light_energy = 0.55
 	sun.shadow_enabled = true
-	SimCharacterBuilder.soften_shadow(sun)
+	# A rank of four at arm's length: the shadow never has to reach past the back
+	# of the floor, and a tight range is what keeps the crosshatch off them.
+	SimCharacterBuilder.soften_shadow(sun, 14.0)
 	add_child(sun)
 	SimCharacterBuilder.add_fill_light(self, -30.0)
 
