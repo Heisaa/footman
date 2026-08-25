@@ -264,6 +264,55 @@ static func free_kick(ctx: SimContext, team: int, at: Vector3, indirect: bool) -
 	# and the side takes it the same way: it pushes out. Past halfway the shape is
 	# already where the ball is and the rule does nothing.
 	_default_spots(ctx, spot, team, WALL_DISTANCE, true, true)
+	if SimConsts.horizontal_length(ctx.pitch.target_goal(team) - spot) < FK_DELIVERY_RANGE:
+		_load_box(ctx, team, spot)
+
+
+## How far from goal a free kick is one the side loads the box for, and how many
+## it sends. The range is `_take_free_kick`'s own delivery threshold, so the men
+## are sent exactly when the ball can be put on their heads.
+const FK_DELIVERY_RANGE := 42.0
+const FK_BOX_MEN := 4
+
+
+## Attackers into the box for a free kick that can be delivered into it.
+##
+## `_default_spots` stands both sides on their ordinary shape for a ball at the
+## spot, and for a free kick twenty metres out that shape leaves the box empty --
+## while `_take_free_kick` lofts the ball to nine metres from goal whatever is in
+## there. Measured on `fk-shot`: the delivery came down **20.8 m from the nearest
+## of ours**. A corner has had `_corner_spots` for this since it was written; the
+## free kick never had the equivalent.
+##
+## A side loads the box for a free kick in the final third whether the ball ends
+## up shot or delivered, so this does not have to know which the taker will pick.
+## The men sent are the four the shape already had nearest the goal, which is the
+## forwards without having to name them.
+static func _load_box(ctx: SimContext, team: int, spot: Vector3) -> void:
+	var goal := ctx.pitch.target_goal(team)
+	var dir := ctx.pitch.attack_dir(team)
+	# Mirrored onto the side the ball is coming from, as a corner is.
+	var side: float = signf(spot.z) if absf(spot.z) > 1e-3 else 1.0
+	var order: Array[SimPlayer] = []
+	for pid in ctx.team_players[team]:
+		var p := ctx.players[pid]
+		if p.is_keeper or not p.on_pitch or p.id == ctx.restart_taker:
+			continue
+		if not ctx.restart_spots.has(p.id):
+			continue
+		order.append(p)
+	order.sort_custom(func(a: SimPlayer, b: SimPlayer) -> bool:
+		var da: float = SimConsts.horizontal_length(goal - ctx.restart_spots[a.id])
+		var db: float = SimConsts.horizontal_length(goal - ctx.restart_spots[b.id])
+		return da < db)
+	var offsets := [
+		Vector3(-5.5, 0.0, -3.5), Vector3(-9.0, 0.0, 2.5),
+		Vector3(-4.0, 0.0, 4.5), Vector3(-12.0, 0.0, -1.0),
+	]
+	for i in mini(FK_BOX_MEN, order.size()):
+		var o: Vector3 = offsets[i]
+		ctx.restart_spots[order[i].id] = ctx.pitch.clamp_to_pitch(
+			goal + Vector3(o.x * dir, 0.0, o.z * side), 0.5)
 
 
 static func penalty(ctx: SimContext, team: int) -> void:
@@ -373,10 +422,28 @@ static func _default_spots(ctx: SimContext, spot: Vector3, team: int, clearance_
 		ctx.restart_spots[taker.id] = spot - (spot - ctx.pitch.own_goal(team)).normalized() * TAKER_STANCE
 
 
+## Where the two sides stand for a corner.
+##
+## **The z offsets are mirrored onto the flag the corner is taken from.** They
+## were not, and the same near-post/far-post pattern was therefore laid out the
+## same way round whichever side the ball came from -- so one flank's corner put
+## the bodies where the ball swings and the other put them where it does not,
+## from one list. Measured on the scenario pair, which is the same corner twice
+## and differs in nothing else: `corner-left` won 0.4 headers a trial and scored
+## 20%, `corner-right` 0.1 and 10%, and 28% of right corners ran the clock out
+## with nobody having attacked the ball at all.
+##
+## **And the defenders are dealt in order rather than by `p.id % 7`.** Ten
+## outfielders onto seven offsets by their id meant three spots held two men
+## each, standing on the same square metre, while other spots stood empty.
 static func _corner_spots(ctx: SimContext, team: int, spot: Vector3) -> void:
 	var goal := ctx.pitch.target_goal(team)
 	var dir := ctx.pitch.attack_dir(team)
+	# Positive on the flag the corner is being taken from, so the first offset of
+	# each list is the near post whichever side it comes from.
+	var side: float = signf(spot.z) if absf(spot.z) > 1e-3 else 1.0
 	var attackers := 0
+	var defenders := 0
 	for p in ctx.players:
 		if p.team == team:
 			if p.is_keeper:
@@ -386,16 +453,16 @@ static func _corner_spots(ctx: SimContext, team: int, spot: Vector3) -> void:
 			var offsets := [Vector3(-6.0, 0.0, -4.0), Vector3(-9.0, 0.0, 2.0), Vector3(-4.5, 0.0, 5.0), Vector3(-12.0, 0.0, -1.0), Vector3(-16.0, 0.0, 4.0), Vector3(-2.5, 0.0, -1.0)]
 			var o: Vector3 = offsets[attackers % offsets.size()]
 			attackers += 1
-			ctx.restart_spots[p.id] = ctx.pitch.clamp_to_pitch(goal + Vector3(o.x * dir, 0.0, o.z), 0.5)
+			ctx.restart_spots[p.id] = ctx.pitch.clamp_to_pitch(goal + Vector3(o.x * dir, 0.0, o.z * side), 0.5)
 		else:
 			if p.is_keeper:
 				ctx.restart_spots[p.id] = ctx.pitch.own_goal(p.team) + Vector3(-dir * 1.0, 0.0, 0.0)
 				continue
 			# Defenders mark, spread across the six-yard area and the spot.
 			var d_offsets := [Vector3(-5.0, 0.0, -3.0), Vector3(-7.5, 0.0, 1.0), Vector3(-4.0, 0.0, 4.5), Vector3(-11.0, 0.0, -2.0), Vector3(-3.0, 0.0, 0.5), Vector3(-14.0, 0.0, 3.0), Vector3(-9.0, 0.0, 6.0)]
-			var idx: int = p.id % d_offsets.size()
-			var d: Vector3 = d_offsets[idx]
-			ctx.restart_spots[p.id] = ctx.pitch.clamp_to_pitch(goal + Vector3(d.x * dir, 0.0, d.z), 0.5)
+			var d: Vector3 = d_offsets[defenders % d_offsets.size()]
+			defenders += 1
+			ctx.restart_spots[p.id] = ctx.pitch.clamp_to_pitch(goal + Vector3(d.x * dir, 0.0, d.z * side), 0.5)
 	var taker := _nearest_of(ctx, team, spot, true)
 	if taker != null:
 		ctx.restart_taker = taker.id
@@ -464,6 +531,10 @@ static func _best_finisher(ctx: SimContext, team: int) -> SimPlayer:
 ## Floors for the compressed delays below, in ticks at 60 Hz: 0.3 s, 1.2 s, 2 s.
 const MIN_DELAY_FLOOR := 18
 const SETTLE_FLOOR := 72
+## And the free kick near their goal, whose box men come from further. See
+## `_min_delay`.
+const FK_BOX_SETTLE := SimConsts.TICK_HZ * 6
+const FK_BOX_FLOOR := SimConsts.TICK_HZ * 3
 const MAX_WAIT_FLOOR := 120
 
 
@@ -496,6 +567,21 @@ static func _min_delay(ctx: SimContext) -> int:
 			var canonical := ctx.pitch.orient(ctx.restart_team, ctx.restart_pos)
 			if canonical.x < -ctx.pitch.half_length * RESTART_SHAPE_DEPTH:
 				return _compress(ctx, SETTLE_DELAY, SETTLE_FLOOR)
+			# And a free kick near their goal, for the same reason a corner gets
+			# it: the box has to fill. Nobody takes one of these in two thirds of
+			# a second, and the engine did -- measured on `fk-shot`, the delivery
+			# was struck at 0.68 s with the nearest of ours still 34 m from goal
+			# and walking, so `_load_box` had sent four men into a box the ball
+			# reached before they did. The wall going up costs the same wait
+			# whether the taker ends up shooting or crossing.
+			#
+			# It gets a longer floor than the goal kick's, for the reason the
+			# floor exists at all: the ground is different. A goal kick's push-out
+			# is thirteen metres, and `_load_box` brings men from midfield -- 25 to
+			# 35 of them, measured on the same row -- which no clock rate makes
+			# them cover faster.
+			if canonical.x > ctx.pitch.half_length - FK_DELIVERY_RANGE:
+				return _compress(ctx, FK_BOX_SETTLE, FK_BOX_FLOOR)
 			return _compress(ctx, MIN_DELAY, MIN_DELAY_FLOOR)
 		_:
 			return _compress(ctx, MIN_DELAY, MIN_DELAY_FLOOR)

@@ -985,6 +985,28 @@ static func note_offer(mate_id: int, share: float) -> void:
 	_best_weight[mate_id] = maxf(_best_weight[mate_id], share)
 
 
+## A run authored from outside the assignment loop: `SimScenarios` planting a
+## situation's premise. A scenario that fakes a run with a velocity gives
+## `destination_for` nothing to read, so the first off-ball retarget puts the
+## man back on his station and the premise dies before the ball is struck --
+## and the decision layer's "is he moving on" gate dies with it. This writes
+## the state `_commit` would have, so the run is committed, held for its
+## window, skipped by reassignment like any live run, and judged by the same
+## tallies. Scenarios only; a match never calls it.
+static func plant(ctx: SimContext, p: SimPlayer, kind: int, point: Vector3, seconds: float) -> void:
+	if _intent.size() != ctx.players.size():
+		_resize(ctx.players.size())
+	_intent[p.id] = kind
+	_point[p.id] = point
+	_offered[p.id] = 0
+	_best_weight[p.id] = 0.0
+	_born[p.id] = 0
+	_check_until[p.id] = 0
+	_until[p.id] = ctx.tick_index + int(seconds * float(SimConsts.TICK_HZ))
+	_since[p.id] = ctx.tick_index
+	made[kind] += 1
+
+
 static func _commit(ctx: SimContext, pid: int, kind: int, point: Vector3, in_window: bool = false) -> void:
 	_intent[pid] = kind
 	_point[pid] = point

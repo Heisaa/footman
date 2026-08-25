@@ -273,7 +273,10 @@ of instruments here.
   in different files: crosses struck per trial, and how far the nearest of ours
   was from the ball when the first of them came down through heading height. A
   scenario that ends with no shot is either a ball nobody put in or a ball nobody
-  attacked, and **29** is the second of those.
+  attacked, and **29** is the second of those. **A `drop m` in the twenties is
+  neither and is a bug in the restart**: `fk-shot` read 20.8 because nothing put
+  men in the box for a free kick and the ball was struck at 0.7 s anyway
+  (`SimSetPiece._load_box`, `FK_BOX_FLOOR`). It reads 3.0.
 - **`--acts` is the second instrument and answers the question the table cannot:
   what was actually played.** Touches by the attacking side per trial, by kind,
   then duels, offsides and fouls. It is the only one of the three that separates
@@ -341,12 +344,20 @@ of instruments here.
   man who hit it: left on his boot, `SimDuel` hands it straight back to him and
   it never leaves the flank.
 - **`cross-pullback` is a pass row, not a cross row.** From the goal line the
-  cut-back is the act and `cross` reads 0.25 a trial by construction; `--acts`
-  is where it is read, and the `shot m` column — 5.2 m — is what the act is for.
+  cut-back is the act, so it is read in `--acts` — 0.9 ground passes a trial
+  against 0.0 crosses — and the `shot m` column is what the act is for. It
+  reads 10.5 with `lost` at 82%: the ball is cut back and the box eats it,
+  which is the defending half of **29** and belongs to the defensive pass.
 - **`build-up` and `goal-kick` read backwards**, and they are the only two:
-  `none` is the good outcome (the clock ran out and the ball is still ours) and
-  `lost` the bad one. Playing out is the commonest thing a defence does with the
-  ball and nothing else on this page asks whether the engine can do it.
+  `none` is the good outcome (the ball is still ours) and `lost` the bad one.
+  Playing out is the commonest thing a defence does with the ball and nothing
+  else on this page asks whether the engine can do it. **They are also the only
+  two that stop early on success** (`SimScenario.escape_x`): past the top of the
+  defending third with the ball still ours the situation is over, because a row
+  that played on was scoring the next ten seconds of match instead. It read 70%
+  and 80% `lost` while doing that -- a goal kick worked out through the press,
+  six passes and sixty metres, then tackled on the halfway line at 10.5 s, came
+  back on the row as a failure to play out. They now read 15% and 28%.
 - **The restarts are `SimSetPiece`'s own routines, started rather than authored**,
   and both sides are settled around the spot the restart will be taken from
   before it begins. That last part is not cosmetic: settled around the middle of

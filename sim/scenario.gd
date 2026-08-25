@@ -55,6 +55,22 @@ var attacking_team := SimConsts.TEAM_HOME
 ## the match is built and instead of its kick-off.
 var place := Callable()
 
+## The canonical x, in the attacking direction, past which the situation has
+## succeeded and is over. `INF` for every row that has no such line, which is
+## most of them.
+##
+## It exists for the two rows that read backwards -- `build-up` and `goal-kick`,
+## where `none` is the good outcome and `lost` the bad one. Without it those two
+## run the full clock over the whole pitch, so a side that plays out through the
+## press, six passes and sixty metres, and is then tackled on the halfway line is
+## scored `lost` on the row whose entire question is whether it can play out.
+## Measured: `goal-kick` trial 1 did exactly that at 10.5 s and came back `lost`.
+##
+## The line is the top of the defending third, because that is where playing out
+## is done. Past it with the ball still ours the trial stops and the verdict is
+## `NONE`, which on these two rows is what success is called.
+var escape_x := INF
+
 
 ## How soon after a defending touch the ball has to be ours again to count as
 ## given back, in simulated seconds. Long enough to cover a rebound picked up,
@@ -160,6 +176,15 @@ class Result extends RefCounted:
 ## striker is deciding about. `SimMovement.shape_position` is the engine's own
 ## answer to "where does this side stand when the ball is there", so a scenario
 ## only has to say what is *different* about the moment.
+## **Whose ball it is is settled before anybody is placed**, because
+## `shape_position` reads `SimContext.shape_phase` and a side in possession
+## stands fifteen metres up the pitch from the same side out of it. Placing first
+## laid every scenario out in the phase the kick-off it replaced had left behind
+## -- the attacking side dropped off, in its own shape, on a row about its own
+## attack. Measured on `fk-shot`, a free kick twenty-one metres from goal: when
+## the ball was delivered the nearest of ours was **35.8 m from that goal**,
+## fifteen metres *behind* the ball, and `drop m` read 20.8 in a box with nobody
+## in it.
 func settle(ctx: SimContext, ball_at: Vector3, holder: SimPlayer) -> void:
 	for p in ctx.players:
 		p.on_pitch = true
@@ -173,10 +198,6 @@ func settle(ctx: SimContext, ball_at: Vector3, holder: SimPlayer) -> void:
 		# who has been standing on it for a minute and can strike it at once.
 		p.spell_start_tick = -1
 		p.spell_prep_seconds = 0.0
-		p.pos = SimMovement.shape_position(ctx, p, ball_at)
-		var toward := SimConsts.horizontal(ctx.pitch.target_goal(p.team) - p.pos)
-		if toward.length() > 1e-3:
-			p.facing = atan2(toward.z, toward.x)
 
 	ctx.ball.reset(Vector3(ball_at.x, SimConsts.BALL_RADIUS, ball_at.z))
 	ctx.ball.last_touch_player = holder.id
@@ -196,6 +217,13 @@ func settle(ctx: SimContext, ball_at: Vector3, holder: SimPlayer) -> void:
 		1.0 if holder.team == SimConsts.TEAM_AWAY else 0.0,
 	])
 	ctx.update_possession()
+
+	# And only now the bodies, on a shape that knows all of it.
+	for p in ctx.players:
+		p.pos = SimMovement.shape_position(ctx, p, ball_at)
+		var toward := SimConsts.horizontal(ctx.pitch.target_goal(p.team) - p.pos)
+		if toward.length() > 1e-3:
+			p.facing = atan2(toward.z, toward.x)
 
 
 ## Whether the situation is still live: the ball in play, and nobody else's.
@@ -268,8 +296,15 @@ func run(m: SimMatch) -> Result:
 	var started := false
 	# When the defending side last had a touch, for `given_back`.
 	var theirs_at := -100.0
+	# How many ticks the trial actually ran. Not `limit`: the loop stops at the
+	# first resolution, and the closing carry gap below is measured to the end of
+	# the football rather than to the end of the clock it was given. Measured on
+	# `fk-shot`, whose trial resolved on a keeper's catch at 2.3 s of a 12 s
+	# trial and was scored a 9.4 s gap in a carry nobody was making.
+	var ran := 0
 
 	for i in limit:
+		ran = i + 1
 		m.tick()
 		if not started:
 			started = ctx.in_play
@@ -352,6 +387,13 @@ func run(m: SimMatch) -> Result:
 			if not ctx.in_play or i - shot_tick > int(2.0 / SimConsts.DT):
 				break
 			continue
+		# Or, on a row that has one, when the ball is out: past the line with
+		# possession still ours is this situation succeeding, and playing on
+		# from there is an ordinary match with a strange kick-off. See
+		# `escape_x`.
+		if started and not is_inf(escape_x) and ctx.possession_team == attacking_team \
+				and ctx.pitch.orient(attacking_team, ctx.ball.ground_pos()).x >= escape_x:
+			break
 		# Before a shot, the situation ends when the ball does, or when it is
 		# somebody else's.
 		if conceded or not live(ctx, started):
@@ -361,7 +403,7 @@ func run(m: SimMatch) -> Result:
 	# the clock run out is the loudest version of this, and a gap only closed by
 	# a touch would score him a zero.
 	if not in_flight:
-		r.carry_gap = maxf(r.carry_gap, float(limit) * SimConsts.DT - touched_at)
+		r.carry_gap = maxf(r.carry_gap, float(ran) * SimConsts.DT - touched_at)
 
 	r.resolution = _verdict(ctx, shot, conceded, scored)
 	return r

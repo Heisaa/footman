@@ -253,7 +253,18 @@ static func reset() -> void:
 
 static func update(ctx: SimContext) -> void:
 	var stride := ctx.config.decision_stride()
-	if _chase_role.size() != ctx.players.size() or ctx.tick_index % (CHASE_TICKS * stride) == 0:
+	# The first tick after `reset`, before anybody has decided anything. The
+	# stagger below is a refresh cadence and must never delay a man's *first*
+	# decision: `SimPlayer.move_target` starts at the world origin with no speed
+	# cap, so until he has decided once he is steering at the centre spot flat
+	# out. At a kick-off that is a few harmless centimetres with everyone
+	# standing still. In a situation that starts men at speed it is decisive --
+	# measured on `race`, a foot race set dead level, the man whose stagger came
+	# up later spent three ticks braking toward the middle of the pitch, lost
+	# half a metre a second, and never got it back: the quicker of the two won
+	# 10 races out of 18, and 18 out of 18 once he decided on the first tick.
+	var first := _chase_role.size() != ctx.players.size()
+	if first or ctx.tick_index % (CHASE_TICKS * stride) == 0:
 		_assign_chasers(ctx)
 	# Who is offering himself for a pass, and in which of the several ways there
 	# are of doing it. Runs on its own cadence and only writes intents; the
@@ -262,7 +273,7 @@ static func update(ctx: SimContext) -> void:
 	for p in ctx.players:
 		if not p.on_pitch or p.is_keeper:
 			continue
-		if ctx.tick_index >= p.next_decision_tick:
+		if first or ctx.tick_index >= p.next_decision_tick:
 			p.next_decision_tick = ctx.tick_index + SimConsts.OFF_BALL_DECISION_TICKS * stride
 			_recompute_target(ctx, p)
 		p.steer_to(p.move_target, p.move_speed_cap, p.move_deadband)

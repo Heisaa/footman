@@ -184,6 +184,33 @@ static func lets_it_drop(ctx: SimContext, player: SimPlayer) -> bool:
 	return i >= 0 and traj.time_of_index(i) <= DROP_SECONDS
 
 
+## Whether this man has taken the ball down on his chest and is waiting for it
+## to arrive at his feet.
+##
+## A chest-down cushions the ball to under a metre a second of drop -- that is
+## the whole act, and `SimTouch.chest` is right to do it -- so from chest height
+## it is most of half a second in the air afterwards. His touch cooldown is a
+## quarter of that. Without this he is a contender again while his own ball is
+## still falling, `above_boot` sends him back through `_play_off_the_body`, and
+## he chests it a second and a third time on the way down: measured in
+## `goal-kick`, three chest touches at 5.08, 5.32 and 5.55 s from one square
+## metre, the ball at 1.65 m, 1.23 m and 0.79 m.
+##
+## `lets_it_drop` is the same idea one band higher and cannot cover this, because
+## `SimDuel` only asks it of a ball over head height. Below that the question is
+## not whether to head it -- it is that the act he has already chosen is not
+## finished until the ball is on the floor.
+static func settling_a_chest(ctx: SimContext, player: SimPlayer) -> bool:
+	var ball := ctx.ball
+	if ball.last_touch_player != player.id:
+		return false
+	if ball.last_touch_kind != SimTelemetry.Touch.CHEST:
+		return false
+	if not above_boot(ctx):
+		return false
+	return ball.vel.y <= 0.0
+
+
 ## What decides a ball in the air, in place of dribbling and tackling.
 ##
 ## Nobody is carrying a ball over his own head, so the contest is not the

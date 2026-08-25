@@ -92,6 +92,11 @@ static func resolve_contacts(ctx: SimContext) -> void:
 		# mechanic: nobody touches it, and it comes down.
 		if overhead and SimAerial.lets_it_drop(ctx, p):
 			continue
+		# And the same man a band lower, on his own ball, between the chest-down
+		# he has just played and the feet it is dropping to. See
+		# `SimAerial.settling_a_chest`.
+		if SimAerial.settling_a_chest(ctx, p):
+			continue
 		_contenders.append(p)
 		_challenge_win.append(1.0)
 		_challenge_foul.append(1.0)

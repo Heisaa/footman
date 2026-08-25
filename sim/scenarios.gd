@@ -477,6 +477,10 @@ static func _arrivals(ctx: SimContext, team: int, n: int, ball_at: Vector3,
 		if to.length() > 1e-3:
 			p.vel = to.normalized() * ARRIVAL_PACE
 		_face(p, point)
+		# Committed to the box, not just aimed at it: the velocity alone is
+		# erased by the first off-ball retarget and the "arriving" premise dies
+		# on tick one. See `SimOffBall.plant`.
+		SimOffBall.plant(ctx, p, SimOffBall.BOX, point, 3.5)
 
 
 ## The outfielder whose shape station is furthest over on the given flank, for a
@@ -573,6 +577,45 @@ static func _flatten_line(ctx: SimContext, team: int, line_x: float, attack_dir:
 			p.facing = 0.0 if attack_dir > 0.0 else PI
 
 
+## The midpoints of the `count` widest gaps in a back line, so a forward on the
+## shoulder stands in a gap rather than on a defender.
+##
+## `_flatten_line` pulls the line back in x and leaves every man's z where his own
+## shape put it, so the spacing is the formation's and a scenario cannot know it
+## in advance. Fixed lanes therefore land where they land: measured on
+## `through-ball`, the forward at z +6 stood **1.35 m from a centre-back**, and
+## the ball in behind came back at `space` 0.000 -- which is the pass model being
+## right about a marked man, on a row whose whole question is the grass behind
+## the line. A scenario that places the bodies badly produces a bug report about
+## the scenario (`docs/DIAGNOSTICS.md`).
+static func _gap_lanes(ctx: SimContext, team: int, line_x: float, attack_dir: float,
+		count: int) -> Array[float]:
+	var zs: Array[float] = []
+	for p in ctx.players:
+		if p.team != team or p.is_keeper:
+			continue
+		if absf(p.pos.x - line_x) > 2.0:
+			continue
+		zs.append(p.pos.z)
+	# Interior gaps only. The first cut counted the touchline ends as edges,
+	# and in any back four the two widest gaps are then the ones outside the
+	# full-backs -- both runners went to z about +-20, the ball in behind was
+	# 32 m, and 32 m is past the through ball's range cap: `./run.sh behind`
+	# reads "out of striking range" at that distance, `--acts` read 0.0 through
+	# balls a trial, and the row was scoring a lofted hoof priced as one. The
+	# channel outside the full-back is real football, but it is not a ball this
+	# passer can play, and a lane the named act cannot reach measures nothing.
+	zs.sort()
+	var gaps: Array = []
+	for i in zs.size() - 1:
+		gaps.append([zs[i + 1] - zs[i], (zs[i] + zs[i + 1]) * 0.5])
+	gaps.sort_custom(func(a, b): return a[0] > b[0])
+	var out: Array[float] = []
+	for i in mini(count, gaps.size()):
+		out.append(float(gaps[i][1]))
+	return out
+
+
 ## Puts the ball in the air on its way somewhere, keeping whose it is.
 ##
 ## `settle` has already handed it to a man; this only changes where it is and
@@ -594,19 +637,36 @@ static func _face(p: SimPlayer, at: Vector3) -> void:
 # --- The pass ---------------------------------------------------------------
 
 
-## A midfielder on the ball at the top of his own half, forwards ahead of him,
-## and a flat back line with grass behind it.
+## A midfielder on the ball sixteen metres behind a flat back line, the midfield
+## beaten behind him, runners committed in the gaps, and grass behind the line.
 ##
 ## The question is whether the ball in behind is ever *generated*, which
 ## `./run.sh behind` answers in a set geometry without ticking the clock and
 ## `docs/THE_FOOTBALL.md` 33 says has been the hole twice. Here the same ball has
 ## to survive a real defence and a real runner.
+##
+## Every distance in it was moved once, each for a measured reason written where
+## it sits: the passer to the bench's own sixteen metres, the runners to the
+## gaps in front of him and six metres onside, the runs to committed intents,
+## the midfield behind the ball. The first version failed the row's own
+## question five different ways at once, and each looked like the next one
+## until it was probed -- the row went 0.0 through balls a trial to 1.6.
 static func through_ball() -> SimScenario:
 	return _make("through-ball", "midfielder on the ball, forwards ahead, a line to play past", 7.0,
 		func(sc: SimScenario, ctx: SimContext) -> void:
 			var team := sc.attacking_team
 			var dir := ctx.pitch.attack_dir(team)
-			var at := Vector3(6.0 * dir, 0.0, -4.0)
+			var line_x: float = (ctx.pitch.half_length - 24.0) * dir
+			# Sixteen metres behind the line, which is the `behind` bench's own
+			# passer distance and the nearest of its three that is offered a
+			# ball everywhere. The first cut stood him 22 m back at the halfway
+			# line, and from there the ball in behind is thirty metres along
+			# the floor: probed, `lane` read 0.000-0.005 -- every body between
+			# him and the line takes a rolled thirty-metre ball -- so the act
+			# was generated, priced at succ 0.01, and never once won. That is
+			# the pass model being right about a Hollywood ball, on a row whose
+			# question is the ordinary one.
+			var at := Vector3(line_x - 16.0 * dir, 0.0, -4.0)
 			var passer := _one(ctx, team, [SimRole.CM, SimRole.DM, SimRole.AM])
 			sc.settle(ctx, at + Vector3(dir * 0.6, 0.0, 0.0), passer)
 			passer.pos = at
@@ -614,16 +674,54 @@ static func through_ball() -> SimScenario:
 			# The line at twenty-two metres from their goal, standing rather than
 			# recovering: it has not been broken, and whether it can be is the
 			# question.
-			_flatten_line(ctx, SimConsts.other_team(team), (ctx.pitch.half_length - 24.0) * dir,
-				dir, false)
-			# Two forwards on the shoulder of it, moving.
+			_flatten_line(ctx, SimConsts.other_team(team), line_x, dir, false)
+			# And the midfield beaten, because that is what "a line to play
+			# past" means. Left to the shape, their holding midfielder stands
+			# a metre off the lane between the centre-backs -- probed, cut
+			# 0.99, `lane` 0.003 on every ball in behind -- and the row
+			# measures playing through a set midfield instead, which no
+			# through ball beats and no through ball is asked to. Everybody
+			# who is not the back line is a stride behind the ball, chasing.
+			for d in ctx.players:
+				if d.team == team or d.is_keeper:
+					continue
+				if absf(d.pos.x - line_x) <= 2.0:
+					continue
+				d.pos.x = at.x - 4.0 * dir
+				d.vel = Vector3(dir * RECOVERY_PACE, 0.0, 0.0)
+				d.facing = 0.0 if dir > 0.0 else PI
+			# Two forwards on the shoulder of it, moving, and standing in the two
+			# widest gaps in it rather than on fixed lanes. See `_gap_lanes`.
 			var forwards := _of_role(ctx, team, SimRole.ST) + _of_role(ctx, team, SimRole.WIDE)
-			var lane := -14.0
-			for f in forwards.slice(0, 2):
-				f.pos = Vector3((ctx.pitch.half_length - 25.5) * dir, 0.0, lane)
+			# Nearest gap to the passer first, not widest first. The ball is
+			# struck from where he stands, so a wide gap across the pitch is a
+			# diagonal that crosses the line short of the gap it was aimed at:
+			# probed, a ball aimed at the gap midpoint at z +8 crossed the line
+			# at z +3.7 -- on the centre-back -- and `lane` read 0.005. The gap
+			# in front of the passer is the one his ball actually goes through,
+			# which is the ball between the centre-backs.
+			var lanes := _gap_lanes(ctx, SimConsts.other_team(team), line_x, dir, 3)
+			lanes.sort_custom(func(a, b): return absf(a - at.z) < absf(b - at.z))
+			for i in mini(2, forwards.size()):
+				var f: SimPlayer = forwards[i]
+				var lane: float = lanes[i] if i < lanes.size() else 0.0
+				# Six metres onside, not a stride: a runner starting on the
+				# shoulder crossed the line in a third of a second, so any pass
+				# after the passer's settle beat was to a man already gone --
+				# seed 1's one through ball was flagged. The run is timed to
+				# hit the line as the passer is ready, which means starting it
+				# a stride-and-a-half back.
+				f.pos = Vector3(ctx.pitch.half_length * dir - 30.0 * dir, 0.0, lane)
 				f.vel = Vector3(dir * 4.0, 0.0, 0.0)
 				_face(f, ctx.pitch.target_goal(team))
-				lane += 20.0
+				# A committed run, not a velocity wearing one. The velocity
+				# alone is erased by the first off-ball retarget, and with it
+				# the "is he moving on" gate in front of the ball in behind --
+				# `./run.sh behind` reads "not moving forward yet" for exactly
+				# this man. The intent is what `destination_for` reads, so the
+				# runner keeps going and the passer knows where.
+				SimOffBall.plant(ctx, f, SimOffBall.BEHIND,
+					Vector3((ctx.pitch.half_length - 15.0) * dir, 0.0, lane), 4.0)
 			ctx.update_possession())
 
 
@@ -693,6 +791,7 @@ static func build_up() -> SimScenario:
 				q.vel = Vector3(-dir * 4.0, 0.0, 0.0)
 				_face(q, at)
 				lane += 10.0
+			sc.escape_x = -ctx.pitch.half_length / 3.0
 			ctx.update_possession())
 
 
@@ -784,13 +883,27 @@ static func long_range() -> SimScenario:
 			var team := sc.attacking_team
 			var dir := ctx.pitch.attack_dir(team)
 			var at := Vector3((ctx.pitch.half_length - 28.0) * dir, 0.0, 0.0)
+			var line_x: float = (ctx.pitch.half_length - 16.0) * dir
 			var man := _one(ctx, team, [SimRole.CM, SimRole.AM])
 			sc.settle(ctx, at + Vector3(dir * 0.6, 0.0, 0.0), man)
 			man.pos = at
 			_face(man, ctx.pitch.target_goal(team))
 			# Their line dropped off him, which is what leaves the shot on.
-			_flatten_line(ctx, SimConsts.other_team(team), (ctx.pitch.half_length - 16.0) * dir,
-				dir, false)
+			_flatten_line(ctx, SimConsts.other_team(team), line_x, dir, false)
+			# And their midfield behind the ball, beaten, as in `through-ball`
+			# and for the same reason: left to the shape, their holding
+			# midfielder stands 5.5 m in front of him dead on the lane to goal
+			# -- probed, `off_lane` 0.0 on every seed -- and the row read 78%
+			# lost at 0.2 shots a trial. That is a man shooting through a body,
+			# on the row named for the space in front of him.
+			for d in ctx.players:
+				if d.team == team or d.is_keeper:
+					continue
+				if absf(d.pos.x - line_x) <= 2.0:
+					continue
+				d.pos.x = at.x - 4.0 * dir
+				d.vel = Vector3(dir * RECOVERY_PACE, 0.0, 0.0)
+				d.facing = 0.0 if dir > 0.0 else PI
 			ctx.update_possession())
 
 
@@ -983,13 +1096,16 @@ static func throw_final_third() -> SimScenario:
 					ctx.pitch.half_width)))
 
 
-## Playing out from the back. `none` is the good outcome, as in `build-up`.
+## Playing out from the back. `none` is the good outcome, as in `build-up`, and
+## like `build-up` it stops at the top of the defending third -- see
+## `SimScenario.escape_x`.
 static func goal_kick() -> SimScenario:
 	return _restart("goal-kick", "a goal kick, played out",
 		func(ctx: SimContext, team: int) -> Vector3:
 			return ctx.pitch.own_goal(team) + Vector3(-signf(ctx.pitch.own_goal(team).x) * 5.5, 0.0, 0.0),
 		func(ctx: SimContext, team: int) -> void:
-			SimSetPiece.goal_kick(ctx, team))
+			SimSetPiece.goal_kick(ctx, team),
+		-1.0 / 3.0)
 
 
 ## The shared body of a restart scenario: settle the shape, then hand the whole
@@ -1003,9 +1119,14 @@ static func goal_kick() -> SimScenario:
 ## nine throws in ten came out as `SimTouch.clearance` -- the row was measuring
 ## its own bad placement. Settled around the spot, the side is standing where it
 ## would be standing, and the routine walks it the rest of the way.
-static func _restart(name: String, title: String, about: Callable, begin: Callable) -> SimScenario:
+## `escape_frac` is `SimScenario.escape_x` as a share of the half length, set
+## here because the pitch is not to hand where a scenario is built. Zero for the
+## rows that have no such line, which is all of them but `goal-kick`.
+static func _restart(name: String, title: String, about: Callable, begin: Callable,
+		escape_frac := 0.0) -> SimScenario:
 	return _make(name, title, 12.0, func(sc: SimScenario, ctx: SimContext) -> void:
 		var team := sc.attacking_team
 		sc.settle(ctx, about.call(ctx, team), _furthest_forward(ctx, team))
 		begin.call(ctx, team)
+		sc.escape_x = INF if escape_frac == 0.0 else ctx.pitch.half_length * escape_frac
 		ctx.update_possession())

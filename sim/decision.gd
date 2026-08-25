@@ -708,9 +708,9 @@ const MAX_PASS_TARGETS := 9
 ## The nearest teammates are always considered whatever the filter thinks, so a
 ## player under pressure never loses their safe ball.
 const ALWAYS_KEEP_NEAREST := 2
-## The switch of play, in build-up. How far across the pitch a man has to be
-## to count as one, how much grass around him counts as free, and what the
-## anti-hoof prior gives back for it. `LOFTED_BIAS` exists to stop the engine
+## The switch of play. How far across the pitch a man has to be to count as one,
+## how much grass around him counts as free, and what the anti-hoof prior gives
+## back for it. `LOFTED_BIAS` exists to stop the engine
 ## hoofing it, and a switch to a free man is not a hoof -- it is the one ball
 ## that beats a collapse without going long to the front (the cross makes the
 ## same argument about its own priors at `CROSS_BIAS`). The lift is folded
@@ -721,12 +721,20 @@ const SWITCH_FREE_RADIUS := 8.0
 const SWITCH_LIFT := 2.0
 
 
-## The lofted prior's refund for a genuine switch: a ball across the pitch, out
-## of the team's own half, to a man with grass around him. 1.0 otherwise.
+## The lofted prior's refund for a genuine switch: a ball across the pitch to a
+## man with grass around him. 1.0 otherwise.
+##
+## **It used to be gated to the team's own half and that was the wrong half.**
+## The gate read `from.x * attack_dir >= 0.0: return 1.0`, so the refund existed
+## only while the ball was behind the halfway line -- and this function's own
+## first line said the opposite of the constant above it, which is how it went
+## unnoticed. A side is most compact in front of its own box, so the final third
+## is where the ball across is worth most and where it was priced as a hoof:
+## measured on `switch`, the 42 m ball to a free winger 14 m into the attacking
+## half sat on the candidate list every tick at `bias 0.10` and never won one,
+## and the row it is named for lost the ball in 88% of trials.
 static func _switch_lift(ctx: SimContext, player: SimPlayer, mate: SimPlayer,
 		believed: Vector3, from: Vector3) -> float:
-	if from.x * ctx.pitch.attack_dir(player.team) >= 0.0:
-		return 1.0
 	if absf(believed.z - from.z) < SWITCH_ACROSS:
 		return 1.0
 	var near := ctx.nearest_to(mate.pos, SimConsts.other_team(player.team))
@@ -2292,9 +2300,26 @@ static func _pass_success(ctx: SimContext, player: SimPlayer, from: Vector3, to:
 	# the receiver being on the spot already, and at this point he is -- it is the
 	# grass under his feet. The race for the space beyond him is the one that is
 	# graded, and it is asked on the line above.
+	#
+	# On the escape clock, not the ball's. `control_at_pass` floors the receiver's
+	# arrival at `ball_time` and floors no opponent at all, which is right where
+	# the ball is going -- nobody plays it before it lands -- and wrong at his own
+	# feet, where he is already standing. Handed the whole flight, the term asks
+	# "who owns this grass three seconds from now", and three seconds from now he
+	# is not on it: measured on `through-ball`, a runner with **5.3 m of grass
+	# around him** came back at 0.003 on a 28 m ball, and the same runner at the
+	# same distance from the same marker came back at 0.99 on a 12 m one. It was
+	# reading the length of the pass and calling it a marker. `./run.sh control`
+	# block D says the same from the other side: `space` sat at 0.99-1.00 down a
+	# block whose whole variable is how close the marker is, which by that bench's
+	# own legend is the signature of a factor that cannot see the geometry it owns.
+	#
+	# What bounds the marker is how long the receiver has to stay within his
+	# reach, and that is a stride or two whatever the ball is doing.
 	if into_space:
 		space = minf(space, ctx.value.control_at_pass(
-			ctx, receiver.pos, player.team, travel, receiver.id, player.id, false))
+			ctx, receiver.pos, player.team, minf(travel, ESCAPE_WINDOW),
+			receiver.id, player.id, false))
 	# Whether the receiver is there when it is -- and only for a ball to feet.
 	#
 	# For a ball into space the two lines above and this one are the same question
@@ -2378,6 +2403,18 @@ static func _in_time(margin: float, run: float) -> float:
 const IN_TIME_WIDTH_FLOOR := 0.12
 const IN_TIME_WIDTH_PER_M := 0.05
 
+## How long the receiver of a ball into space has to stay inside his marker's
+## reach before he is gone -- the clock the escape contest in `_pass_success` is
+## settled on. See the note there for why it is not the ball's flight.
+##
+## It binds on the long ball and on nothing else, which is the whole of the fix:
+## `./run.sh control` block D flies a 12 m pass, whose flight is inside the
+## window, so every row of the bench this contest was built against is untouched
+## by it. What changes is the ball the bench cannot reach -- the thirty-metre one
+## in behind, where the flight was three seconds and the term was reading it as a
+## marker.
+const ESCAPE_WINDOW := 1.8
+
 
 ## How much of the far end of a lane belongs to the arrival rather than to the
 ## journey, for a ball played to feet.
@@ -2404,22 +2441,22 @@ const FEET_TAIL := 2.0
 ##
 ## Read off `./run.sh control`, block B — one defender standing on the line,
 ## halfway along a 12 m pass, `l` metres to the side of it. The engine takes the
-## ball 100% at half a metre, 98% at one and a half, 82% at two, 50% at three,
-## 10% at four and a half and never at six. On the old shape — a width of 0.28
-## and no lateness at all — the model called those same seven balls 0.25, 0.33,
-## 0.50, 0.61, 0.77, 0.89, 0.94: too generous by 25 to 48 points everywhere
-## inside three metres, and right only once the defender was too far away to
-## matter. A ball threaded half a metre past a man was priced as a one-in-four
-## risk and was in fact a certainty.
+## ball 95% at half a metre, 82% at one, 55% at one and a half, 20% at two, 10%
+## at three and never past four and a half. All three constants come off those
+## rows, and they go stale when the engine's defender does: the previous fit
+## (0.29 late, 0.125 wide) was made against an engine that cut 98% at one and a
+## half and 82% at two, and once the engine stopped doing that the model was
+## calling every threaded ball a certainty the other way — probed on
+## `through-ball`, `lane` read 0.000-0.005 on every ball in behind, so the act
+## was generated, priced at succ 0.01, and never once won. Too harsh is the same
+## bug as too generous: the model saying something the engine does not do.
 ##
-## All three come off those rows. `LANE_TAU` is the width the transition actually
-## has, and it is less than half what was there. `LANE_LATE` is the centre: a
-## defender level with the ball takes it far more often than half the time,
-## because a leg goes into the lane and the ball has to pass *through* him —
-## arriving three tenths of a second after it is still a fifty-fifty.
+## `LANE_TAU` is the width the transition actually has. `LANE_LATE` is the
+## centre — a defender level with the ball no longer takes it far more often
+## than half the time, so the lateness credit is gone.
 ##
-## Fitted, the same seven rows read 0.00, 0.01, 0.05, 0.14, 0.51, 0.89, 0.98
-## against a ball kept 0.00, 0.00, 0.02, 0.18, 0.50, 0.90, 1.00.
+## Fitted 2026-08-25, the seven rows read 0.07, 0.18, 0.51, 0.72, 0.91, 0.98,
+## 0.99 against a ball kept 0.05, 0.18, 0.45, 0.80, 0.90, 1.00, 1.00.
 ##
 ## `AIMED_STEP_IN` in `SimValueField` is the same measurement one factor along,
 ## and the two say opposite-looking things for one reason: at the *end* of a pass
@@ -2427,8 +2464,8 @@ const FEET_TAIL := 2.0
 ## while *along* it there is nobody in the way and a defender only has to reach
 ## it. The same bench measures both, and it should be re-read when the defensive
 ## pass lands.
-const LANE_TAU := 0.125
-const LANE_LATE := 0.29
+const LANE_TAU := 0.16
+const LANE_LATE := 0.0
 ## And what being well placed is worth, as time rather than as odds: the gap
 ## in effective arrival between a defender who reads it and one who does not.
 const LANE_POSITION := 0.08

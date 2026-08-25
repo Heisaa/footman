@@ -849,6 +849,31 @@ carries and 2.0 ground passes, and the sequence ends wide and crossed: the trial
 cross blocked at 2.8 s. `box s` is **0.05**. The ball in behind is not being
 declined by the softmax; it is not on the list.
 
+**33, re-measured 2026-08-25, and the last sentence above is now wrong: it is on
+the list, and it is priced at nothing.** `replay --scenario through-ball --tick 1`
+has `through -> #9 35 m fwd` on the candidate list with the largest `gain` of any
+option there, `0.352`, and `succ 0.01`. Two things underneath it were faults and
+are fixed; a third is not a fault and is where the item now stands.
+
+- **The scenario stood the runner on a defender.** It put its two forwards on
+  fixed lanes and the back line's z spacing comes from the shape, so the man the
+  ball was for was **1.35 m from a centre-back** and the pass model was simply
+  right about him. `SimScenarios._gap_lanes` now puts them in the two widest gaps.
+- **The escape contest was reading the length of the pass and calling it a
+  marker.** `_pass_success` asks a second control contest at the receiver's own
+  feet, and handed it the ball's whole flight: he is floored at the arrival and no
+  opponent is, so on a three-second ball every defender within a dozen metres beat
+  him to grass he was already standing on. The same runner, the same marker, came
+  back at 0.003 on a 28 m ball and 0.99 on a 12 m one. `ESCAPE_WINDOW`.
+- **What is left is the lane, and it is real.** With both fixed the ball still
+  comes back at `space 0.30, lane 0.000`: the passer is 22 m from the line and a
+  defensive midfielder is standing 1.6 m off the line of the pass. That is not a
+  ball a footballer plays either — it is the one he moves first. `through` went
+  from 0.0 to 0.1 a trial and the row is still a midfielder passing sideways.
+  **The binding half of 33 is therefore the first one**: men ahead of the ball are
+  not getting into a position where the ball to them exists, which is `SimOffBall`
+  and not the pass model.
+
 **34 is the cheapest football on this page, and it was found by grep.** `ctx.score`
 is written by `SimMatch` when a goal goes in, copied into the snapshot and the
 telemetry, and **read by nothing that decides anything**. Neither is the clock:
