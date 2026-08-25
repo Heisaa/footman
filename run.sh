@@ -84,6 +84,7 @@ usage: ./run.sh <command> [args]
   determinism [--seed N]    run one seed twice and compare the event logs
   view                      open the 2D debug view (needs a display)
   view3d [--seed N]         open the 3D match view (needs a display).
+      [--windowed WxH]      in a window of that size instead of fullscreen
       [--speed X] [--step-fps N]
       [--small] [--clock-rate R] [--pitch-scale F]
       [--home Q] [--away Q]
@@ -132,13 +133,14 @@ usage: ./run.sh <command> [args]
                             situations
   demo                      the six-a-side comparison, compressed the same way
   shot                      render one match frame to a PNG, from a virtual
-                            display (SHOT_AT, SHOT_SPEED, SHOT_PATH)
+                            display (SHOT_AT, SHOT_SPEED, SHOT_PATH, SHOT_RES)
   poses                     render every animation state side by side, labelled
                             (POSE_U picks where in each arc to freeze)
   parade [--seed N]         a rank of that seed's players, close up, turning,
       [--page N] [--still]  each captioned with number, name, height and
       [--turn DEG]          appearance seed. The squad is the match squad, so a
       [--face 0-4]          note taken here holds in view3d at the same seed.
+      [--windowed WxH]      in a window of that size instead of fullscreen
       [--hair N]            Keys: < > page, N / P seed, SPACE turn, 1-5
       [--anim NAME|all]     expression, [ ] step anim, A roll, 0 stand, Q quit.
       [--shot PATH]         --shot renders one frame from a
@@ -363,8 +365,12 @@ case "$cmd" in
 	shot)
 		# Renders a frame from a virtual display, so the look can be checked
 		# without anyone sitting and watching a match.
+		# The virtual screen is sized to the frame: the window fills the screen
+		# it is given, so a 1280x1024 default clamps anything wider.
 		out="${SHOT_PATH:-/tmp/footman-frame.png}"
-		xvfb-run -a "$GODOT" res://presentation/match_3d.tscn --resolution 1280x720 \
+		res="${SHOT_RES:-1280x720}"
+		xvfb-run -a -s "-screen 0 ${res}x24" "$GODOT" res://presentation/match_3d.tscn \
+			--resolution "$res" \
 			-- --shot "${SHOT_AT:-40}" --speed "${SHOT_SPEED:-8}" --shot-path "$out" "$@"
 		echo "wrote $out"
 		;;

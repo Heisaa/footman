@@ -411,9 +411,11 @@ func _ready() -> void:
 	# the command line and have to put themselves back into one here: a
 	# fullscreen window is the display's size, and a different aspect ratio is a
 	# different shot from the one `--resolution` asked for.
-	if _shot_after > 0.0 or _pose_sheet:
+	# `--windowed WxH` does the same for a live look at another resolution.
+	var windowed := _requested_size("--windowed")
+	if _shot_after > 0.0 or _pose_sheet or windowed != Vector2i.ZERO:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-		var wanted := _requested_resolution()
+		var wanted := _requested_resolution() if windowed == Vector2i.ZERO else windowed
 		if wanted != Vector2i.ZERO:
 			DisplayServer.window_set_size(wanted)
 	if _pose_sheet:
@@ -446,9 +448,13 @@ func _ready() -> void:
 ## by hand, because that window is created full screen and the requested size
 ## only means anything once it is a window again.
 func _requested_resolution() -> Vector2i:
+	return _requested_size("--resolution")
+
+
+static func _requested_size(flag: String) -> Vector2i:
 	var args := OS.get_cmdline_args()
 	for i in args.size():
-		if args[i] != "--resolution" or i + 1 >= args.size():
+		if args[i] != flag or i + 1 >= args.size():
 			continue
 		var parts := args[i + 1].split("x")
 		if parts.size() == 2 and parts[0].is_valid_int() and parts[1].is_valid_int():
