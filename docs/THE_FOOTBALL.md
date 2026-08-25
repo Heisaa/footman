@@ -101,7 +101,7 @@ with a ball in the air. The fourth act is not touching it at all.
 | Take it down on the chest | built | `SimTouch.chest` |
 | Let a dropping ball come to you | built | `SimAerial.lets_it_drop` |
 | Jump for it, contest it in the air | built | `SimDuel`, weighted by `SimAerial.duel_skill` |
-| Win a knock-down, attack a corner | partial — the knock-down exists; a corner is whatever the box happens to do (**29**), and corners run at 0.02 per team a match against a target of 3-8 (**5**) | |
+| Win a knock-down, attack a corner | partial — the knock-down exists; a corner is whatever the box happens to do (**29**), and corners run at 0.4-0.5 per team a match against a target of 3-8 (**50**, **5**) | |
 | Volley it, on purpose | built — sigma up on the elevation axis, pace up off the boot, both scaled by height and `technique` | `SimTouch.VOLLEY_FULL` |
 | Head it at goal | partial — the act exists; 22 headers in a match produced none at goal (**29**) | `SimAerial.play` |
 
@@ -174,6 +174,7 @@ When one is built its row above changes and its entry here goes.
 | **38** | Attributes make a player better, never different | `SimDecision`, `SimAttributes` |
 | **43** | A goal kick is nine passes in his own half and then a turnover | `SimSetPiece._take_goal_kick`, `SimMovement` |
 | **44** | A striker and a centre-back are the same speed | `SimRole._WEIGHTS`, `SimAttributes` |
+| **50** | Corners at 0.4-0.5 a team against a floor of 0.5: nobody puts the ball behind | `SimDuel`, `SimKeeper` |
 
 **3 surfaced when shots started reaching the target.** About a third are second
 attempts within four seconds of the last: parry, rebound, strike again. Real
@@ -319,8 +320,8 @@ and usually falls between two of those. So the timing has an honest trigger and
 no population, and what is missing is still the run: **29** and **33**.
 
 What is left of 29 is a set-piece question as much as an open-play one: a large
-share of football's headed attempts come from corners, and corners are 0.02 a team
-a match until **5** lands.
+share of football's headed attempts come from corners, and corners are 0.4-0.5 a
+team a match (**50**) until **5** lands.
 
 **29, measured in set situations, 2026-08-23.** The scenario table puts numbers
 on it that a match cannot. A corner is delivered in **100%** of trials and the
@@ -1078,6 +1079,15 @@ A centre-back is as quick as a striker in this engine. It is **38**'s point
 ("attributes make a player better, never different") with a specific number, and
 **15**'s draw formula is the mechanism.
 
+**50 is measured, and it is the defence's absence wearing a set-piece count.**
+Corners run at **0.4-0.5 per team across 150+ matches** (2026-08-25), below the
+0.5 sanity floor and far below football's 3-8. Up from the 0.02 of 2026-08-16 —
+shots and crosses reaching the box is what moved it — but a corner is *conceded*:
+it needs a defender who blocks or deflects behind, a keeper who parries wide,
+and neither act is built. No attacking mechanic can move this number and none
+should try (`PLAN.md` §11.4). It comes back with **5**, whose entry already says
+so; this one exists so the defensive pass starts with the figure in hand.
+
 **The arithmetic is confirmed and it was not what was deciding the row**, which
 is worth writing down because it nearly went in as a fix. Probed tick by tick,
 the two men in `race` were not sprinting: the speed cap on each of them read
@@ -1517,10 +1527,10 @@ still the largest single thing an eye would name — then **3**, then the remain
 defending rows above: jockeying, covering, the offside trap, the deliberate foul.
 Two measurements belong to it and are recorded here so they are not lost:
 
-- **Corners run at 0.02 per team a match against a target of 3-8**, n=20 — the
-  emptiest number the engine produces. A corner needs a defender to put the ball
-  behind or a keeper to parry wide, and neither act is built. They come back with
-  **5**, as its entry already says.
+- **Corners run at 0.4-0.5 per team a match against a target of 3-8**, 150+
+  matches, 2026-08-25 (**50**; 0.02 at n=20 when first written). A corner needs
+  a defender to put the ball behind or a keeper to parry wide, and neither act
+  is built. They come back with **5**, as its entry already says.
 - **3 of 11 shots are second attempts inside four seconds** of the same team's
   last — the rebound cascade, live now.
 
@@ -1553,6 +1563,23 @@ Two readings, and they want different work:
 The two are not exclusive and the order above is written for the second, because
 every item in it is a behaviour an eye can check. **The first is the owner's
 call** and nothing here should be tuned against it in the meantime.
+
+**2026-08-25: the owner made a density call, and the knobs cannot deliver it.**
+The stat screen need not read as real football; the eye wants pass density at
+**1.5-1.75x football**, down from ~2x — passes per team 176 to 132-154. The
+composed-receive mechanics went in (the receive's first touch aimed by value and
+space, a pressure-scaled take-down bias, the flight-prep cap on the strike beat)
+and moved 176 to **169**. Every tempo prior after that saturated flat, 30
+matches each: a pass-bias patience at 0.7 and at 0.45 both read ~169 with the
+free-man pass share unmoved, and default `tempo` 0.65 to 0.45 read 167.5. The
+priors cannot reach the release rate because the pass's score edge lives in
+possession value and positional gain, which no bias touches by design — and a
+decision comes every quarter second, so the pass only has to win one of them.
+The release rate is **37**'s subject (and 28's), not a knob: fewer passes means
+seconds where carrying or waiting genuinely outscores releasing, which is a
+possession phase, not a discount. Note also that ~60% of on-ball moments are
+already pressured — pressing intensity sets part of the tempo, and that half of
+the answer belongs to the defensive pass.
 
 ## Watching with this list
 

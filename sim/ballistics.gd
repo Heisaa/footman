@@ -36,11 +36,22 @@ const DRIVE_LOFT_PER := 0.45
 const DRIVE_LOFT_MAX := 2.0
 ## Backspin as a fraction of the rolling rate, at the two ends of the strike. A
 ## rolled pass is clipped under, and its backspin is the slide the two-phase law
-## already describes. A driven ball is hit through the middle and skids on —
-## given the roller's backspin it checked at every bounce like a wedge shot,
-## measured on the bench at 4 m short over 22 m.
+## already describes.
+##
+## The driven ball's is what sets the skim tail's length, and the skim tail is
+## where an overhit sheds its excess -- each low hop's friction is capped by its
+## own small normal impulse, so a flat spinless skim sheds almost nothing and a
+## 22 m drive overhit by a weight error ran 8 m long. More backspin widens the
+## slip at every contact and lets the skim shed pace: swept on `./run.sh strike`
+## at 0.2 / 0.35 / 0.5 / 0.65, the rolled long sigma at 22 and 30 m went
+## 8.0/8.2 -> 7.0/7.2 -> 6.5/7.1 and turned back up at 0.65. The check the
+## backspin causes on landing is *not* a reason to hold it low -- it was once
+## (0.55 measured 4 m short over 22 m), but that was before `ground_launch`
+## iterated the integrator: the solver now strikes harder to land the same ball,
+## so the bias re-solves and only the scatter moves. `GROUND_RANGE_SPREAD` is
+## fitted to this value's bench rows; moving one means re-fitting the other.
 const ROLL_BACKSPIN := 0.55
-const DRIVE_BACKSPIN := 0.2
+const DRIVE_BACKSPIN := 0.5
 
 ## How steep the skim is for a ball leaving the boot at `h_speed` along the
 ## grass. Zero is a roller. One rule, read by the solver below and by

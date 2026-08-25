@@ -815,6 +815,7 @@ static func _generate(ctx: SimContext, player: SimPlayer) -> float:
 		_add_dummy(ctx, player)
 	_add_clear(ctx, player)
 	_apply_set_damp(ctx, player)
+	_file_develop(ctx, player)
 	return regain
 
 
@@ -3735,17 +3736,88 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 ## measured it is already about right: 86-92% kept three seconds later across all
 ## three bands of `Taking it down`, against the 0.72-0.97 this reads off the
 ## attribute.
-static func _hold_rest_point(ctx: SimContext, player: SimPlayer, uncontrolled: bool) -> Vector3:
+static func _hold_rest_point(ctx: SimContext, player: SimPlayer, uncontrolled: bool,
+		recv_dir := Vector3.ZERO) -> Vector3:
 	if not uncontrolled:
 		return player.pos
-	var dir := safe_direction(ctx, player, HOLD_AHEAD)
+	var dir := recv_dir if recv_dir != Vector3.ZERO else safe_direction(ctx, player, HOLD_AHEAD)
 	var drift := SimTouch.first_touch_drift(ctx, player, dir)
 	return ctx.pitch.clamp_to_pitch(ctx.ball.ground_pos() + drift, 1.0)
 
 
+## Where a receiving touch takes the ball, chosen rather than inherited.
+##
+## The receive used to play its first touch toward `safe_direction` -- forward
+## if clear, sheltered otherwise -- which is the right rule for a man under a
+## challenge and blind for a free one. An unpressed receiver's first touch is
+## how he buys the better position (owner, 2026-08-25: receive and, under
+## control, move the ball to a better angle, away from opponents), and nothing
+## chose it: the direction was decided by a rule no candidate had scored, the
+## same shape as `_play_hold`'s own history.
+##
+## Probes the compass through the touch model's own forecast
+## (`first_touch_drift`, so the spot scored is where the compromised half-turn
+## touch actually puts the ball) and takes the best of value and space:
+## expected threat for the position, the nearest opponent's distance for "away
+## from him". Sheltering still wins outright when a body is arriving -- no
+## probe outweighs that.
+const RECEIVE_DIRS := 8
+## Metres to the nearest opponent past which a landing spot is as safe as it
+## needs to be, and what full safety is worth beside expected threat. Threat
+## moves ~0.01-0.02 over a touch, so 0.1 lets space dominate near a man and
+## threat break the ties of a free one.
+const RECEIVE_SPACE_FULL := 6.0
+const RECEIVE_SPACE_WORTH := 0.1
+
+
+## What taking an arriving ball down is worth against striking it first-time,
+## by how free the receiver is. At 1.0 the pressed man keeps first-time
+## football; the free man's end is the knob for how composed the receive looks.
+const RECEIVE_FREE_BIAS := 2.2
+
+
+static func _take_down_bias(ctx: SimContext, player: SimPlayer) -> float:
+	var pressed := clampf(ctx.pressure_on(player) + ctx.challenge_on(player), 0.0, 1.0)
+	return lerpf(RECEIVE_FREE_BIAS, 1.0, pressed)
+
+
+static func receive_direction(ctx: SimContext, player: SimPlayer) -> Vector3:
+	var safe := safe_direction(ctx, player, HOLD_AHEAD)
+	if ctx.challenge_on(player) > 0.1:
+		return safe
+	var best_dir := safe
+	var best := _receive_worth(ctx, player, safe)
+	for i in RECEIVE_DIRS:
+		var angle := TAU * float(i) / float(RECEIVE_DIRS)
+		var dir := Vector3(cos(angle), 0.0, sin(angle))
+		var worth := _receive_worth(ctx, player, dir)
+		if worth > best:
+			best = worth
+			best_dir = dir
+	return best_dir
+
+
+static func _receive_worth(ctx: SimContext, player: SimPlayer, dir: Vector3) -> float:
+	var drift := SimTouch.first_touch_drift(ctx, player, dir)
+	var run := SimConsts.horizontal_length(drift)
+	# A drift the grass cannot hold is not a direction, and the clamped point
+	# must not be scored in its place -- clamping hides that it was outside.
+	if run > 0.05 and settle_room(ctx, player, drift / run, run) < run:
+		return -INF
+	var spot := ctx.ball.ground_pos() + drift
+	var opp := ctx.nearest_to(spot, SimConsts.other_team(player.team))
+	var space := 1.0
+	if opp != null:
+		space = clampf(opp.dist_to(spot) / RECEIVE_SPACE_FULL, 0.0, 1.0)
+	return ctx.value.xt_at(player.team, spot, ctx.pitch) + space * RECEIVE_SPACE_WORTH
+
+
 static func _add_hold(ctx: SimContext, player: SimPlayer, uncontrolled: bool, regain: float) -> void:
 	var tactics := ctx.tactics(player.team)
-	var rest := _hold_rest_point(ctx, player, uncontrolled)
+	var recv_dir := Vector3.ZERO
+	if uncontrolled:
+		recv_dir = receive_direction(ctx, player)
+	var rest := _hold_rest_point(ctx, player, uncontrolled, recv_dir)
 	# Standing over the ball as a challenge comes in is how the ball is lost, and
 	# it is the option the engine used to take almost every time, because the
 	# pressure field it reads rates the man on the carrier's back at nearly
@@ -3790,6 +3862,9 @@ static func _add_hold(ctx: SimContext, player: SimPlayer, uncontrolled: bool, re
 	_note_factor(SimAblation.F_RETENTION, tactics.retention_bias())
 	_candidates.append({
 		"action": Action.HOLD,
+		# The receiving touch's chosen direction; ZERO for a settled ball, whose
+		# hold direction stays `safe_direction`'s call at execution.
+		"dir": recv_dir,
 		# Not `point`: nothing executes a hold from a target, and the overlay
 		# draws no arrow for it. It is where the ball would be handed over.
 		"end": rest,
@@ -3800,7 +3875,15 @@ static func _add_hold(ctx: SimContext, player: SimPlayer, uncontrolled: bool, re
 		# was used rather than one nothing reads.
 		"gain": 0.0,
 		"loss": ctx.value.xt_at(SimConsts.other_team(player.team), rest, ctx.pitch),
-		"bias": tactics.retention_bias() * (1.5 if uncontrolled else 1.0) * lerpf(1.0, 0.5, regain),
+		# "Take a touch rather than play a ball that is still moving" -- and how
+		# strongly depends on who is near. A free receiver takes the ball down
+		# and buys the better position (`receive_direction`); a pressed one has
+		# no such luxury and the first-time ball keeps its place. The flat 1.5
+		# this replaces gave the composed touch the same weight in both moments,
+		# which is why 70% of passes were struck first-time by men nobody was
+		# pressing (owner, 2026-08-25: the stressed look).
+		"bias": tactics.retention_bias() * (_take_down_bias(ctx, player) if uncontrolled else 1.0)
+			* lerpf(1.0, 0.5, regain),
 	})
 	_keep_factors()
 
@@ -4582,7 +4665,7 @@ const DISCOUNT_SECONDS := 1.0
 ## pressure -- `success` is below one and the risk half still charges -- so a
 ## free man dwells while his look is worth something and then plays; he does
 ## not stand on the ball forever.
-const FREE_WAIT_COST := 0.25
+const FREE_WAIT_COST := 0.1
 
 
 ## What waiting one more touch costs, as a multiplier on the deferred option.
@@ -4609,7 +4692,19 @@ static func _wait_discount(ctx: SimContext, player: SimPlayer, ablate: int = -1)
 ## leaves a tackled man no way out. One-touch combination football in tight
 ## areas is not this term's job: a pre-agreed ball is a decision already made,
 ## and the give-and-go and pattern biases still argue for it.
-const PREPARE_SECONDS := 0.5
+const PREPARE_SECONDS := 0.8
+## How much of the beat the flight of an incoming ball can pay for. It used to
+## pay all of it -- any ordinary flight banked the whole `PREPARE_SECONDS`, so
+## the moment a receiver's controlled touch landed he was fully set to strike,
+## and the reception was touch-pass with nothing between. The flight buys the
+## scan; it cannot buy the body over the next ball, and that half starts at his
+## first touch. Below `PREPARE_SECONDS` on purpose: every reception now carries
+## a short visible beat -- touch, set, play -- which is the composed look the
+## owner asked for (2026-08-25) in place of the machine-gun release. Above
+## `SET_STRIKE_FLOOR`, also on purpose: a first-time strike at the end of a
+## flight is a different act and keeps its full readiness through the other
+## branch of `readiness`.
+const FLIGHT_PREP_CAP := 0.1
 ## What a wholly unprepared strike keeps of its accuracy.
 const SET_SUCCESS_FLOOR := 0.5
 ## And below this much orientation there is no strike at goal on the list at all.
@@ -4697,6 +4792,104 @@ const SCAN_STALE_SECONDS := 0.7
 
 ## How much holding is worth over releasing now, 0 to `SCAN_GAIN`, as a
 ## fraction of the continuation.
+## The run worth waiting for: the hold's continuation, priced off the board a
+## live run is about to make rather than only the one he sees now.
+##
+## `_hold_score` prices deferring as the best current option discounted, so a
+## future better than the present is invisible by construction -- and the
+## through ball measured exactly that (`docs/THE_FOOTBALL.md` 33): on the list,
+## the largest `gain` of any candidate, refused at `lane 0.000` because a
+## defender stands on the line *now*. That is the ball a footballer waits for
+## rather than declines, and nothing here could wait for it.
+##
+## For each floor pass aimed at a man mid-run, the same ball is asked again at
+## the point the run is taking him -- `_pass_success` reused with the future
+## geometry, never copied (the two-models rule) -- and the candidate's own
+## success is scaled by the ratio, so every factor the run cannot change (the
+## off-balance, the set damp, offside) rides along unchanged. The best of those
+## futures, discounted by the wait it costs, is filed here; the hold takes the
+## better of present and future. It terminates itself: as the run completes the
+## future converges on the present, the edge goes to zero, and the pass is
+## played. The release trigger is the run arriving, unauthored.
+##
+## Guards: nothing is filed for a pressed man -- the dwell's own `freedom`
+## rule, a closed-down man has no time to wait for anybody; the forecast is
+## capped at `DEVELOP_HORIZON`; and only the floor balls runs are served by are
+## asked -- a cross's runners are the box claim's business.
+const DEVELOP_HORIZON := 1.2
+## A run with less than this left, in metres, is already the present board.
+const DEVELOP_REMAINING_MIN := 1.0
+
+## Best deferred ball a live run buys this decision, in score units, and the
+## wait it needs. Reset every generation, like `_set_worth`.
+static var _develop_value := -INF
+
+
+static func _file_develop(ctx: SimContext, player: SimPlayer) -> void:
+	_develop_value = -INF
+	var freedom := 1.0 - clampf(ctx.pressure_on(player) + ctx.challenge_on(player), 0.0, 1.0)
+	if freedom <= 0.0:
+		return
+	var tactics := ctx.tactics(player.team)
+	var from := ctx.ball.pos
+	for i in _candidates.size():
+		var c: Dictionary = _candidates[i]
+		var action := int(c["action"])
+		if action != Action.GROUND_PASS and action != Action.THROUGH_BALL:
+			continue
+		var mate_id := int(c.get("target", -1))
+		if mate_id < 0:
+			continue
+		var mate := ctx.players[mate_id]
+		match SimOffBall.intent_of(ctx, mate):
+			SimOffBall.SHOW, SimOffBall.SPACE, SimOffBall.BEHIND, SimOffBall.BOX, SimOffBall.SECOND:
+				pass
+			_:
+				continue
+		var dest := SimOffBall.destination_for(ctx, mate)
+		if is_inf(dest.x):
+			continue
+		var whole := SimConsts.horizontal(dest - mate.pos)
+		var remaining := whole.length()
+		if remaining < DEVELOP_REMAINING_MIN:
+			continue
+		var speed: float = SimOffBall.pace_for(ctx, mate) * mate.max_speed()
+		if speed < 0.5:
+			continue
+		var dt: float = clampf(remaining / speed, 0.2, DEVELOP_HORIZON)
+		var aim: Vector3 = c["point"]
+		var to: Vector3 = aim + whole / remaining * (speed * dt)
+		# Scored where the run actually goes. A future point the pitch cannot
+		# hold is no future -- clamped back it would hide that it was outside.
+		if not ctx.pitch.in_bounds(to):
+			continue
+		var into_space := action == Action.THROUGH_BALL \
+			or SimConsts.horizontal_length(aim - mate.pos) > 2.0
+		var succ_now: float = maxf(_pass_success(ctx, player, from, aim,
+			_pass_travel(ctx, SimConsts.horizontal_length(aim - from), tactics),
+			mate, into_space), 0.01)
+		var succ_fut := _pass_success(ctx, player, from, to,
+			_pass_travel(ctx, SimConsts.horizontal_length(to - from), tactics),
+			mate, into_space)
+		var patched := c.duplicate()
+		patched["success"] = clampf(float(c["success"]) * succ_fut / succ_now, 0.01, 0.98)
+		patched["gain"] = float(c["gain"]) \
+			+ ctx.value.xt_at(player.team, to, ctx.pitch) \
+			- ctx.value.xt_at(player.team, aim, ctx.pitch)
+		patched["end"] = to
+		var worth := score_of(ctx, player, patched,
+			pow(tactics.future_discount(), dt / DISCOUNT_SECONDS))
+		if worth > _develop_value:
+			_develop_value = worth
+
+
+## The floor ball's flight, the way `_add_passes` computes it.
+static func _pass_travel(ctx: SimContext, distance: float, tactics: SimTactics) -> float:
+	var pace := arrival_pace(distance, tactics)
+	return ctx.ballistics.ground_travel_time(
+		distance, ctx.ballistics.ground_pass_speed(distance, pace, ctx.env), ctx.env)
+
+
 static func scan_gain(ctx: SimContext, player: SimPlayer) -> float:
 	var freedom := 1.0 - clampf(ctx.pressure_on(player) + ctx.challenge_on(player), 0.0, 1.0)
 	if freedom <= 0.0:
@@ -4828,6 +5021,17 @@ static func _hold_score(ctx: SimContext, player: SimPlayer, c: Dictionary, best_
 		# Stamped for the debug overlay, which prints it as `look`: a hold at
 		# 1.0 is "nothing on", a hold above it is a dwell.
 		c["scan"] = 1.0 + scan
+	# The run worth waiting for. Taken *after* the bias and the look, so the
+	# modeled future stands raw against the fully-blessed present: the hold
+	# only waits when the ball a run is about to make genuinely beats the best
+	# thing he could do now, priors and all. See `_file_develop`.
+	var dev := _develop_value
+	if ablate == SimAblation.T_DEVELOP:
+		dev = -INF
+	if dev > continuation:
+		continuation = dev
+		if ablate < 0:
+			c["develop"] = dev
 	c["gain"] = continuation
 	return success * continuation - (1.0 - success) * risk * loss
 
@@ -5178,7 +5382,7 @@ static func _execute(ctx: SimContext, player: SimPlayer, c: Dictionary, uncontro
 			tally_dummy += 1
 			player.touch_cooldown = maxf(player.touch_cooldown, float(c.get("wait", 0.4)))
 		Action.HOLD:
-			_play_hold(ctx, player, uncontrolled)
+			_play_hold(ctx, player, uncontrolled, c.get("dir", Vector3.ZERO))
 		_:
 			_play_hold(ctx, player, uncontrolled)
 
@@ -5209,11 +5413,16 @@ static func _execute(ctx: SimContext, player: SimPlayer, c: Dictionary, uncontro
 ## already shorter than the touch it would shorten to -- but `carry_room` is,
 ## because a metre played at a line the man is standing on is still a metre too
 ## far.
-static func _play_hold(ctx: SimContext, player: SimPlayer, uncontrolled: bool) -> void:
-	var dir := safe_direction(ctx, player, HOLD_AHEAD)
+static func _play_hold(ctx: SimContext, player: SimPlayer, uncontrolled: bool,
+		recv_dir := Vector3.ZERO) -> void:
 	if uncontrolled:
-		SimTouch.first_touch(ctx, player, dir)
+		# The direction the candidate was scored on (`receive_direction`), so
+		# the spot the option priced is the spot the touch goes to.
+		var chosen := recv_dir if recv_dir != Vector3.ZERO \
+			else safe_direction(ctx, player, HOLD_AHEAD)
+		SimTouch.first_touch(ctx, player, chosen)
 		return
+	var dir := safe_direction(ctx, player, HOLD_AHEAD)
 	player.settling = true
 	# A hold with a challenger on it is a shield: the body goes between the man
 	# and the ball. The flag is what the duel reads, and what marks the touch so

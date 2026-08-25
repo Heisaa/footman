@@ -289,7 +289,11 @@ static func apply(ctx: SimContext, player: SimPlayer, kind: int, vel: Vector3, s
 		player.spell_start_tick = ctx.tick_index
 		player.spell_prep_seconds = 0.0
 		if ctx.ball.last_touch_tick >= 0:
-			player.spell_prep_seconds = float(ctx.tick_index - ctx.ball.last_touch_tick) * SimConsts.DT
+			# Capped: the flight pays for the scan, not for the body over the
+			# next strike. See `SimDecision.FLIGHT_PREP_CAP`.
+			player.spell_prep_seconds = minf(
+				float(ctx.tick_index - ctx.ball.last_touch_tick) * SimConsts.DT,
+				SimDecision.FLIGHT_PREP_CAP)
 	# Counted before the launch, because it is a fact about the man striking it.
 	if is_footed(kind):
 		var line := SimConsts.horizontal(vel)
@@ -828,12 +832,13 @@ static func long_sigma(player: SimPlayer, skill: float, distance: float, axis: i
 	# there: it finishes where it has decayed to its arrival pace, and the
 	# excess of an overhit ball is shed in the slowest part of the decay -- on a
 	# driven ball, in the skim, where there is almost no friction to shed it
-	# with. Rolled on the bench at 8, 14, 22 and 30 m the ball ran 2.8, 3.8,
-	# 8.0 and 8.2 m long against a model saying 1.4, 2.1, 2.8 and 3.3 -- the
-	# implied scale is 3.2, 2.4, 3.3, 2.5 times the weight error, and a flat
-	# number in the middle is again closer than any shape. The decision layer
-	# was told a 25 m ball in behind lands inside tolerance at nearly three
-	# times its real rate, which is the giveaway the owner watched.
+	# with. `DRIVE_BACKSPIN` going 0.2 to 0.5 gave the skim its bite back and
+	# tightened the ball itself (22 m: 8.0 m long down to 6.5); re-rolled at 8,
+	# 14, 22 and 30 m the implied scale is 3.1, 2.3, 2.6 and 2.1 times the
+	# weight error, and a flat number in the middle is again closer than any
+	# shape. Before the pair of fixes the decision layer was told a 25 m ball
+	# in behind lands inside tolerance at nearly three times its real rate,
+	# which is the giveaway the owner watched.
 	var scale := GROUND_RANGE_SPREAD
 	# And in the air it does not grow with the length of the ball the way a
 	# straight line says. Measured on `./run.sh strike`, the lofted pass rolls
@@ -888,7 +893,7 @@ static func long_sigma(player: SimPlayer, skill: float, distance: float, axis: i
 const AIR_RANGE_KNEE := 30.0
 const AIR_RANGE_SPREAD := 4.8
 ## The floor's own, fitted to the same bench. See the note in `long_sigma`.
-const GROUND_RANGE_SPREAD := 2.8
+const GROUND_RANGE_SPREAD := 2.5
 ## **And the cross's own went 2.3 to 3.2 when the ball was whipped rather than
 ## floated** (`cross_flight`, 2026-08-23). A flatter, faster ball overhit by the
 ## same fraction of its weight sails much further before it drops back through
