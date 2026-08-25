@@ -411,7 +411,11 @@ func _ready() -> void:
 	# the command line and have to put themselves back into one here: a
 	# fullscreen window is the display's size, and a different aspect ratio is a
 	# different shot from the one `--resolution` asked for.
-	# `--windowed WxH` does the same for a live look at another resolution.
+	# `--windowed WxH` does the same for a live look at another resolution --
+	# where the compositor lets a window pick its size. A tiling one does not,
+	# so `--render WxH` is the one that always works: the whole frame is drawn
+	# at that many pixels and stretched to whatever the window is.
+	_apply_render_size(get_window())
 	var windowed := _requested_size("--windowed")
 	if _shot_after > 0.0 or _pose_sheet or windowed != Vector2i.ZERO:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
@@ -449,6 +453,15 @@ func _ready() -> void:
 ## only means anything once it is a window again.
 func _requested_resolution() -> Vector2i:
 	return _requested_size("--resolution")
+
+
+static func _apply_render_size(window: Window) -> void:
+	var size := _requested_size("--render")
+	if size == Vector2i.ZERO:
+		return
+	window.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
+	window.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
+	window.content_scale_size = size
 
 
 static func _requested_size(flag: String) -> Vector2i:

@@ -84,7 +84,9 @@ usage: ./run.sh <command> [args]
   determinism [--seed N]    run one seed twice and compare the event logs
   view                      open the 2D debug view (needs a display)
   view3d [--seed N]         open the 3D match view (needs a display).
-      [--windowed WxH]      in a window of that size instead of fullscreen
+      [--render WxH]        draw the frame at that many pixels, stretched to
+      [--windowed WxH]      the screen; or a window of that size, where the
+                            compositor allows one (not under sway)
       [--speed X] [--step-fps N]
       [--small] [--clock-rate R] [--pitch-scale F]
       [--home Q] [--away Q]
@@ -140,7 +142,9 @@ usage: ./run.sh <command> [args]
       [--page N] [--still]  each captioned with number, name, height and
       [--turn DEG]          appearance seed. The squad is the match squad, so a
       [--face 0-4]          note taken here holds in view3d at the same seed.
-      [--windowed WxH]      in a window of that size instead of fullscreen
+      [--render WxH]        draw the frame at that many pixels, stretched to
+      [--windowed WxH]      the screen; or a window of that size, where the
+                            compositor allows one (not under sway)
       [--hair N]            Keys: < > page, N / P seed, SPACE turn, 1-5
       [--anim NAME|all]     expression, [ ] step anim, A roll, 0 stand, Q quit.
       [--shot PATH]         --shot renders one frame from a

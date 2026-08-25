@@ -121,6 +121,7 @@ func _ready() -> void:
 			_shot_path = args[i + 1]
 	# The window is fullscreen by project setting, which is not the frame
 	# `--resolution` asked for. A screenshot has to put itself back in a window.
+	SimMatchView3D._apply_render_size(get_window())
 	var windowed := SimMatchView3D._requested_size("--windowed")
 	if _shot_path != "" or windowed != Vector2i.ZERO:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
