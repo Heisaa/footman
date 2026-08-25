@@ -59,11 +59,12 @@ and the keeper's saves are the next one, held on purpose — a defending row mar
 | Stay onside | built | `SimReferee.believed_offside_line` |
 | Hold shape, slide with play | built | `SimMovement.shape_position` |
 | Split the back line to build out | built | `SimMovement._build_up_width` |
+| Hold width — the outlet on the touchline, ahead of the ball | built — a full-back or winger goes to the line and stays on it, wanted more the more crowded the ball is; before it the only offers a wide man could make brought him inside, and the wide fifths held 3% of passes | `SimOffBall._wide_point` |
 | Overlap, underlap, third man, switch of play | built | `SimPatterns` |
 | A plan's named patterns actually firing | built — `RUN_IN_BEHIND` was installed in `high_press_direct` with no trigger and could never fire; it now does, at 13-17% | `SimPatterns._try_run_in_behind` |
 | A pattern's runner being aimed at | built — `destination_for` did not read `movement_override`, so a man a pattern had sent was passed to by dead reckoning | `SimOffBall.destination_for` |
 | Break on the counter | built | `SimDecision.break_on` prices the ball, `SimOffBall` sends the runners |
-| Attack a cross — near post, far post, the pull-back | built — the three posts are authored in `_box_point` and `_add_crosses`, and the pull-back is its own act along the floor | `SimDecision._add_pullback` |
+| Attack a cross — near post, far post, the pull-back | built — the three posts are authored in `_box_point` and `_add_crosses`, and the pull-back is its own act along the floor. It fires in `cross-pullback` and **never in a match**: 0 offered over five seeds of ten minutes (2026-08-25), because nothing takes the ball to the byline — 0% of passes and 4% of touches start in the final sixth. The act is built; the approach is **51** | `SimDecision._add_pullback` |
 | Arrive as the ball does, easing the last metres | partial — box runners and runs in behind do; shows and drifts stop on their spot | `SimOffBall.point_for` |
 | Link the defence to the strikers, holding height and width | partial — shape slides with play; there are no authored link players, and the middle third holds 78% of touches (**30**) | `SimMovement.shape_position` |
 | Be served when the run is made | partial — a `box` run is made 26 times a match and receives the ball 0% of the time (**33**) | `SimOffBall`, `SimDecision._add_passes` |
@@ -172,6 +173,7 @@ When one is built its row above changes and its entry here goes.
 | **34** | Nothing in the sim reads the score or the clock | `SimTactics`, `SimContext` |
 | **37** | The match has one tempo and football has two | `SimDecision.scan_gain`, `SimTactics` |
 | **38** | Attributes make a player better, never different | `SimDecision`, `SimAttributes` |
+| **51** | Nothing takes the ball to the byline: the winger's carry past the full-back, the ball down the line | `SimDecision._add_dribbles`, `SimOffBall._wide_point` |
 | **43** | A goal kick is nine passes in his own half and then a turnover | `SimSetPiece._take_goal_kick`, `SimMovement` |
 | **44** | A striker and a centre-back are the same speed | `SimRole._WEIGHTS`, `SimAttributes` |
 | **50** | Corners at 0.4-0.5 a team against a floor of 0.5: nobody puts the ball behind | `SimDuel`, `SimKeeper` |
@@ -1514,7 +1516,12 @@ line, which is **5**.
    which `chains` does not. At n=1 the switch has read 0% and 25% in one day.
 6. **`QUOTA` behind, decoy and second** — show and space are now measured, these
    three are not.
-7. **What is left of the station's motion is the leash, and it is meant.** The
+7. **51, the approach to the byline.** The cut-back and the cross from the line
+   are both built and both wait on a ball that never arrives: `_add_pullback` was
+   offered 0 times in fifty minutes and `Where passes are played from` reads the
+   final sixth at 0% of passes. The outlet wide (`_wide_point`) gets the ball to
+   the touchline; what is missing is the man taking it on from there.
+8. **What is left of the station's motion is the leash, and it is meant.** The
    four possession switches are eased (`SimContext.shape_phase`); the stations
    that still outrun a sprinter, 0.3 to 0.9% of samples, are `SHAPE_BALL_LEASH`
    dragging the shape behind a ball hit sixty metres. That is the one moment a

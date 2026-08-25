@@ -237,6 +237,16 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   practises most. It showed up only as summed expected goals at three times the
   goals scored, which reads like finishing and is units.
 
+- **A man who reaches the point before the ball is a man standing there, not a
+  man in a race.** The ball into space floors every arrival at the ball's — right
+  for a through ball, where the race is decided as it lands — and that levelled a
+  full-back seven metres from the touchline, marker seven metres off, with any
+  defender who could reach the spot by the time the ball did: `space` 0.46 for a
+  ball football completes nine times in ten. `there_first` in `_add_passes` hands
+  that ball to the aimed model, where the defender pays `AIMED_STEP_IN`. The bench
+  saw it first and nobody read it: `./run.sh control` row C had a sprinting
+  receiver at 0.39 while 90% arrived.
+
 - **A defender does not run to the line of a pass, he sticks a leg out.**
   Charging him the full locomotion cost of standing in the lane, when the first
   `CONTROL_RANGE` costs him nothing but his reaction, had a quarter of all passes

@@ -51,9 +51,9 @@ extends RefCounted
 ## ball nobody could do anything with. Contributions, per PLAN.md §4.3, not
 ## replacements.
 
-enum { NONE, SHOW, SPACE, BEHIND, BOX, DECOY, SECOND }
+enum { NONE, SHOW, SPACE, BEHIND, BOX, DECOY, SECOND, WIDE }
 
-const KIND_NAMES := ["none", "show", "space", "behind", "box", "decoy", "second"]
+const KIND_NAMES := ["none", "show", "space", "behind", "box", "decoy", "second", "wide"]
 
 ## Assignment cadence, in ticks. This is built out of the value field, which is
 ## a 5 Hz quantity (PLAN.md §2.5), so it is refreshed at the same rate.
@@ -91,7 +91,7 @@ const ASSIGN_TICKS := 12
 ##                  the constant was raised from two on -- more of the side moving
 ##                  is more of the side available -- and because the cost of being
 ##                  wrong is a man drifting rather than a man abandoning his post.
-const QUOTA := [0, 1, 4, 2, 3, 1, 1]
+const QUOTA := [0, 1, 4, 2, 3, 1, 1, 2]
 
 ## Nobody further than this from the ball is offering to receive it. He is
 ## holding shape, which at that distance is the right thing to be doing.
@@ -174,11 +174,11 @@ const BEHIND_MAX_RUN := 18.0
 ## and for a move into space that now means long enough to finish the far probe,
 ## which at the pace below is a little over three seconds. A window that expires
 ## as he arrives is a man who never arrives.
-const HOLD_SECONDS := [0.0, 3.0, 4.5, 4.0, 3.5, 3.0, 2.5]
+const HOLD_SECONDS := [0.0, 3.0, 4.5, 4.0, 3.5, 3.0, 2.5, 4.0]
 ## And the rest afterwards, before the same player will do it again. The sprint
 ## in behind is the expensive one and carries much the longest cooldown; without
 ## it a front three covers eighteen kilometres between them.
-const REST_SECONDS := [0.0, 4.5, 4.0, 10.0, 7.0, 6.0, 3.0]
+const REST_SECONDS := [0.0, 4.5, 4.0, 10.0, 7.0, 6.0, 3.0, 2.0]
 
 ## Pace of each kind as a fraction of the player's maximum, and how close counts
 ## as arrived. A run in behind has to be made to the metre; drifting into space
@@ -192,8 +192,8 @@ const REST_SECONDS := [0.0, 4.5, 4.0, 10.0, 7.0, 6.0, 3.0]
 ## per cent of moves into space ever had the ball played to them. He goes at the
 ## pace he was scored at, near enough, and what is left of the gap is the
 ## difference between a footballer's cruise and his sprint.
-const PACE := [0.0, 0.62, 0.75, 0.97, 0.95, 0.9, 0.85]
-const DEADBAND := [0.0, 1.5, 1.8, 1.0, 1.2, 1.5, 1.6]
+const PACE := [0.0, 0.62, 0.75, 0.97, 0.95, 0.9, 0.85, 0.8]
+const DEADBAND := [0.0, 1.5, 1.8, 1.0, 1.2, 1.5, 1.6, 1.5]
 
 ## How much better than standing still an idea has to look before it is worth
 ## the legs. The same hysteresis as SimMovement.PROBE_MARGIN and for the same
@@ -333,6 +333,10 @@ const BOX_WHY := [
 ]
 static var behind_why := PackedInt32Array()
 static var box_why := PackedInt32Array()
+const WIDE_WHY := [
+	"not his job", "ball already on his flank", "too far to run", "on the list",
+]
+static var wide_why := PackedInt32Array()
 ## And which of the three he went to, when he went. Three points authored as the
 ## near post, the penalty spot and the far post are only three positions if the
 ## men actually spread across them; scored on his own race, every man can pick the
@@ -539,7 +543,7 @@ static func point_for(ctx: SimContext, p: SimPlayer) -> Vector3:
 		box_ease[1 if coming else 0] += 1
 		var ease: float = BOX_EASE_CROSS if coming else BOX_EASE
 		point -= Vector3(d2 * ease, 0.0, 0.0)
-	if (kind == BEHIND or kind == BOX) and ctx.ball.intended_target != p.id:
+	if (kind == BEHIND or kind == BOX or kind == WIDE) and ctx.ball.intended_target != p.id:
 		var dir := ctx.pitch.attack_dir(p.team)
 		var line: float = SimReferee.believed_offside_line(ctx, p) * dir
 		if p.pos.x * dir > line - ONSIDE_MARGIN:
@@ -589,7 +593,7 @@ static func destination_for(ctx: SimContext, p: SimPlayer) -> Vector3:
 	if not is_inf(override.x):
 		return override
 	match intent_of(ctx, p):
-		SHOW, BEHIND, BOX, SECOND:
+		SHOW, BEHIND, BOX, SECOND, WIDE:
 			return _point[p.id]
 		SPACE:
 			return SimMovement.shape_position(ctx, p) + _point[p.id]
@@ -900,6 +904,22 @@ static func _consider(ctx: SimContext, p: SimPlayer, team: int, carrier: int, ba
 		_scores[SECOND] = _worth_at(ctx, team, second) * SECOND_WORTH
 		_points[SECOND] = second
 
+	# The outlet wide. Wanted in proportion to how crowded the ball is: with
+	# nobody near the carrier the middle is open and the touchline is a detour;
+	# with four men round him the man on the line is the one ball that beats
+	# them all. A prior on a value the layer computes anyway.
+	var wide := _wide_point(ctx, p, team, ball)
+	if wide != Vector3.INF:
+		var crowd := 0
+		for oid in ctx.opponent_ids(team):
+			var o := ctx.players[oid]
+			if o.on_pitch and not o.is_keeper and o.dist_to(ball) < WIDE_CROWD_RADIUS:
+				crowd += 1
+		var wanted: float = lerpf(WIDE_WANTED_QUIET, WIDE_WANTED_CROWDED,
+			clampf(float(crowd) / WIDE_CROWD_FULL, 0.0, 1.0))
+		_scores[WIDE] = _value_of(ctx, p, team, ball, wide, 1.0) * wanted
+		_points[WIDE] = wide
+
 	# The give-and-go, from the side that has to make the run. A man who has
 	# just laid the ball off is the one player on the pitch whose marker is
 	# watching something else, and nothing in a positional model knows that --
@@ -978,11 +998,38 @@ static func _consider(ctx: SimContext, p: SimPlayer, team: int, carrier: int, ba
 ## One-way, like the rest of the tallies. Nothing in `sim/` reads it back and it
 ## never touches `ctx.rng`, so a match runs identically whether or not anyone is
 ## looking at it.
-static func note_offer(mate_id: int, share: float) -> void:
+static func note_offer(mate_id: int, share: float, succ := 0.0, gain := 0.0,
+		loss := 0.0, bias := 0.0, gap := 0.0, space := 0.0, in_time := 0.0,
+		lane := 0.0, struck := 0.0, run := 0.0, marker := 0.0) -> void:
 	if mate_id < 0 or mate_id >= _intent.size() or _intent[mate_id] == NONE:
 		return
 	_offered[mate_id] = 1
 	_best_weight[mate_id] = maxf(_best_weight[mate_id], share)
+	# And what the ball to him was priced at, so a run that is offered and never
+	# played can be read for the term that beat it rather than argued about.
+	var kind: int = _intent[mate_id]
+	if priced.size() < KIND_NAMES.size() * PRICED_COLS:
+		priced.resize(KIND_NAMES.size() * PRICED_COLS)
+	var base := kind * PRICED_COLS
+	priced[base] += 1.0
+	priced[base + 1] += succ
+	priced[base + 2] += gain
+	priced[base + 3] += loss
+	priced[base + 4] += bias
+	priced[base + 5] += gap
+	priced[base + 6] += space
+	priced[base + 7] += in_time
+	priced[base + 8] += lane
+	priced[base + 9] += struck
+	priced[base + 10] += run
+	priced[base + 11] += marker
+
+
+## Per kind: n, success, gain, loss, bias, the gap to the winning score, the four
+## parts of success, how far the receiver was from the point, and how near his
+## closest opponent stood.
+const PRICED_COLS := 12
+static var priced := PackedFloat32Array()
 
 
 ## A run authored from outside the assignment loop: `SimScenarios` planting a
@@ -1279,6 +1326,77 @@ const BOX_RANGE := 42.0
 ## Whether he is there for it: 1 if he arrives inside the window, decaying to 0
 ## across `BOX_LATE`. One function, so the target he picks and the score the run
 ## gets are the same question asked once.
+## Holding width: the outlet on the touchline.
+##
+## The stations already put a full-back at 23 m and a winger at 25, and off the
+## trace they stand there -- in possession a winger is in the wide fifth two
+## samples in three. What they were not was *found*: the touch heatmap read no
+## touches at all in either wide fifth, because the only offers a wide man could
+## make were `show` and `space`, and both bring him inside. Coming to meet the
+## ball from the touchline is a run toward the middle.
+##
+## This is the opposite offer: he goes to the line and stays on it, a few metres
+## ahead of the ball, on the side the lane from the ball is open. It is what a
+## full-back does while his centre-half has the ball and what a winger does while
+## the midfield is being pressed, and it is the ball a switch of play is aimed at.
+## Ahead of the ball because a level outlet is a square pass and a side that plays
+## square is what the owner watched; but not past the last defender, which would
+## make it a run in behind wearing a different name (`point_for` clamps it onside
+## the same way).
+##
+## No test on where the ball is along the pitch. In its own half this is the
+## outlet out of the back; in the final third it is the winger holding the width
+## for the cross and the cut-back, which are the two acts the engine has from
+## there and could not reach because nobody was standing where they start.
+const WIDE_MARGIN := 4.0
+const WIDE_AHEAD := 8.0
+## The ball has to be at least this much nearer the middle than the point, or he
+## is not an outlet -- he is the man beside the ball.
+const WIDE_INBOARD := 8.0
+const WIDE_MIN := 8.0
+const WIDE_MAX_RUN := 16.0
+## How far he drops back along the line to open a shut lane.
+const WIDE_DROP := 5.0
+## Opponents inside this radius of the ball are the crowd the outlet beats.
+const WIDE_CROWD_RADIUS := 12.0
+const WIDE_CROWD_FULL := 4.0
+const WIDE_WANTED_QUIET := 0.9
+const WIDE_WANTED_CROWDED := 1.6
+
+
+static func _wide_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector3) -> Vector3:
+	if p.role != SimRole.FB and p.role != SimRole.WIDE:
+		wide_why[0] += 1
+		return Vector3.INF
+	var dir := ctx.pitch.attack_dir(team)
+	# His flank is the station's, not the patch of grass he is on: a winger who
+	# has come inside still belongs to the side he came from.
+	var side: float = signf(SimMovement.shape_position(ctx, p).z)
+	if side == 0.0:
+		side = signf(p.pos.z)
+	if side == 0.0:
+		side = 1.0
+	var z: float = side * (ctx.pitch.half_width - WIDE_MARGIN)
+	if signf(ball.z) == side and absf(ball.z) > absf(z) - WIDE_INBOARD:
+		wide_why[1] += 1
+		return Vector3.INF
+	var line := SimReferee.believed_offside_line(ctx, p) * dir
+	var x: float = minf(ball.x * dir + WIDE_AHEAD, line - ONSIDE_MARGIN)
+	x = clampf(x, -ctx.pitch.half_length + 6.0, ctx.pitch.half_length - 4.0)
+	var point := Vector3(x * dir, 0.0, z)
+	# A shut lane is answered by dropping a few metres along the line, which is
+	# what the man does: he comes back to the angle rather than in to the ball.
+	if _lane_open(ctx, ball, point, team) < 0.7:
+		var back := Vector3((x - WIDE_DROP) * dir, 0.0, z)
+		if _lane_open(ctx, ball, back, team) > _lane_open(ctx, ball, point, team):
+			point = back
+	if p.dist_to(point) > WIDE_MAX_RUN or SimConsts.horizontal_length(point - ball) < WIDE_MIN:
+		wide_why[2] += 1
+		return Vector3.INF
+	wide_why[3] += 1
+	return ctx.pitch.clamp_to_pitch(point, 1.5)
+
+
 static func _box_reach(p: SimPlayer, point: Vector3) -> float:
 	var arrive := SimValueField.time_to_arrive(p, point, 0.0)
 	return clampf(1.0 - maxf(arrive - BOX_WINDOW, 0.0) / BOX_LATE, 0.0, 1.0)
@@ -1890,10 +2008,13 @@ static func _clear() -> void:
 	shot.resize(KIND_NAMES.size())
 	behind_why.resize(BEHIND_WHY.size())
 	box_why.resize(BOX_WHY.size())
+	wide_why.resize(WIDE_WHY.size())
 	for i in behind_why.size():
 		behind_why[i] = 0
 	for i in box_why.size():
 		box_why[i] = 0
+	for i in wide_why.size():
+		wide_why[i] = 0
 	box_target.resize(BOX_TARGETS.size())
 	for i in box_target.size():
 		box_target[i] = 0
@@ -1912,6 +2033,9 @@ static func _clear() -> void:
 	chose_won.resize(KIND_NAMES.size())
 	chose_blocked.resize(KIND_NAMES.size())
 	chose_men = 0
+	priced.resize(KIND_NAMES.size() * PRICED_COLS)
+	for i in priced.size():
+		priced[i] = 0.0
 	for i in KIND_NAMES.size():
 		made[i] = 0
 		received[i] = 0

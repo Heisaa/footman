@@ -1709,6 +1709,27 @@ static func _offering(ctx: SimContext) -> void:
 		# the last defender -- rising every time the engine got better at reaching
 		# the box, which is an instrument measuring its own success.
 		print("    cut short by a turnover: %s" % ", ".join(_cut_short_parts()))
+		# What the ball to a man on each kind of run was priced at, averaged over
+		# every candidate aimed at one. `gap` is how far below the winning score
+		# it sat; the four columns before it say which half of the score did it.
+		var cols := SimOffBall.PRICED_COLS
+		if SimOffBall.priced.size() >= SimOffBall.KIND_NAMES.size() * cols:
+			print("    and what the ball to him was priced at  (mean over the candidates aimed at him)")
+			print("    %-10s %8s %7s %7s %7s %6s %9s   %6s %7s %5s %6s   %5s %6s" % [
+				"", "balls", "succ", "gain", "loss", "bias", "gap", "space", "in time", "lane", "struck", "run", "marker"])
+			for kind in range(1, SimOffBall.KIND_NAMES.size()):
+				var b := kind * cols
+				var n2 := SimOffBall.priced[b]
+				if n2 <= 0.0:
+					continue
+				print("    %-10s %8d %7.2f %7.3f %7.3f %6.2f %9.4f   %6.2f %7.2f %5.2f %6.2f   %4.1fm %5.1fm" % [
+					SimOffBall.KIND_NAMES[kind], int(n2),
+					SimOffBall.priced[b + 1] / n2, SimOffBall.priced[b + 2] / n2,
+					SimOffBall.priced[b + 3] / n2, SimOffBall.priced[b + 4] / n2,
+					SimOffBall.priced[b + 5] / n2,
+					SimOffBall.priced[b + 6] / n2, SimOffBall.priced[b + 7] / n2,
+					SimOffBall.priced[b + 8] / n2, SimOffBall.priced[b + 9] / n2,
+					SimOffBall.priced[b + 10] / n2, SimOffBall.priced[b + 11] / n2])
 		_which_idea_he_had()
 
 	var trace := ctx.telemetry.trace
@@ -2058,6 +2079,7 @@ static func _which_idea_he_had() -> void:
 	print("    a kind that is rarely listed can still read a healthy one")
 	_why_not(SimOffBall.BEHIND_WHY, SimOffBall.behind_why, "the run in behind")
 	_why_not(SimOffBall.BOX_WHY, SimOffBall.box_why, "the run into the box")
+	_why_not(SimOffBall.WIDE_WHY, SimOffBall.wide_why, "the outlet wide")
 	# Three authored points are three positions only if the men spread over them.
 	var box_runs := 0
 	for c in SimOffBall.box_target:
@@ -4542,6 +4564,7 @@ static func report(m: SimMatch) -> void:
 	_by_body_angle(ctx, events)
 	_passing_quality(ctx, events)
 	_pass_destination(ctx, events)
+	_pass_heatmap(ctx, events)
 	_in_the_air(ctx, events)
 	_when_the_cross_drops(ctx, events)
 	_restarts(ctx, events)
@@ -4761,3 +4784,109 @@ static func _new_mechanics() -> void:
 			SimDecision.MAX_PASS_TARGETS, SimDecision.lists_capped, SimDecision.lists,
 			100.0 * float(SimDecision.lists_capped) / float(SimDecision.lists),
 			float(SimDecision.dropped) / maxf(float(SimDecision.lists_capped), 1.0)])
+
+
+## Where passes are played from, per team, on a grid.
+##
+## Every count above says how many and how well; none says where. A side that
+## plays all its passes from its own half and one that plays them in the final
+## third have the same totals. Each cell is one team's pass attempts started in
+## it, with the completion beside it, drawn in the team's own frame: its goal at
+## the left, the goal it attacks at the right, so both halves and both sides
+## read the same way. Columns are sixths of the length, rows fifths of the width.
+##
+## Touches are counted on the same grid, because a wide fifth with touches and no
+## passes is a winger carrying, and one with neither is a winger never found.
+## The table by role is the other half of that: who plays the ball and who it is
+## aimed at. A full-back who is passed to and never passes has been found and
+## then abandoned; one who is never passed to was never a candidate.
+const HEAT_COLS := 6
+const HEAT_ROWS := 5
+
+
+static func _pass_heatmap(ctx: SimContext, events: Array) -> void:
+	var flip := _first_half_flip(events)
+	var swap_tick := _trace_swap(ctx)
+	var cells := HEAT_COLS * HEAT_ROWS
+	var tried := [PackedInt32Array(), PackedInt32Array()]
+	var ok := [PackedInt32Array(), PackedInt32Array()]
+	var touched := [PackedInt32Array(), PackedInt32Array()]
+	for team in 2:
+		tried[team].resize(cells)
+		ok[team].resize(cells)
+		touched[team].resize(cells)
+	var roles := SimRole.NAMES.size()
+	var from_role := PackedInt32Array()
+	var to_role := PackedInt32Array()
+	var to_role_ok := PackedInt32Array()
+	var men_of_role := PackedInt32Array()
+	from_role.resize(roles)
+	to_role.resize(roles)
+	to_role_ok.resize(roles)
+	men_of_role.resize(roles)
+	for p in ctx.players:
+		if p.on_pitch:
+			men_of_role[p.role] += 1
+
+	# Pair each attempt with the outcome that follows it, per passer, in order.
+	var pending := {}
+	for e in events:
+		if e["ev"] == SimTelemetry.Ev.TOUCH or e["ev"] == SimTelemetry.Ev.PASS_ATTEMPT:
+			var team: int = e["team"]
+			var side := flip if int(e["t"]) < swap_tick else 1.0
+			var at: Vector3 = e.get("at", e.get("from", Vector3.ZERO)) * side * ctx.pitch.attack_dir(team)
+			var col := clampi(int((at.x + ctx.pitch.half_length) / (2.0 * ctx.pitch.half_length) * HEAT_COLS), 0, HEAT_COLS - 1)
+			var row := clampi(int((at.z + ctx.pitch.half_width) / (2.0 * ctx.pitch.half_width) * HEAT_ROWS), 0, HEAT_ROWS - 1)
+			var cell := row * HEAT_COLS + col
+			if e["ev"] == SimTelemetry.Ev.TOUCH:
+				touched[team][cell] += 1
+				continue
+			tried[team][cell] += 1
+			var pid: int = e["p"]
+			from_role[ctx.players[pid].role] += 1
+			var target: int = int(e.get("target", -1))
+			var to := -1
+			if target >= 0 and target < ctx.players.size():
+				to = ctx.players[target].role
+				to_role[to] += 1
+			if not pending.has(pid):
+				pending[pid] = []
+			pending[pid].append([cell, to])
+		elif e["ev"] == SimTelemetry.Ev.PASS_OUTCOME:
+			var p: int = e["p"]
+			if not pending.has(p) or pending[p].is_empty():
+				continue
+			var held: Array = pending[p].pop_front()
+			if bool(e.get("ok", false)):
+				ok[int(e["team"])][int(held[0])] += 1
+				if int(held[1]) >= 0:
+					to_role_ok[int(held[1])] += 1
+
+	print("\nWhere passes are played from   (own goal left, attacking right; passes, completion, touches)")
+	for team in 2:
+		var total := 0
+		for c in cells:
+			total += tried[team][c]
+		print("  %s  %d passes" % [ctx.teams[team].short_name, total])
+		for row in HEAT_ROWS:
+			var line := "   "
+			for col in HEAT_COLS:
+				var cell := row * HEAT_COLS + col
+				var n: int = tried[team][cell]
+				var t: int = touched[team][cell]
+				if n == 0:
+					line += "    .    %3dt  " % t if t > 0 else "     .         "
+				else:
+					line += " %3d %3d%% %3dt  " % [n, int(round(100.0 * float(ok[team][cell]) / float(n))), t]
+			print(line)
+	print("  by role          men   played   per man   aimed at   completed")
+	var passes_total := 0
+	for r in roles:
+		passes_total += from_role[r]
+	for r in roles:
+		if men_of_role[r] == 0:
+			continue
+		print("    %-6s %10d %8d %9.1f %10d %9.0f%%" % [
+			SimRole.NAMES[r], men_of_role[r], from_role[r],
+			float(from_role[r]) / float(men_of_role[r]), to_role[r],
+			100.0 * float(to_role_ok[r]) / maxf(float(to_role[r]), 1.0)])

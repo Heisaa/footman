@@ -556,7 +556,7 @@ const REGAIN_WINDOW := 2.0
 ## answered by reading a line rather than by adding an instrument.
 ##
 ## Indexed by `RARE_ACTS`. One-way, like every tally here.
-const RARE_ACTS := ["chip", "round him", "dummy"]
+const RARE_ACTS := ["chip", "round him", "dummy", "cut back"]
 static var rare_offered := PackedInt32Array()
 static var rare_played := PackedInt32Array()
 
@@ -597,6 +597,7 @@ static func _note_rare(which: int, played: bool) -> void:
 const RARE_CHIP := 0
 const RARE_ROUND := 1
 const RARE_DUMMY := 2
+const RARE_PULLBACK := 3
 
 ## Measured on the day it landed, twenty seeds: **it costs 1.58 goals a match**
 ## (4.04 to 2.46) and 0.07 of the conversion rate. That is the largest single
@@ -1146,7 +1147,20 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				lead_distance, ctx.ballistics.ground_pass_speed(lead_distance, pace, ctx.env), ctx.env)
 			# A ball put where a man is going is a ball into space, and arrival
 			# there is a race rather than a delivery to a stationary target.
-			var into_space := SimConsts.horizontal_length(lead - believed) > 2.0
+			# A ball put where a man is going is a ball into space -- unless he is
+			# going to be standing there before it lands. Then it is a ball to
+			# feet that happens to be aimed a few metres off him, and the contest
+			# at the end is the one `AIMED_STEP_IN` prices: whoever else reaches
+			# the spot has to take it off a man already on it. Priced as a race,
+			# the arrival floor levelled him with any defender who could get
+			# there by the time the ball did, and a full-back seven metres from
+			# the touchline with his marker seven metres off read `space` 0.46.
+			# `./run.sh control` row C is the same finding from the bench side:
+			# a sprinting receiver at 0.39 to 0.73 while 88 to 100% arrived.
+			var run_gap := SimConsts.horizontal_length(lead - believed)
+			var there_first: bool = SimValueField.time_to_arrive(mate, lead, mate.reaction) \
+				+ THERE_FIRST_MARGIN < travel
+			var into_space := run_gap > 2.0 and not there_first
 			var success := _pass_success(ctx, player, from, lead, travel, mate, into_space)
 			if flagged:
 				success *= OFFSIDE_DISCOUNT
@@ -1629,6 +1643,7 @@ static func _add_pullback(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 	if best_mate < 0:
 		return
 
+	_note_rare(RARE_PULLBACK, false)
 	var mate: SimPlayer = ctx.players[best_mate]
 	# Offside is judged where the receiver stands, like every other ball, and a
 	# man cut back to is behind the ball and so onside by construction — but he is
@@ -2259,6 +2274,11 @@ static func _clear_ahead(ctx: SimContext, team: int, point: Vector3, goal: Vecto
 
 ## Probability a ground pass reaches its target: the receiving side must win the
 ## arrival point, and nobody may cut the line off on the way.
+## How much earlier than the ball a receiver has to reach the point for the pass
+## to be priced as one to feet. A stride: enough to have stopped and turned.
+const THERE_FIRST_MARGIN := 0.35
+
+
 static func _pass_success(ctx: SimContext, player: SimPlayer, from: Vector3, to: Vector3, travel: float, receiver: SimPlayer, into_space: bool = false, driven: bool = false) -> float:
 	# Three separate questions, and conflating them is how an engine talks
 	# itself into forty-metre passes: who owns that space, can this particular
@@ -5045,6 +5065,11 @@ static func _hold_score(ctx: SimContext, player: SimPlayer, c: Dictionary, best_
 ## whole candidate list often fits inside a range of 0.02, and any fixed
 ## temperature is either indistinguishable from random or indistinguishable
 ## from argmax depending on the situation.
+static func _marker_gap(ctx: SimContext, mate: SimPlayer) -> float:
+	var near := ctx.nearest_to(mate.pos, SimConsts.other_team(mate.team))
+	return near.dist_to(mate.pos) if near != null else 99.0
+
+
 static func _softmax_pick(ctx: SimContext, player: SimPlayer) -> Dictionary:
 	var n := _candidates.size()
 	if _weights.size() != n:
@@ -5063,10 +5088,24 @@ static func _softmax_pick(ctx: SimContext, player: SimPlayer) -> Dictionary:
 	# What each man offering for it was worth, back to the layer that sent him.
 	# A tally and nothing else -- see `SimOffBall.note_offer`.
 	if total > 0.0:
+		var best := -INF
+		for i in n:
+			best = maxf(best, _scores[i])
 		for i in n:
 			var offer := int(_candidates[i].get("target", -1))
 			if offer >= 0:
-				SimOffBall.note_offer(offer, _weights[i] / total)
+				var at := i * PARTS
+				var has_parts := _cand_parts.size() >= at + PARTS
+				SimOffBall.note_offer(offer, _weights[i] / total,
+					float(_candidates[i]["success"]), float(_candidates[i]["gain"]),
+					float(_candidates[i]["loss"]), float(_candidates[i].get("bias", 1.0)),
+					_scores[i] - best,
+					_cand_parts[at + PART_SPACE] if has_parts else 0.0,
+					_cand_parts[at + PART_IN_TIME] if has_parts else 0.0,
+					_cand_parts[at + PART_LANE] if has_parts else 0.0,
+					_cand_parts[at + PART_STRUCK] if has_parts else 0.0,
+					SimConsts.horizontal_length(_candidates[i].get("point", ctx.players[offer].pos) - ctx.players[offer].pos),
+					_marker_gap(ctx, ctx.players[offer]))
 	var idx: int = ctx.rng.weighted_index(_weights)
 	if idx < 0:
 		idx = 0
