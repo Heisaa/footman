@@ -118,7 +118,12 @@ static func _row(ctx: SimContext, kind: int, distance: float) -> void:
 		axis = SimTouch.LONG_AIR_CROSS
 	elif in_air:
 		axis = SimTouch.LONG_AIR
-	var said_long := SimTouch.long_sigma(player, skill, distance, axis)
+	# The floor's long claim is the space ball's (`LONG_GROUND`); asked with
+	# `LONG_NONE` the row printed a knee'd reach no caller hears. `axis` stays
+	# NONE for `said_in`, whose inside count is sideways-only for the floor,
+	# like the model's own charge to feet.
+	var said_long := SimTouch.long_sigma(player, skill, distance,
+		SimTouch.LONG_GROUND if not in_air else axis)
 	var said_in := SimTouch.execution_accuracy(
 		ctx, player, skill, distance, base, tolerance, aim - from, axis)
 	print("  %-8s %5.0f m %8.2f   %6.2fm %6.2fm   %6.2fm %6.2fm %+6.2fm   %5.0f%% %5.0f%%" % [

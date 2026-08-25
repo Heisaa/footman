@@ -823,9 +823,18 @@ const CROSS_ARRIVE := 1.9
 ## anything in `_perturb` moves.
 static func long_sigma(player: SimPlayer, skill: float, distance: float, axis: int,
 		whip := 1.0) -> float:
-	# Twice the weight error on the floor, because the ball stops where its speed
-	# runs out and that goes as the square of the strike.
-	var scale := 2.0
+	# The floor's spread is measured, not the square law's 2.0 it used to be.
+	# The square law prices the ball's roll to rest, and a pass is not measured
+	# there: it finishes where it has decayed to its arrival pace, and the
+	# excess of an overhit ball is shed in the slowest part of the decay -- on a
+	# driven ball, in the skim, where there is almost no friction to shed it
+	# with. Rolled on the bench at 8, 14, 22 and 30 m the ball ran 2.8, 3.8,
+	# 8.0 and 8.2 m long against a model saying 1.4, 2.1, 2.8 and 3.3 -- the
+	# implied scale is 3.2, 2.4, 3.3, 2.5 times the weight error, and a flat
+	# number in the middle is again closer than any shape. The decision layer
+	# was told a 25 m ball in behind lands inside tolerance at nearly three
+	# times its real rate, which is the giveaway the owner watched.
+	var scale := GROUND_RANGE_SPREAD
 	# And in the air it does not grow with the length of the ball the way a
 	# straight line says. Measured on `./run.sh strike`, the lofted pass rolls
 	# **6.1, 8.5 and 9.0 m** long at 20, 30 and 40 m, where a line through the
@@ -878,6 +887,8 @@ static func long_sigma(player: SimPlayer, skill: float, distance: float, axis: i
 ## so moving it means re-reading the bench.
 const AIR_RANGE_KNEE := 30.0
 const AIR_RANGE_SPREAD := 4.8
+## The floor's own, fitted to the same bench. See the note in `long_sigma`.
+const GROUND_RANGE_SPREAD := 2.8
 ## **And the cross's own went 2.3 to 3.2 when the ball was whipped rather than
 ## floated** (`cross_flight`, 2026-08-23). A flatter, faster ball overhit by the
 ## same fraction of its weight sails much further before it drops back through
