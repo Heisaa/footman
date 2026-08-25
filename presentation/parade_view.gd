@@ -184,15 +184,15 @@ func _build_world() -> void:
 	_camera.fov = FOV
 	add_child(_camera)
 
-	var layer := CanvasLayer.new()
-	add_child(layer)
+	var made := SimMatchView3D._overlay_layer(1)
+	add_child(made[0])
 	_caption = Label.new()
 	_caption.position = Vector2(24.0, 18.0)
 	_caption.add_theme_font_size_override("font_size", 20)
 	_caption.add_theme_color_override("font_color", SimPalette.INK)
 	_caption.add_theme_color_override("font_outline_color", SimPalette.CHALK)
 	_caption.add_theme_constant_override("outline_size", 6)
-	layer.add_child(_caption)
+	made[1].add_child(_caption)
 
 
 ## The squad a seed produces, read off a match rather than invented here, so the

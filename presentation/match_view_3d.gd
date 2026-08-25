@@ -464,8 +464,31 @@ static func _apply_render_size(window: Window) -> void:
 	window.content_scale_size = size
 
 
+## A layer for the overlay, and the node to put it under. Under `--render` the
+## overlay, laid out for 1080 rows, shrinks as a display that size would draw
+## it. Done on the layer, not with `content_scale_factor`, which in viewport
+## mode divides the render size and undoes the point.
+static func _overlay_layer(layer_index: int) -> Array:
+	var size := _requested_size("--render")
+	var layer := CanvasLayer.new()
+	layer.layer = layer_index
+	if size == Vector2i.ZERO:
+		return [layer, layer]
+	# Shrunk by the layer, and anchored against a control the design's size:
+	# anchored to the viewport, a scoreboard centres on a 640-wide frame and is
+	# then scaled towards the corner.
+	var scale := float(size.y) / 1080.0
+	layer.scale = Vector2.ONE * scale
+	var root := Control.new()
+	root.size = Vector2(size) / scale
+	layer.add_child(root)
+	return [layer, root]
+
+
 static func _requested_size(flag: String) -> Vector2i:
-	var args := OS.get_cmdline_args()
+	# `--resolution` is an engine flag and comes before the `--`; the game's own
+	# flags come after it, and the two are different lists.
+	var args := OS.get_cmdline_args() + OS.get_cmdline_user_args()
 	for i in args.size():
 		if args[i] != flag or i + 1 >= args.size():
 			continue
@@ -669,22 +692,20 @@ func _build_ground() -> void:
 ## The interface sits on a CanvasLayer of its own so it is drawn over the match
 ## at a fixed size, whatever the camera is doing underneath it.
 func _build_scoreboard() -> void:
-	var layer := CanvasLayer.new()
-	layer.layer = 10
-	add_child(layer)
+	var made := _overlay_layer(10)
+	add_child(made[0])
 	_scoreboard = MatchScoreboard.new()
-	layer.add_child(_scoreboard)
+	made[1].add_child(_scoreboard)
 
 
 ## The debug overlay: panels on their own canvas layer above the scoreboard, and
 ## the annotation layers in the world. Both read the context and neither writes
 ## to it. Nothing here is built unless `--debug` was passed.
 func _build_debug() -> void:
-	var layer := CanvasLayer.new()
-	layer.layer = 11
-	add_child(layer)
+	var made := _overlay_layer(11)
+	add_child(made[0])
 	_overlay = MatchDebugOverlay.new()
-	layer.add_child(_overlay)
+	made[1].add_child(_overlay)
 	_debug_world = MatchDebugWorld.new()
 	add_child(_debug_world)
 	_debug_world.env = _env
