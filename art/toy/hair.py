@@ -9,7 +9,7 @@ of it, never how big it is.
 
 **The names are padded to two digits.** `SimCharacterModel._choose_variant`
 sorts the variants by name as text, so `Hair10` would land between `Hair1` and
-`Hair2` and eighteen men would wear eight of the wrong cuts.
+`Hair2` and most of a squad would wear the wrong cut.
 
 The shell is built off `figure.SKULL`, the skull's own profile, so a cut cannot
 drift off the head it belongs to when the head changes shape.
@@ -48,7 +48,7 @@ BURN_DROP = 0.22
 #
 # `r`, `up` and `back` are the library's: how big the shell is, how far it is
 # lifted, and how far back it sits. The rest are this file's, and they are what
-# stopped eighteen cuts being one shell with the hairline in eighteen places:
+# stopped the library being one shell with the hairline in as many places:
 #
 #   crown   how far the shell rises above the skull, in head heights. A crop
 #           skims; a mop stands up off the head.
@@ -523,7 +523,7 @@ def one(look, h, style, segs, coarse, name):
     # Radial about the middle of the skull, so a cut keeps its shape and its
     # hairline and only stops being smooth. The seed is the cut's own index, so
     # two men in the same cut are lumpy in the same places -- which is right,
-    # they came out of the same mould -- while eighteen cuts differ.
+    # they came out of the same mould -- while the cuts differ.
     M.roughen(mesh, style.get("rough", ROLLED), (0.0, 0.0, h * 0.80),
               seed=float(style.get("seed", 0)) * 3.7, scale=ROLL_SCALE)
     return mesh

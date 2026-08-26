@@ -11,7 +11,7 @@ extends RefCounted
 ##
 ## Everything is assembled from a seed, so five hundred players have visual
 ## identity for nothing. What varies: height, build, head size and shape, skin,
-## hair (a library of fourteen, assembled from a shell plus curls, a quiff, a
+## hair (`HAIR_LIBRARY`, assembled from a shell plus curls, a quiff, a
 ## tuft, sideburns or a widow's peak), the nose, a moustache or not, the drawn
 ## brows, eyes and mouth, and the kit.
 ##
@@ -1159,8 +1159,8 @@ const HAIR_LIBRARY := [
 	# top and leaves the hair round the sides and the back.
 	#
 	# One row of this, not two. A squad already has a bald man, a receding one and
-	# a thin-on-top one, and four men in nineteen losing their hair is a squad of
-	# veterans.
+	# a thin-on-top one, and a squad with many more men losing their hair is a
+	# squad of veterans.
 	{"r": 1.13, "up": -0.05, "back": 0.22, "burns": true},  # thinning
 	# The rows below are `art/toy/hair.py`'s and this builder only approximates
 	# them: the index is what has to agree, so a man keeps his cut whichever

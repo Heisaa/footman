@@ -159,8 +159,8 @@ is its own document and this one does not govern how a shape is arrived at.
 There are two routes out of it, and the second is the one that ships.
 
 **`./art/model.sh` — built to the count.** `art/toy/` assembles the same man out
-of rings at the density he ships at: about 5,900 triangles drawn, 31,000 in the
-file because every hair cut is in there and one is shown.
+of rings at the density he ships at: about 6,000 triangles drawn, several
+times that in the file because every hair cut is in there and one is shown.
 
     ./art/model.sh --body standard              one of the five
     ./art/model.sh --seed 41 --shot /tmp/a.png  one player, and a look at him
@@ -190,7 +190,7 @@ off inside the leg, two surfaces that never touch.
 
 **What `art/toy/` answers that the other never did:** a `Face` patch carrying
 the atlas, so eyes, mouth and expression are per player; `Brows` for the game to
-pose; and all eighteen hair cuts in the file. A squad stopped being a clone
+pose; and every hair cut in the file. A squad stopped being a clone
 army the day those landed.
 
 **Still open in it:**

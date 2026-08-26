@@ -375,7 +375,7 @@ static func _material_name(node: MeshInstance3D, slot: int) -> String:
 ##
 ## **The number in the name is the index**, not the node's place in the sorted
 ## list, and the difference is not academic. Sorted as text `Hair10` lands
-## between `Hair1` and `Hair2`, so eighteen cuts mean eight men in the wrong
+## between `Hair1` and `Hair2`, so most of a squad ends up in the wrong
 ## one; and bald has no mesh at all, so counting the nodes is one short and
 ## every index after it is off by one. Position is the fallback for a model
 ## whose variants are not numbered.

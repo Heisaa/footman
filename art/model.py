@@ -9,8 +9,8 @@ same man to a triangle count in the first place, so a hem is a hem, a sock hoop
 is a band of the sock, and no seam has two copies of one surface to fight over.
 About six thousand triangles drawn -- a body of 4,300 and one head of hair --
 against that one's twenty, and it is the better looking of the two. The file
-itself is thirty thousand because it carries all eighteen cuts and the game
-shows one.
+itself is several times that because it carries every cut in
+`toy_hair.LIBRARY` and the game shows one.
 
 `docs/THE_MODELS.md` is the contract and this answers all of it: the axes, the
 1.78 m reference, materials named for their slot, the joints the animation poses
@@ -357,7 +357,7 @@ def main():
 
 
 def sheet(path, look, quality, yaw=0.0):
-    """Every cut, one head each, in a grid. The only way to tune seventeen.
+    """Every cut, one head each, in a grid. The only way to tune a library.
 
     Heads only: a rank of whole figures at this count is a row of thumbnails,
     and hair is judged at the size a face is judged at. Built as bare meshes

@@ -101,7 +101,7 @@ contrast is most of what reads as a football kit.
 | `figure/rig.py` | **The skeleton.** The sixteen joints the game poses by name, where their pivots are, and which moulding is allowed to land on which. Both routes use it. |
 | `toy/mesh.py` | Rings, superellipse sections and the one primitive nearly everything is made of. Pure Python -- a shape can be measured without Blender. |
 | `toy/figure.py` | **The low-poly figure.** Same proportions as `figure/body.py`, assembled instead of moulded. |
-| `toy/hair.py` | The eighteen cuts, one mesh each, in `HAIR_LIBRARY` order. |
+| `toy/hair.py` | The cuts, one mesh each, in `HAIR_LIBRARY` order. |
 | `model.py` | The `.glb` that ships: joints, named materials, hair variants, the face patch and the brows. |
 | `figure/split.py` | Cuts a moulding a second way, by joint. A Voronoi of bones, with measured clip boxes and an overlap so a bend cannot open a gap. |
 | `export.py` | The `.glb`: joints, materials named for their slot, a triangle budget, and `--shot` to look at what is about to be written. |
