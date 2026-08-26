@@ -187,6 +187,71 @@ owner's reference is trimmed in white.
 carries twenty-two figures. `./run.sh perf --profile` is the question if a frame
 budget matters; `SimCharacterBuilder.add_crease_shading` is the one switch.
 
+## The scenarios, measured
+
+2026-08-26, commit `0ce9da5` (the outlet wide), `./run.sh scenario --trials 160`.
+About 4 points of standard error on a share near a half. Against the previous
+commit at n=40 only `pocket` had moved, and this run confirms it.
+
+```
+                 goal  saved   off  block  lost  none | shot s shot m  box s cross drop m | touch gap s  away  back
+1v1-clear         29%   22%   23%    1%   22%    2% |  2.07   17.6   1.14  0.03   3.6 |  5.1  0.90  1.42   4%
+1v1-onrushing     49%   23%   20%    1%    6%    1% |  1.44   19.3   1.15  0.00     - |  4.6  0.60  1.15   9%
+1v1-angle         28%   19%   12%    1%   38%    2% |  2.88   13.7   1.91  0.26   4.9 |  3.9  0.79  1.25   8%
+1v1-chased         9%   12%   13%    0%   46%   20% |  4.07   16.3   0.82  0.29   2.3 |  5.4  1.03  1.67   3%
+cross-early        7%    7%    2%    1%   69%   14% |  2.80   12.7   1.12  0.87   5.2 |  4.7  0.41  0.99   2%
+cross-right       12%   12%   13%    2%   57%    4% |  2.44   12.7   1.52  0.77   5.6 |  4.7  0.37  0.92   5%
+cross-left        12%   16%   10%    2%   58%    1% |  2.47   14.3   1.41  0.81   5.6 |  5.4  0.35  0.92   7%
+cross-loaded      12%   15%   11%    4%   53%    5% |  2.36   12.8   1.46  1.01   5.2 |  3.7  0.27  0.68   2%
+cross-byline      17%   18%   18%    4%   42%    1% |  2.07   11.4   2.42  0.07   8.3 |  4.7  0.35  0.73   7%
+cross-deep        10%   10%    8%    6%   63%    2% |  2.26   12.1   1.38  0.87   6.7 |  3.8  0.35  1.15   4%
+cross-pullback     8%    4%    5%    3%   79%    0% |  2.10    9.9   1.58  0.01     - |  3.8  0.30  0.77   6%
+cross-open        76%    1%   24%    0%    0%    0% |  1.68   11.2   2.53  1.00   1.3 |  1.0  0.00  0.00   0%
+through-ball      11%   11%   17%    1%   54%    8% |  3.47   19.5   0.44  0.02   2.7 |  8.2  0.27  0.74   2%
+switch             8%   10%    6%    2%   62%   11% |  3.03   13.4   0.63  0.18   5.2 |  5.1  0.44  0.92   2%
+build-up           0%    0%    0%    0%   18%   82% |     -      -   0.00  0.00     - |  2.8  0.26  0.66   0%
+pocket             6%    5%   12%    1%   35%   41% |  3.25   17.8   0.36  0.23   5.8 |  8.1  0.36  0.81   1%
+shot-edge         32%   29%   31%    1%    4%    3% |  0.53   17.5   0.76  0.01     - |  3.3  0.32  0.79   3%
+volley            29%   38%   31%    2%    0%    0% |  0.95   13.4   2.11  0.00     - |  1.4  0.84  0.27   2%
+long-range        40%   28%   27%    0%    5%    1% |  1.22   19.7   0.77  0.00     - |  5.5  0.24  0.67   3%
+race              17%   14%   16%    0%   51%    2% |  1.88   19.0   0.45  0.00     - |  0.8  1.51  0.29   2%
+aerial             2%    4%    3%    0%   68%   23% |  5.30   16.1   0.27  0.04   1.5 |  3.5  0.94  0.69   1%
+hold-up            7%    8%    7%    1%   55%   22% |  4.42   13.9   0.61  0.23   5.0 |  7.0  0.37  0.88   3%
+take-on            5%    5%    6%    0%   78%    6% |  2.30   15.8   0.61  0.55   4.1 |  2.3  0.31  1.02   1%
+corner-right      14%    2%    9%    2%   48%   24% |  3.46    7.3   1.07  1.01   5.3 |  1.5  0.03  0.05   4%
+corner-left       11%    2%    8%    6%   51%   22% |  3.50    8.4   1.11  1.02   5.1 |  1.4  0.05  0.04   4%
+fk-shot           21%   28%   21%    2%   29%    0% |  3.18   19.4   0.91  0.39   2.4 |  1.2  0.14  0.08   2%
+fk-wide           14%    8%   15%    2%   51%    9% |  4.65   10.4   0.99  1.00   4.0 |  1.8  0.08  0.10   4%
+penalty           79%   21%    0%    0%    0%    0% |  1.18   11.0   0.52  0.00     - |  1.0  0.00  0.00   0%
+throw-in           4%    3%    3%    2%   74%   14% |  7.84   14.3   0.56  0.16   8.3 |  8.0  0.41  0.89   1%
+goal-kick          0%    0%    0%    0%   33%   67% |     -      -   0.00  0.00     - |  2.3  0.21  0.40   1%
+```
+
+Sanity holds: every attacking row shoots, `gap s` under 1.5 s everywhere (the
+`race` 1.5 is the knock in behind itself), `away` under 1.7 m. `build-up` and
+`goal-kick` have no shots by design.
+
+What it says:
+
+- **One-on-ones read right.** `clear` 51% on target, `onrushing` 72%. `chased`
+  is the weak one: 46% lost and 20% `none` — one in five never goes for goal.
+- **Crosses lose 53–79%**, with `cross` near one per trial and `drop m` 5–8: the
+  ball is put in and comes down five metres from the nearest of ours. A
+  box-attack problem, not a delivery problem.
+- **`cross-pullback` and `cross-byline` never cross** (`cross` 0.01, 0.07). The
+  cut-back from the goal line is either counted as a pass or never generated;
+  `--acts` on those two says which. `pullback` at 79% lost is the worst row.
+- **`cross-open`**: 24% missed with nobody defending. A finishing miss rate.
+- **`pocket`**: 41% `none`, 11% shots. The outlet wide makes him keep it rather
+  than lose it (`lost` 55% to 35% across the commit), and the clock runs out.
+  Football or dithering is the eye's call: `view3d --scenario pocket`.
+- **`take-on` 78% lost.** High against a real take-on, but `lost` swallows
+  "beat him, then the cross failed" (`cross` 0.55).
+- **Set pieces**: penalty 79%. Corners 13–16% shots on target. `fk-shot` 21%
+  goals from 21 m is far above real; no wall yet.
+- **`block` is 6% or under on every row**, `shot-edge` with bodies in front
+  reads 1%. That is the missing defence, expected until the defensive pass.
+
 ## What every figure here is worth
 
 **Everything is measured at `clock_rate` 10, and nothing is measured anywhere
