@@ -146,7 +146,7 @@ faces and wide ones; legs 0.50 of height, torso 0.27, thin limbs, small hands,
 rounded shoes, shorts to mid-thigh. Height and build draw from a bell with
 tails, so the giant is built like one. Hair is a shell pushed back off the skull
 plus pieces — curls, quiff, tufts, sideburns, widow's peak, a mass down the
-back. The nose is a bump on the head from a library of six, not a mark on the
+back. The nose is a round tip on a thinner bridge or a plain button, from a library of twelve, not a mark on the
 texture. Brows, eyes and mouth are per-player and independent of the five
 expressions, and the brows carry the expression, which is where a Mii gets its
 range. Kit trim — V-neck, cuffs, sock hoops — and a soft vinyl sheen on the

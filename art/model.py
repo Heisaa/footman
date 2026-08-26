@@ -51,6 +51,8 @@ PLACEHOLDER = {
     # The face placeholder is the skin, so a render shows the head and not a
 # white plate. In the game the atlas replaces it and carries its own alpha.
     "face": Color("e8bd95"),
+    # Stubble is painted between skin and hair by the game; here, a guess.
+    "stubble": Color("b89478"),
 }
 
 # The five bodies. Only `build` separates them and that is all the owner asked
@@ -72,10 +74,14 @@ def parse_args(argv):
     p.add_argument("--name", default="")
     p.add_argument("--extra", type=int, default=-1,
                    help="which accessory a --shot shows: 0 headband, -1 none")
-    p.add_argument("--tache", type=int, default=1,
-                   help="whether a --shot wears the moustache")
+    p.add_argument("--tache", type=int, default=0,
+                   help="which moustache a --shot wears: 0-2, or -1 for none")
+    p.add_argument("--beard", type=int, default=-1,
+                   help="which beard a --shot wears: 0-2, or -1 for none")
     p.add_argument("--hair", type=int, default=7,
                    help="which cut a --shot shows; the file always holds them all")
+    p.add_argument("--nose", type=int, default=0,
+                   help="which nose a --shot shows; the file always holds them all")
     p.add_argument("--shot", default="", help="render the figure as well")
     p.add_argument("--yaw", type=float, default=0.0,
                    help="turn the camera round the man: 90 is his profile")
@@ -300,14 +306,37 @@ def main():
         total += part.tris()
     print("  %-10s %2d cuts" % ("Hair", cuts))
 
-    # The moustache and the two accessories, all switched by the seed.
+    # Every nose too, the same way.
+    shapes = 0
+    for name, part in toy.noses(look, look.height,
+                                max(6, int(round(toy.COARSE * args.quality)))):
+        node = upload(part, nodes["Head"], pivots["Head"], slots)
+        node.name = name
+        shapes += 1
+        total += part.tris()
+    print("  %-10s %2d shapes" % ("Nose", shapes))
+
+    # Every moustache and every beard, switched by the seed like a cut.
+    for name, part in toy.moustaches(look, look.height,
+                                     max(6, int(round(toy.COARSE * args.quality)))):
+        node = upload(part, nodes["Head"], pivots["Head"], slots)
+        node.name = name
+        total += part.tris()
+    for name, part in toy.beards(look, look.height,
+                                 max(6, int(round(toy.COARSE * args.quality)))):
+        node = upload(part, nodes["Head"], pivots["Head"], slots)
+        node.name = name
+        total += part.tris()
+    print("  %-10s 3 moustaches, 3 beards" % "face hair")
+
+    # The accessory, switched by the seed.
     for name, part in toy.extras(look, look.height,
                                  max(8, int(round(toy.FINE * args.quality))),
                                  max(6, int(round(toy.COARSE * args.quality)))):
         node = upload(part, nodes["Head"], pivots["Head"], slots)
         node.name = name
         total += part.tris()
-    print("  %-10s %s" % ("extras", "Moustache Accessory0 Eyes"))
+    print("  %-10s %s" % ("extras", "Accessory0 Eyes"))
 
     eye_z = look.height * (toy.CHIN + toy.CROWN) * 0.5 \
         - look.head_h * look.height * 0.06
@@ -326,6 +355,10 @@ def main():
             obj = bpy.data.objects.get(name)
             if obj is not None:
                 obj.hide_render = name != ("Hair%02d" % args.hair)
+        for name, _part in toy.noses(look, look.height, 6):
+            obj = bpy.data.objects.get(name)
+            if obj is not None:
+                obj.hide_render = name != ("Nose%02d" % args.nose)
         # And the face patch: in the game it carries the atlas and its own
         # alpha, so a render of it is a blank plate over the features.
         face = bpy.data.objects.get("Face")
@@ -336,9 +369,13 @@ def main():
             obj = bpy.data.objects.get("Accessory%d" % i)
             if obj is not None:
                 obj.hide_render = i != args.extra
-        tache = bpy.data.objects.get("Moustache")
-        if tache is not None:
-            tache.hide_render = not args.tache
+        for i in range(8):
+            obj = bpy.data.objects.get("Moustache%02d" % i)
+            if obj is not None:
+                obj.hide_render = i != args.tache
+            obj = bpy.data.objects.get("Beard%02d" % i)
+            if obj is not None:
+                obj.hide_render = i != args.beard
         shot(args.shot, look, args.yaw, args.head)
     if args.blend:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(args.blend))

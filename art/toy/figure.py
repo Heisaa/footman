@@ -635,30 +635,9 @@ def _head(fig, look, h, fine, coarse):
                                (hw * 0.15, hd * 0.14, hd * 0.27),
                                coarse, coarse // 2, SKIN, name="ear"))
 
-    # The nose is geometry, never a drawn mark: at this size a drawn one is a
-    # smudge and a bump catches the light and does the whole job.
-    # **Bigger, and pressed on rather than moulded in.** A clay nose is a ball
-    # of the stuff squeezed onto the face and smoothed at the join -- Wallace's
-    # is a third of his face -- where a vinyl one is a button that only has to
-    # catch the light. Half again on every axis and further out.
-    # Wider than it is long, and rounder than it is tall. At 1.10 deep by 1.20
-    # high it came out as a beak: a cone pointing at the camera, which is the
-    # one nose shape the reference never has. A ball squashed slightly flat is
-    # what a thumb leaves.
-    # **A nose is judged in profile and sized from the front.** At a ball buried
-    # to its centre in the face it stood five centimetres off a head fifty-three
-    # deep -- a tenth -- and in profile that is a button on an egg. Longer, not
-    # bigger: the depth is what shows from the side, the width and the height
-    # are what show from the front, and the front view was already right.
-    # **Buried to its centre in the face, wherever the face now is.** At a
-    # number typed once it was buried to its centre in the face as the face was
-    # then; the swell in `SKULL`'s last column moved that surface forward by a
-    # centimetre and a half, and a nose that does not move with it is a nose a
-    # centimetre and a half shorter. `skull_front` is where the face is.
-    nose = look.nose * h * 1.35
-    fig.put("Head", M.blob((0.0, hd * skull_front(0.760), h * 0.760),
-                           (nose * 1.05, nose * 1.18, nose * 1.00),
-                           coarse, coarse // 2, SKIN, name="nose"))
+    # The nose is in `noses`, one mesh per shape, switched by the seed like a
+    # hair cut. It used to be moulded in here; the notes on where a nose sits
+    # went with it.
 
     fig.head_r = hw * FACE_RADIUS
     fig.put("Head", _face(look, h, fine))
@@ -760,62 +739,16 @@ def _inside_skull(look, h, p):
 def extras(look, h, segs, coarse):
     """[(name, Mesh)] for the parts the seed switches on and off.
 
-    `Moustache` is shown or hidden and `Accessory0` is the headband, which
-    `SimCharacterModel._choose_variant` shows or does not. Both hang off `Head`,
-    so they turn with it.
+    `Accessory0` is the headband, which `SimCharacterModel._choose_variant`
+    shows or does not. It hangs off `Head`, so it turns with it.
     """
     hw = look.head_w * h
     hd = look.head_d * h
     hh = look.head_h * h
     out = []
 
-    # **Two lobes, not a bar.** One shape under a nose is a moustache sticker;
-    # two with a dip between them has a shape. Wide and shallow: deeper than this
-    # a dark curved mass sits where a mouth belongs and the man is scowling
-    # whoever he is. And it has to stand *proud* -- set at the skull's own depth
-    # only its two widest points showed, as a pair of dark dots either side of
-    # the mouth, like a smirk drawn on.
-    # **Under the nose, not on the mouth.** At 0.729 it landed across the drawn
-    # mouth, so the atlas's mouth came out from under it as a black bead and the
-    # pair read as a beak. The reference wears it tucked up against the nose's
-    # underside with the mouth clear below, and that is 0.745 -- and wider, too:
-    # a moustache narrower than the nose is a smudge.
-    # **Two lobes a side, and the outer one hangs.** One lobe a side is a bar,
-    # and a bar under a nose is a smear of dark however wide it is. What the
-    # reference wears is a handlebar: thick where it meets the nose and drooping
-    # away past the corners of the mouth, so the outline has a fall in it. That
-    # fall is the whole shape -- it is what stops a moustache reading as an
-    # upper lip in shadow.
-    #
-    # Half again as big as the flat bar it replaces. Clay is rolled on in
-    # quantity; a moustache you have to look for is a moustache nobody drew.
-    # **Under the nose, and the nose is the thing that moved.** Placed at 0.745
-    # it was inside the nose rather than below it -- that ball grew by half when
-    # the figure went to clay and now reaches down to 0.725, near enough to the
-    # mouth that there is no gap left to sit in. All that showed of a moustache
-    # was two dark specks either side of a nostril.
-    #
-    # So it hangs off the nose's underside instead, and it is wider than the
-    # nose so that it clears it: the inner pair tuck up against it, the outer
-    # pair sit further out and lower, and the fall between them is the shape.
-    tache = M.Mesh("Moustache")
-    for side in (-1.0, 1.0):
-        tache.merge(M.blob((side * hw * 0.185, hd * skull_front(0.7285),
-                            h * 0.7285),
-                           (hw * 0.205, hd * 0.100, hh * 0.088),
-                           coarse, max(4, coarse // 2), HAIR, name="tache"))
-        # **Barely set back, and against the face's own front.** Set back at
-        # 0.92 on the reasoning that the face curves away out there, these came
-        # out as two loose diamonds with skin between them and the moustache. It
-        # hardly curves away: the swell in `SKULL` fades by a tenth over the
-        # width a moustache covers, so a lobe set back by more than that is a
-        # lobe buried in the cheek. Both pairs hang off `skull_front` now, so
-        # neither is left behind when the face moves.
-        tache.merge(M.blob((side * hw * 0.390,
-                            hd * (skull_front(0.7165) + 0.011), h * 0.7165),
-                           (hw * 0.165, hd * 0.090, hh * 0.108),
-                           coarse, max(4, coarse // 2), HAIR, name="tache"))
-    out.append(("Moustache", tache))
+    # The moustache is in `moustaches` now, one mesh per style; its notes on
+    # placement went with it.
 
     # The headband, cut to the skull at the height it is worn. A ring of one
     # radius round a head that is narrowing is a halo hanging off the forehead.
@@ -1075,3 +1008,287 @@ def _boot(side, w, h, limb, segs):
             ], max(5, segs // 2), BOOT, power=2.0, name="stud")
                 .translate((x + out * limb * spread, at_y, 0.0)))
     return boot
+
+
+## The noses, in the game's `NOSE_LIBRARY` order. Each is one surface: a round
+## tip that narrows smoothly into a bridge running up towards the brow, so the
+## nose is wide at the bottom and thin at the top, which one ball never was.
+## One surface and not a ball with a stick on it -- two pieces met in a fold
+## that read as a nose stuck onto a nose.
+##
+## Columns, in units of `look.nose * h`: tip width, tip depth, tip height;
+## bridge radius; then the height of the tip on the figure, how far the tip
+## stands forward of the face, the height the bridge climbs to, and how proud of
+## the face the bridge's axis sits. The bridge follows `skull_front` up the
+## face on its own, so a lean is never typed in.
+NOSES = [
+    [1.00, 1.10, 0.95, 0.60, 0.743, 0.00, 0.785, 0.18],   # a small straight one
+    [1.20, 1.15, 0.95, 0.78, 0.738, 0.00, 0.776, 0.15],   # broader
+    [0.78, 0.95, 0.80, 0.42, 0.738, 0.05, 0.781, 0.15],   # short and fine
+    [1.20, 1.30, 1.05, 0.70, 0.746, 0.15, 0.792, 0.28],   # a big one
+    [0.85, 0.95, 0.78, 0.50, 0.744, 0.00, 0.784, 0.12],   # a neat short one, high on the face
+    [1.30, 1.00, 0.78, 0.85, 0.738, -0.08, 0.774, 0.08],  # broad and flat
+    [0.88, 1.20, 0.92, 0.46, 0.742, 0.22, 0.797, 0.38],   # long and thin, standing proud
+    [1.00, 1.10, 0.85, 0.48, 0.740, 0.30, 0.778, 0.05],   # a snub, tip tilted up and out
+    [1.20, 1.05, 0.85, 0.42, 0.736, 0.05, 0.783, 0.18],   # a wide tip on a narrow bridge
+    # The button: the one ball the figure wore before there were bridges, kept
+    # as a family of its own. A bridge radius of zero means no bridge.
+    [1.29, 1.45, 1.23, 0.00, 0.760, 0.00, 0.760, 0.00],   # the ball as it was
+    [1.05, 1.20, 1.00, 0.00, 0.755, 0.00, 0.755, 0.00],   # a smaller ball
+    [0.90, 1.00, 0.85, 0.00, 0.752, 0.02, 0.752, 0.00],   # a small ball
+]
+
+
+def _smooth_max(a, b, k):
+    """The larger of two, with the corner where they cross rounded over `k`."""
+    return 0.5 * (a + b + math.sqrt((a - b) * (a - b) + k * k))
+
+
+def noses(look, h, coarse):
+    """[(name, Mesh)] -- every nose, in library order, named for its index."""
+    hd = look.head_d * h
+    # 1.35 was the one ball's size, and a ball with a bridge on it is a bigger
+    # nose than a ball; at 1.1 the largest row is about what the ball was.
+    unit = look.nose * h * 1.1
+    out = []
+    for i, row in enumerate(NOSES):
+        tw, td, th, br, z_tip, forward, z_top, proud = row
+        name = "Nose%02d" % i
+        if br <= 0.0:
+            out.append((name, M.blob(
+                (0.0, hd * skull_front(z_tip) - forward * unit, h * z_tip),
+                (unit * tw, unit * td, unit * th),
+                coarse, coarse // 2, SKIN, name=name)))
+            continue
+        tip_y = hd * skull_front(z_tip) - forward * unit
+        top_y = hd * skull_front(z_top) - proud * unit
+        tip_z, top_z = h * z_tip, h * z_top
+        rx_tip, ry_tip, rz_tip = unit * tw, unit * td, unit * th
+        r_br = unit * br
+        # The top is not a dome on the end of the bridge but a run-out: over
+        # the last stretch the bridge thins and sinks back into the face, so it
+        # fades into the forehead instead of stopping at a cut end.
+        cap = r_br * 1.4
+        sink = proud * unit + r_br * 1.5
+        z_lo, z_hi = tip_z - rz_tip, top_z + cap
+        # Rings up the whole nose. Below the tip's centre it is the ball; above
+        # it the ball's own taper is rounded into the bridge, and the last few
+        # rings close the bridge over at the top.
+        # Rings are spaced by angle, not height, so they crowd at the two poles
+        # where the surface turns fastest; spaced evenly the bottom of the ball
+        # was one wide flat facet with a ridge round it. The poles themselves
+        # are fans, as `blob` closes its ends.
+        rings = []
+        count = max(12, coarse * 2)
+        for j in range(1, count):
+            z = z_lo + (z_hi - z_lo) * 0.5 * (1.0 - math.cos(math.pi * j / count))
+            u = (z - tip_z) / rz_tip
+            ball = math.sqrt(max(0.0, 1.0 - u * u))
+            t = min(1.0, max(0.0, (z - tip_z) / max(top_z - tip_z, 1e-6)))
+            cy = tip_y + (top_y - tip_y) * t
+            lid = 1.0
+            if z > top_z:
+                v = min(1.0, (z - top_z) / cap)
+                lid = 1.0 - v * v
+                cy += sink * v * v
+            # The bridge tapers from most of the ball's width at the ball's
+            # centre to its own at the top, and the ball is rounded into that
+            # taper. It fades in over the lower half of the ball rather than
+            # switching on at the centre line: switched on, the profile stepped
+            # there and the step was a ridge round the bottom of the nose.
+            fade = min(1.0, max(0.0, (u + 0.8) / 1.0))
+            fade = fade * fade * (3.0 - 2.0 * fade)
+            bx = (rx_tip * 0.8 + (r_br - rx_tip * 0.8) * t) * lid * fade
+            by = (ry_tip * 0.7 + (r_br * 0.9 - ry_tip * 0.7) * t) * lid * fade
+            rx = _smooth_max(rx_tip * ball, bx, r_br)
+            ry = _smooth_max(ry_tip * ball, by, r_br)
+            rings.append(M.Ring(z, max(rx, unit * 0.02), max(ry, unit * 0.02), cy=cy))
+        mesh = M.tube(rings, coarse, SKIN, cap_lo=False, cap_hi=False, name=name)
+        n = len(mesh.verts)
+        M._fan(mesh, list(range(coarse)), (0.0, tip_y, z_lo), SKIN, down=True)
+        # The top pole sits where the run-out has sunk to, or it is a spike
+        # poking out of the forehead ahead of the rings it closes.
+        M._fan(mesh, list(range(n - coarse, n)), (0.0, top_y + sink, z_hi), SKIN, down=False)
+        out.append((name, mesh))
+    return out
+
+
+# --- Moustaches and beards ----------------------------------------------------
+#
+# British football, 1980 to 1995. The moustache is the eighties: the chevron on
+# half a dressing room, the thick bar on the hard men, the walrus on a keeper.
+# The goatee is the nineties. All of them are lobes of hair colour hung off
+# `skull_front`, the way the handlebar always was, because a lobe with a dip
+# beside it has a shape and a bar under a nose is a smear.
+
+STUBBLE = "stubble"
+
+
+def _place(look, h, x, z, back=0.0):
+    """A lobe's centre: off the face's centre-line front, not the surface
+    under it. At its own x the surface has fallen away round the cheek, and a
+    lobe centred there is buried but for its outer end -- two dark dots either
+    side of the mouth. `back` is metres, positive into the head."""
+    hw, hd = look.head_w * h, look.head_d * h
+    return (x * hw, hd * skull_front(z) + back, h * z)
+
+
+def moustaches(look, h, coarse):
+    """[(name, Mesh)] -- every moustache, named for its index.
+
+    0 chevron, 1 walrus, 2 horseshoe.
+    """
+    hw, hd, hh = look.head_w * h, look.head_d * h, look.head_h * h
+    stacks = max(4, coarse // 2)
+
+    def lobe(mesh, x, z, size, back=0.0):
+        for side in (-1.0, 1.0):
+            mesh.merge(M.blob(_place(look, h, side * x, z, back),
+                              (hw * size[0], hd * size[1], hh * size[2]),
+                              coarse, stacks, HAIR, name="lobe"))
+
+    out = []
+    # The chevron: heavy, follows the lip, dips at the corners. The commonest.
+    m = M.Mesh("Moustache00")
+    lobe(m, 0.130, 0.7240, (0.200, 0.105, 0.100))
+    lobe(m, 0.330, 0.7155, (0.180, 0.095, 0.090), back=0.010)
+    out.append((m.name, m))
+    # The walrus: covers the lip and hangs past the corners. Southall.
+    m = M.Mesh("Moustache01")
+    lobe(m, 0.140, 0.7170, (0.250, 0.115, 0.140))
+    lobe(m, 0.390, 0.7040, (0.180, 0.100, 0.130), back=0.012)
+    out.append((m.name, m))
+    # The horseshoe: a chevron with the ends grown down past the mouth to
+    # the jaw. Hogan's, and a centre-half's.
+    m = M.Mesh("Moustache02")
+    lobe(m, 0.130, 0.7240, (0.200, 0.105, 0.100))
+    lobe(m, 0.330, 0.7155, (0.180, 0.095, 0.090), back=0.010)
+    lobe(m, 0.365, 0.7040, (0.095, 0.090, 0.100), back=0.012)
+    lobe(m, 0.355, 0.6900, (0.090, 0.085, 0.095), back=0.014)
+    lobe(m, 0.340, 0.6780, (0.085, 0.080, 0.085), back=0.016)
+    out.append((m.name, m))
+    return out
+
+
+def _jaw_shell(look, h, top, scale, material, coarse, rim=0.985, rough=0.03, reach=0.0):
+    """A shell over the lower head from the chin up to `top` of height.
+
+    Closed, so the normal solver is safe on it, and the back of every ring is
+    pulled inside the skull rather than cut off: a beard runs from ear to ear
+    and the nape is not part of it. The top ring steps in onto the skull so the
+    edge is authored, as a hairline is.
+    """
+    hd = look.head_d * h
+    rings = []
+    bury = hd * 0.30
+
+    def sink(ring):
+        # The front stays where the scale put it; the back comes forward by
+        # `bury`, which is the same as halving that off the depth and moving
+        # the centre forward by the other half.
+        ring.ry -= bury * 0.5
+        ring.cy -= bury * 0.5
+        return ring
+
+    for ring in skull_rings(look, h, scale=scale):
+        z = ring.z / h
+        if z > top:
+            break
+        rings.append(sink(ring))
+    # Above the top the beard goes on up the sides of the face to the hair,
+    # as a beard does, and the front is sunk into the skull. `shape` scales
+    # each point of a ring about its centre: full size on a strip at the
+    # sides that narrows as it climbs, nine tenths -- inside the head --
+    # everywhere else. The rim it makes with the skull is a crossing, not an
+    # authored edge, and it is worn as the price of joining the hair.
+    if reach > top:
+        for ring in skull_rings(look, h, scale=scale):
+            z = ring.z / h
+            if z <= top or z > reach:
+                continue
+            t = (z - top) / (reach - top)
+            # Steep, not faded: a shallow crossing with the skull is a
+            # sawtooth down the cheek, a near-vertical wall is an edge.
+            # Narrow from the start: at the mouth only the outer third of the
+            # cheek, at the hair only the last twentieth. And only the side
+            # of the head, not the front of the cheek under the eye.
+            # A fillet in the corner where the top edge meets the strip: just
+            # above the jaw the strip reaches further in, on a quarter circle,
+            # so the bare cheek has a rounded corner and not a square one.
+            if t < 0.45:
+                q = (0.45 - t) / 0.45
+                edge = 0.60 - 0.40 * (1.0 - math.sqrt(max(0.0, 1.0 - q * q)))
+            else:
+                edge = 0.60 + 0.35 * (t - 0.45) / 0.55
+
+            # The side-only test is relaxed over the fillet, or it hides the
+            # fillet: the corner is on the front of the cheek.
+            lo = -1.10 + 0.65 * min(1.0, t / 0.45)
+
+            def shape(u, v, edge=edge, lo=lo):
+                side = min(1.0, max(0.0, (abs(u) - edge) / 0.03))
+                front = min(1.0, max(0.0, (v - lo) / 0.25)) \
+                    * min(1.0, max(0.0, (0.55 - v) / 0.25))
+                f = side * front
+                return 0.90 + 0.10 * f
+
+            ring = sink(ring)
+            ring.shape = shape
+            rings.append(ring)
+    # The lid: the last ring again, on the skull rather than over it. Taking
+    # the first skull row *above* the top instead gave the beard the cheek's
+    # width at the jaw, a tray hanging off the chin. Stepped in over two rings
+    # rather than one, or the step is a horizontal ledge that catches the
+    # light as a shelf.
+    last = rings[-1]
+    for frac, k in ((0.5, (rim + scale) * 0.5 / scale), (1.0, rim / scale)):
+        z = last.z + (h * max(top, reach) - last.z) * frac
+        ring = M.Ring(z, last.rx * k, last.ry * k, cy=last.cy, power=last.power)
+        ring.bulge = last.bulge * k
+        ring.lip = last.lip * k
+        ring.shape = last.shape
+        rings.append(ring)
+    mesh = M.tube(rings, coarse * 2, material, cap_lo=True, cap_hi=True,
+                  name="jaw")
+    if material == HAIR:
+        # Thumbed like the hair shells, so it is hair and not a painted jaw --
+        # but mirrored, so the two sides of a beard match: the noise is read
+        # at the figure's left for both, and a beard with two different
+        # cheek lines is a beard drawn twice.
+        cx, cy, cz = 0.0, 0.0, h * 0.72
+        for i, (x, y, z) in enumerate(mesh.verts):
+            k = 1.0 + rough * M._lumps(-abs(x), y, z, 3.0, 16.0)
+            mesh.verts[i] = (cx + (x - cx) * k, cy + (y - cy) * k, cz + (z - cz) * k)
+    return mesh
+
+
+def beards(look, h, coarse):
+    """[(name, Mesh)] -- every beard, named for its index.
+
+    0 goatee, 1 full short beard, 2 stubble. Stubble carries its own material,
+    `stubble`, which the game paints between skin and hair.
+    """
+    hw, hd, hh = look.head_w * h, look.head_d * h, look.head_h * h
+    stacks = max(4, coarse // 2)
+    out = []
+    # The goatee: a chin patch and a soul patch under the lip. Keane, Dublin.
+    # The soul patch sits under the mouth's groove at 0.708, not across it.
+    m = M.Mesh("Beard00")
+    m.merge(M.blob(_place(look, h, 0.0, 0.662, 0.0),
+                   (hw * 0.24, hd * 0.11, hh * 0.18),
+                   coarse, stacks, HAIR, name="chin"))
+    m.merge(M.blob(_place(look, h, 0.0, 0.690, 0.001),
+                   (hw * 0.09, hd * 0.07, hh * 0.04),
+                   coarse, stacks, HAIR, name="soul"))
+    out.append((m.name, m))
+    # The full short beard: the jaw shell up to just under the mouth, and on
+    # up the sides to the hair.
+    m = M.Mesh("Beard01")
+    m.merge(_jaw_shell(look, h, 0.700, 1.035, HAIR, coarse, reach=0.800))
+    out.append((m.name, m))
+    # Stubble: a skin-tight shell in its own colour, up the cheek to the hair.
+    m = M.Mesh("Beard02")
+    m.merge(_jaw_shell(look, h, 0.712, 1.010, STUBBLE, coarse, rim=0.992,
+                       reach=0.800))
+    out.append((m.name, m))
+    return out

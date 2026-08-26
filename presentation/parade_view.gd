@@ -81,6 +81,12 @@ var _anim_clock := 0.0
 ## on screen take this one and the next three, so five pages walk the library.
 ## Negative leaves every man his own hair.
 var _hair := -1
+## The same for the nose library, over `NOSE_LIBRARY`.
+var _nose := -1
+## Moustache and beard: N puts style N on the first man and walks on; -2 is
+## none on every man; -1 leaves each man his own.
+var _tache := -1
+var _beard := -1
 ## One man for every column, by his place in the squad (1-based), so a sheet
 ## of cuts is a sheet of cuts and not of men. Zero is the squad as it comes.
 var _man := 0
@@ -122,6 +128,12 @@ func _ready() -> void:
 				_rolling = true
 		elif args[i] == "--hair" and i + 1 < args.size():
 			_hair = int(args[i + 1])
+		elif args[i] == "--nose" and i + 1 < args.size():
+			_nose = int(args[i + 1])
+		elif args[i] == "--tache" and i + 1 < args.size():
+			_tache = int(args[i + 1])
+		elif args[i] == "--beard" and i + 1 < args.size():
+			_beard = int(args[i + 1])
 		elif args[i] == "--man" and i + 1 < args.size():
 			_man = int(args[i + 1])
 		elif args[i] == "--plain":
@@ -244,6 +256,17 @@ func _build_row() -> void:
 		var styles := SimCharacterBuilder.HAIR_LIBRARY.size()
 		if _hair >= 0:
 			appearance.hair_style = (_hair + i) % styles
+		var noses := SimCharacterBuilder.NOSE_LIBRARY.size()
+		if _nose >= 0:
+			appearance.nose_style = (_nose + i) % noses
+		if _tache >= 0:
+			appearance.moustache_style = (_tache + i) % 3
+		elif _tache == -2:
+			appearance.moustache_style = -1
+		if _beard >= 0:
+			appearance.beard_style = (_beard + i) % 3
+		elif _beard == -2:
+			appearance.beard_style = -1
 		if _plain:
 			appearance.accessory = "none"
 		var at := Vector3((float(i) - float(count - 1) * 0.5) * SPACING, 0.0, 0.0)
@@ -263,6 +286,10 @@ func _build_row() -> void:
 		]
 		if _hair >= 0:
 			label.text += "\nhair %d of %d" % [appearance.hair_style, styles]
+		if _nose >= 0:
+			label.text += "\nnose %d of %d" % [appearance.nose_style, noses]
+		if _tache >= 0 or _beard >= 0:
+			label.text += "\ntache %d  beard %d" % [appearance.moustache_style, appearance.beard_style]
 		label.font_size = 64
 		label.pixel_size = 0.0011
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED

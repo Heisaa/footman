@@ -81,6 +81,13 @@ kit ever wants its own.
 - Hair: one mesh per cut, named `Hair0`, `Hair1`, … The seed picks which is
   visible and the rest are hidden. Match `SimCharacterBuilder.HAIR_LIBRARY` for
   order if you want the same man to keep his hair across the two builders.
+- Noses: one mesh per shape, `Nose00`, `Nose01`, … in
+  `SimCharacterBuilder.NOSE_LIBRARY` order; `art/toy/figure.py` `NOSES` is the
+  source. Painted `skin` in the file and repainted with the man's nose colour.
+- Moustaches `Moustache00..02` (chevron, walrus, horseshoe) and beards
+  `Beard00..02` (goatee, full, stubble), picked by the seed;
+  `SimAppearance._face_hair` pairs them. `Beard02` is stubble and carries a
+  material named `stubble`, painted between skin and hair at runtime.
 - Accessories: `Accessory0` is a headband, and it is the only one. A cap was
   here and came out -- sized to clear a head of hair it covers the whole skull
   in kit colour and reads as a hard hat. No accessory hides it.

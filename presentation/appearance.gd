@@ -102,8 +102,16 @@ var eye_style := 0
 var mouth_style := 0
 var nose_style := 0
 ## Two of the six figures in the reference wear a moustache, so a fair number of
-## a squad should.
-var moustache := false
+## a squad should. The style is an index into the model's `MoustacheNN` set:
+## 0 chevron, 1 walrus, 2 horseshoe; -1 is clean-shaven.
+var moustache_style := -1
+## The beard, `BeardNN`: 0 goatee, 1 full short beard, 2 stubble; -1 none.
+## `_face_hair` pairs the two the way the era did.
+var beard_style := -1
+## True when there is a moustache at all; the primitive figure draws one shape.
+var moustache: bool:
+	get:
+		return moustache_style >= 0
 ## The nose is the man's own skin a shade warmer, not a colour of its own --
 ## the toy reference has plain noses. Derived rather than drawn from a table so
 ## it holds up across the skin tones: a pale pink button on a dark face reads as
@@ -141,11 +149,43 @@ static func from_seed(seed_value: int) -> SimAppearance:
 	a.mouth_style = rng.range_int(0, SimFaceAtlas.MOUTH_STYLES.size() - 1)
 	a.nose_style = rng.range_int(0, SimCharacterBuilder.NOSE_LIBRARY.size() - 1)
 	a.nose_colour = _nose_colour(a.skin, rng)
-	a.moustache = rng.chance(0.22)
+	# A button is the man's own skin, always: a ball a shade redder than the
+	# face is a clown's, where a bridged nose can carry the warmth.
+	var nose_row: Array = SimCharacterBuilder.NOSE_LIBRARY[a.nose_style]
+	if float(nose_row[1]) <= 0.0:
+		a.nose_colour = a.skin
+	_face_hair(a, rng)
 	a.sleeves_long = rng.chance(0.75)
 	a.socks_high = rng.chance(0.8)
 	a.face = Face.NEUTRAL
 	return a
+
+
+## Moustache and beard together, because the era paired them: a moustache on
+## its own is the eighties, a goatee on its own the nineties, a full beard
+## takes a moustache nearly always, and only a chevron sits over a goatee.
+## Stubble goes under anything.
+static func _face_hair(a: SimAppearance, rng: SimRng) -> void:
+	var b := rng.unit_float()
+	if b < 0.12:
+		a.beard_style = 2    # stubble
+	elif b < 0.24:
+		a.beard_style = 0    # goatee
+	elif b < 0.33:
+		a.beard_style = 1    # full
+	var m := rng.unit_float()
+	var pick := rng.unit_float()
+	match a.beard_style:
+		1:
+			if m < 0.85:
+				a.moustache_style = [0, 1, 2][int(pick * 3.0) % 3]
+		0:
+			if m < 0.5:
+				a.moustache_style = 0
+		_:
+			if m < 0.25:
+				# The chevron twice: it was on half the league.
+				a.moustache_style = [0, 0, 1, 2][int(pick * 4.0) % 4]
 
 
 ## A man's hair: drawn from the table, then held darker than his face unless he
@@ -203,20 +243,24 @@ static func _separate_hair(hair: Color, skin: Color) -> Color:
 	return hair.lightened(clampf((above - lum) / maxf(1.0 - lum, 0.001), 0.0, 0.94))
 
 
-## The nose, a shade off the skin rather than a different colour from it. The
-## owner's toy reference has plain skin-coloured noses and the red one it had
-## before was from the other reference; what is left is enough warmth to catch
-## the eye and no more. Raise the mix in the last line for a redder nose.
+## The nose, from the man's own skin to a shade darker and warmer than it. The
+## owner's toy reference has plain skin-coloured noses, so most are just that;
+## the rest lean towards a warm red, never far enough to read as a clown's, and
+## the further they lean the darker they go.
 static func _nose_colour(skin: Color, rng: SimRng) -> Color:
+	# How far off the skin this nose is. Squared so plain noses are the common
+	# case and the warmest is the tail.
+	var t := rng.unit_float()
+	t = t * t
 	# The hue runs from just short of a full turn (pink) to a warm orange-red.
 	# Written as a signed offset and wrapped, because lerping 0.99 to 0.045 the
 	# long way round passes through green.
-	var hue: float = fposmod(lerpf(-0.015, 0.045, rng.unit_float()), 1.0)
+	var hue: float = fposmod(lerpf(-0.01, 0.03, rng.unit_float()), 1.0)
 	var target := Color.from_hsv(
 		hue,
-		clampf(skin.s * 1.1 + 0.12, 0.2, 0.6),
-		clampf(skin.v * 0.97, 0.0, 1.0))
-	return skin.lerp(target, rng.range_float(0.15, 0.35))
+		clampf(skin.s * 1.1 + 0.08, 0.2, 0.5),
+		clampf(skin.v * lerpf(1.0, 0.88, t), 0.0, 1.0))
+	return skin.lerp(target, t * 0.3)
 
 
 ## Height: mostly the middle of a squad list, sometimes a tail. The middle is the

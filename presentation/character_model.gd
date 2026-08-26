@@ -144,11 +144,11 @@ static func build(seed_value: int, appearance: SimAppearance, kit: PackedColorAr
 	_paint(root, appearance, kit)
 	_choose_variant(root, "Hair", appearance.hair_style)
 	_choose_variant(root, "Accessory", int(ACCESSORY_INDEX.get(appearance.accessory, -1)))
-	# One mesh, shown or hidden -- there is only ever one moustache, so it is not
-	# a variant set and `_choose_variant` would want it numbered.
-	var tache := root.find_child("Moustache", true, false) as Node3D
-	if tache != null:
-		tache.visible = appearance.moustache
+	_choose_variant(root, "Nose", appearance.nose_style)
+	_dress_nose(root, appearance)
+	_choose_variant(root, "Moustache", appearance.moustache_style)
+	_choose_variant(root, "Beard", appearance.beard_style)
+	_dress_stubble(root, appearance)
 	# The face and the brows are the whole of a man's identity at this size, and
 	# they are the same code for a model as for the primitives: the metas below
 	# are what `SimCharacterBuilder.set_expression` and `_pose_brows` read.
@@ -239,6 +239,28 @@ static func _dress_face(root: Node3D, appearance: SimAppearance) -> void:
 		material, appearance.face, appearance.eye_style, appearance.mouth_style)
 	quad.material_override = material
 	quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## The nose is the man's own skin a shade warmer, `SimAppearance._nose_colour`,
+## and the file paints it `skin`, so it is repainted after `_paint`. Every shape
+## gets it, not just the shown one: cheaper than telling them apart.
+static func _dress_nose(root: Node3D, appearance: SimAppearance) -> void:
+	var mat := SimCharacterBuilder.toy_material(appearance.nose_colour)
+	for node in root.find_children("Nose*", "MeshInstance3D", true, false):
+		var mesh := node as MeshInstance3D
+		for slot in mesh.get_surface_override_material_count():
+			mesh.set_surface_override_material(slot, mat)
+
+
+## Stubble is neither skin nor hair: the file names its material `stubble`,
+## outside `SLOT_NAMES`, and it is painted here a third of the way from the
+## man's skin to his hair.
+static func _dress_stubble(root: Node3D, appearance: SimAppearance) -> void:
+	var mat := SimCharacterBuilder.toy_material(appearance.skin.lerp(appearance.hair_colour, 0.35))
+	for node in _meshes(root):
+		for slot in node.get_surface_override_material_count():
+			if _material_name(node, slot) == "stubble":
+				node.set_surface_override_material(slot, mat)
 
 
 ## The eye beads get their own material, not the palette's.

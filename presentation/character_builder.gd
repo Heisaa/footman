@@ -838,31 +838,60 @@ static func _v_neck(spine: Node3D, shoulder: float, torso_h: float, trim: Materi
 ## Length has to clear twice the radius by a margin or the capsule collapses into
 ## a sphere, which is what hid the shape the first time.
 ##
-## Each row is [radius, length, height on the face, how far out, z scale].
-## Bigger and rounder than they were. On the reference the nose is one of the
-## three things you see at a glance, a soft rounded bump about an eighth of the
-## head across; ours were half that and drawn long, so they read as a small beak
-## rather than a button. Length still has to clear 2.05 times the radius or
-## `_capsule` floors it into a sphere -- which for the roundest rows here is very
-## nearly what is wanted anyway.
+## Two pieces: a round tip, and a thinner bridge running up from it towards the
+## brow, leaning back into the head so it follows the curve of the face. One
+## capsule was the whole nose before, and a capsule is the same width all the
+## way up, so every nose was a sausage; the bridge is what makes it a nose.
+##
+## Each row is [tip radius, bridge radius, bridge length, tip height on the
+## face, how far out, tip z scale, bridge lean in degrees]. Radii in head radii.
+## The tip is about an eighth of the head across, as on the reference; the
+## bridge is narrower than the tip in every row, by a little on the button ones
+## and by half on the fine ones. Lean is how far the top of the bridge tips back
+## into the head: more for a snub nose, less for one that stands proud.
 const NOSE_LIBRARY := [
-	[0.118, 0.27, -0.13, 1.00, 1.05],  # a small straight one
-	[0.128, 0.30, -0.14, 0.99, 0.95],  # broader
-	[0.108, 0.24, -0.12, 1.01, 1.15],  # short and fine
-	[0.135, 0.34, -0.16, 0.99, 1.00],  # a big one
-	[0.105, 0.23, -0.11, 1.01, 1.00],  # a neat short one, high on the face
-	[0.138, 0.32, -0.15, 0.98, 0.95],  # broad
+	[0.118, 0.092, 0.30, -0.13, 1.00, 1.05, 8.0],  # a small straight one
+	[0.128, 0.100, 0.30, -0.14, 0.99, 0.95, 8.0],  # broader
+	[0.108, 0.070, 0.26, -0.12, 1.01, 1.15, 10.0],  # short and fine
+	[0.135, 0.095, 0.38, -0.16, 0.99, 1.00, 5.0],  # a big one
+	[0.105, 0.078, 0.24, -0.11, 1.01, 1.00, 12.0],  # a neat short one, high on the face
+	[0.138, 0.110, 0.30, -0.15, 0.98, 0.90, 8.0],  # broad and flat
+	[0.112, 0.062, 0.42, -0.17, 1.00, 1.10, 2.0],  # long and thin, standing proud
+	[0.120, 0.070, 0.28, -0.12, 1.03, 1.15, 16.0],  # a snub, tip tilted up and out
+	[0.130, 0.060, 0.32, -0.14, 1.00, 1.00, 8.0],  # a wide tip on a narrow bridge
+	# The button family: a ball and no bridge. Bridge radius zero means none.
+	[0.135, 0.000, 0.00, -0.13, 1.00, 1.05, 0.0],  # the ball as it was
+	[0.118, 0.000, 0.00, -0.14, 1.00, 1.05, 0.0],  # a smaller ball
+	[0.105, 0.000, 0.00, -0.15, 1.01, 1.00, 0.0],  # a small ball
 ]
 
 
-static func _nose(appearance: SimAppearance, head_r: float) -> MeshInstance3D:
+static func _nose(appearance: SimAppearance, head_r: float) -> Node3D:
 	var row: Array = NOSE_LIBRARY[posmod(appearance.nose_style, NOSE_LIBRARY.size())]
-	var nose := _capsule(
-		head_r * float(row[0]), head_r * float(row[1]),
-		toy_material(appearance.nose_colour), true)
+	var tip_r := head_r * float(row[0])
+	var bridge_r := head_r * float(row[1])
+	var bridge_len := head_r * float(row[2])
+	var lean := deg_to_rad(float(row[6]))
+	var mat := toy_material(appearance.nose_colour)
+	var nose := Node3D.new()
 	nose.name = "Nose"
-	nose.position = Vector3(0.0, head_r * float(row[2]), head_r * float(row[3]))
-	nose.scale = Vector3(1.0, 1.0, float(row[4]))
+	nose.position = Vector3(0.0, head_r * float(row[3]), head_r * float(row[4]))
+	var tip := _sphere(tip_r, mat, true)
+	tip.name = "Tip"
+	tip.scale = Vector3(1.0, 1.0, float(row[5]))
+	nose.add_child(tip)
+	# The bridge starts inside the tip and runs up its axis, top tilted into
+	# the head. A capsule's axis is Y, so a negative roll about X leans it back.
+	# The face is nearly flat between nose and brow, so the lean is small and
+	# the bridge sits a little proud of the tip's centre, or it is buried.
+	if bridge_r <= 0.0:
+		return nose
+	var up := Vector3(0.0, cos(lean), -sin(lean))
+	var bridge := _capsule(bridge_r, bridge_len, mat, true)
+	bridge.name = "Bridge"
+	bridge.rotation.x = -lean
+	bridge.position = up * (bridge_len * 0.5 - tip_r * 0.4) + Vector3(0.0, 0.0, bridge_r * 0.4)
+	nose.add_child(bridge)
 	return nose
 
 
