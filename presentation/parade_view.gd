@@ -81,6 +81,11 @@ var _anim_clock := 0.0
 ## on screen take this one and the next three, so five pages walk the library.
 ## Negative leaves every man his own hair.
 var _hair := -1
+## One man for every column, by his place in the squad (1-based), so a sheet
+## of cuts is a sheet of cuts and not of men. Zero is the squad as it comes.
+var _man := 0
+## Nobody wears an accessory, for a look at the hair alone.
+var _plain := false
 var _shot_path := ""
 var _elapsed := 0.0
 
@@ -117,6 +122,10 @@ func _ready() -> void:
 				_rolling = true
 		elif args[i] == "--hair" and i + 1 < args.size():
 			_hair = int(args[i + 1])
+		elif args[i] == "--man" and i + 1 < args.size():
+			_man = int(args[i + 1])
+		elif args[i] == "--plain":
+			_plain = true
 		elif args[i] == "--shot" and i + 1 < args.size():
 			_shot_path = args[i + 1]
 	# The window is fullscreen by project setting, which is not the frame
@@ -229,10 +238,14 @@ func _build_row() -> void:
 	var count: int = mini(PER_PAGE, _pool.size() - first)
 	for i in count:
 		var p = _pool[first + i]
+		if _man > 0 and _man <= _pool.size():
+			p = _pool[_man - 1]
 		var appearance := SimCharacterModel.appearance_for(p.appearance_seed)
 		var styles := SimCharacterBuilder.HAIR_LIBRARY.size()
 		if _hair >= 0:
 			appearance.hair_style = (_hair + i) % styles
+		if _plain:
+			appearance.accessory = "none"
 		var at := Vector3((float(i) - float(count - 1) * 0.5) * SPACING, 0.0, 0.0)
 		var node := SimCharacterModel.build(p.appearance_seed, appearance, _kits[p.team], p.shirt)
 		node.position = at

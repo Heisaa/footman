@@ -15,6 +15,8 @@ The shell is built off `figure.SKULL`, the skull's own profile, so a cut cannot
 drift off the head it belongs to when the head changes shape.
 """
 
+import math
+
 from . import figure as F
 from . import mesh as M
 
@@ -62,6 +64,34 @@ BURN_DROP = 0.22
 #           about 2.2: the order is kept, so a mop is still boxier than a crop,
 #           but nothing is boxier than the skull.
 #
+#   sides_r how big the shell is low down, where `r` is the top. One number for
+#           both made every cut the same shape at a different size; an undercut
+#           is tight at the sides and tall on top, a bowl the reverse.
+#   nape    how far down the back the hairline runs, in head heights, on top
+#           of `slope`. A crop stops at the occiput; long hair runs to the
+#           collar. **The back has its own rim**: the shell's back half thins
+#           to the skull over the lowest `fade` of its height, so the nape is
+#           an edge that tapers, not the front's step carried round.
+#   back_r  the occiput: how much fuller the back half is than the rest, at
+#           mid height. A crop is flat behind, a mop swells out.
+#   fade    the fraction of the shell's height over which the back tapers in.
+#           0 is blunt -- collar-length hair is cut straight across, and the
+#           old `mass` blob is this: a deep `nape`, a full `back_r` and no
+#           taper, in the shell itself and with no seam.
+#   lean    a parting: the top of the shell is fuller on one side than the
+#           other, so the cut is not symmetrical from the front.
+#   point   the nape's shape: 1 a V, longest in the middle, 0 cut straight.
+#   rough   `ROLLED` for this cut alone. A buzz cut is not rolled clay.
+#   temples the hairline notched either side of the front: an M, receding.
+#   bald    the crown and the forehead are sunk into the skull, so what shows
+#           is a horseshoe round the sides and back at the ordinary height,
+#           with the ordinary nape. Built as a shell so it matches the rest.
+#   pony    a tail down the neck.
+#   curl_set  how much deeper than usual the curls sit in the shell.
+#   part    a parting: a groove along the top, at this many half-widths off
+#           centre. 0 is a centre parting; with `lean` the hair falls away
+#           from it.
+#
 # **The outline is the cut.** Judged from the front two shells of the same shape
 # are the same haircut whatever their hairline does, and the four-view render is
 # where that shows: half of a perm is its profile.
@@ -72,40 +102,80 @@ HAIRLINE = 0.786
 
 LIBRARY = [
     dict(r=0.0),                                                      # bald
-    dict(r=1.10, up=0.06, back=0.20, crown=0.010, flare=0.00,
-         square=2.38),                                                 # cropped
-    dict(r=1.12, up=0.06, back=0.21, crown=0.015, flare=0.01,
-         square=2.38, burns=True),                                     # back and sides
-    dict(r=1.15, up=0.05, back=0.22, crown=0.030, flare=0.055,
-         square=2.80, peak=True, fringe=0.55, slope=0.16, sides=0.30),                         # bowl, with a point
-    dict(r=1.17, up=0.05, back=0.22, crown=0.045, flare=0.045,
-         square=2.56, burns=True),                                     # heavier
-    dict(r=1.12, up=0.09, back=0.20, crown=0.055, flare=0.00,
-         square=2.32, quiff=True, slope=0.44),                                     # a quiff
-    dict(r=1.10, up=0.07, back=0.18, crown=0.035, flare=0.02,
-         square=2.26, curls=12),                                       # curly
-    dict(r=1.09, up=0.08, back=0.18, crown=0.040, flare=0.03,
-         square=2.20, curls=16, curl_r=0.40, curl_skirt=True, sides=0.34),         # a big curly head
-    dict(r=1.13, up=0.06, back=0.21, crown=0.050, flare=0.01,
-         square=2.44, quiff=True, burns=True),                         # swept over
-    dict(r=1.13, up=0.05, back=0.20, crown=0.025, flare=0.035,
-         square=2.50, mass=1.0, sides=0.28),                                       # collar length
-    dict(r=1.15, up=0.05, back=0.22, crown=0.030, flare=0.055,
-         square=2.56, mass=1.0, burns=True, sides=0.30),                           # long
-    dict(r=1.08, up=0.08, back=0.27, crown=0.005, flare=0.00,
-         square=2.32, burns=True, recede=0.030, slope=0.42),                                     # receding
-    dict(r=1.07, up=0.07, back=0.23, crown=0.000, flare=0.00,
-         square=2.26, sy=0.92, peak=True, recede=0.018),                             # thin on top
-    dict(r=1.13, up=0.07, back=0.21, crown=0.045, flare=0.02,
-         square=2.32, tufts=4),                                        # tousled
-    dict(r=1.09, up=0.06, back=0.22, crown=0.015, flare=0.01,
-         square=2.38, mass=1.45, burns=True, sides=0.30),                          # a mullet
-    dict(r=1.10, up=0.05, back=0.24, crown=0.020, flare=0.00,
-         square=2.68, slick=True, slope=0.42, sides=0.12),                                     # slicked back
-    dict(r=1.11, up=0.04, back=0.25, crown=0.020, flare=0.00,
-         square=2.68, slick=True, burns=True, slope=0.42, sides=0.12),                         # slicked, with burns
-    dict(r=1.11, up=-0.05, back=0.23, crown=0.000, flare=0.00,
-         square=2.32, burns=True, recede=0.026, slope=0.40),                                     # thinning
+    dict(r=1.11, sides_r=1.09, up=0.06, back=0.20, crown=0.010,
+         square=2.38, nape=0.50, rough=0.03),                         # cropped
+    dict(r=1.12, sides_r=1.07, up=0.06, back=0.21, crown=0.030,
+         square=2.38, nape=0.45, burns=True),                         # back and sides
+    dict(r=1.16, sides_r=1.20, up=0.05, back=0.22, crown=0.050, flare=-0.05,
+         square=2.80, nape=0.45, back_r=0.04, fade=0.30,
+         peak=True, fringe=0.55, slope=0.16, sides=0.30),             # bowl, with a point
+    dict(r=1.20, sides_r=1.16, up=0.05, back=0.22, crown=0.070, flare=-0.04,
+         square=2.56, nape=0.50, back_r=0.06, burns=True),            # heavier
+    dict(r=1.14, sides_r=1.06, up=0.09, back=0.20, crown=0.100,
+         square=2.32, nape=0.45, back_r=0.02, lean=0.06,
+         quiff=True, slope=0.44),                                     # a quiff
+    dict(r=1.08, sides_r=1.08, up=0.07, back=0.18, crown=0.030, flare=0.01,
+         square=2.26, nape=0.45, back_r=0.04, curls=26, curl_r=0.26,
+         curl_set=0.025),                                             # curly
+    dict(r=1.11, sides_r=1.12, up=0.08, back=0.18, crown=0.060, flare=0.02,
+         square=2.20, nape=0.45, back_r=0.08, fade=0.20,
+         curls=30, curl_r=0.34, curl_skirt=True, sides=0.34,
+         curl_set=0.025),                                             # a big curly head
+    dict(r=1.15, sides_r=1.06, up=0.06, back=0.21, crown=0.060,
+         square=2.44, nape=0.45, back_r=0.03, lean=0.14,
+         quiff=True, burns=True),                                     # swept over
+    dict(r=1.14, sides_r=1.16, up=0.05, back=0.20, crown=0.040, flare=0.03,
+         square=2.50, nape=0.90, back_r=0.08, fade=0.35, point=0.0,
+         sides=0.28),                                                 # collar length
+    dict(r=1.18, sides_r=1.22, up=0.05, back=0.22, crown=0.050, flare=0.05,
+         square=2.56, nape=1.30, back_r=0.10, fade=0.35, point=0.3, burns=True,
+         sides=0.30),                                                 # long
+    dict(r=1.11, sides_r=1.09, up=0.08, back=0.27, crown=0.005,
+         square=2.32, nape=0.45, burns=True, recede=0.050, slope=0.42,
+         rough=0.03, temples=True),                                   # receding
+    dict(r=1.11, sides_r=1.10, up=0.07, back=0.23, crown=0.000,
+         square=2.26, nape=0.45, sy=0.92, peak=True, recede=0.018,
+         rough=0.03),                                                 # thin on top
+    dict(r=1.18, sides_r=1.10, up=0.07, back=0.21, crown=0.100, flare=0.02,
+         square=2.32, nape=0.45, back_r=0.05, lean=-0.08, tufts=4),   # tousled
+    dict(r=1.09, sides_r=1.07, up=0.06, back=0.22, crown=0.020,
+         square=2.38, nape=0.95, back_r=0.12, fade=0.35,
+         sides=0.10),                                                 # a mullet
+    dict(r=1.09, sides_r=1.07, up=0.05, back=0.24, crown=0.020,
+         square=2.68, nape=0.50, back_r=0.04, slick=True, slope=0.42,
+         sides=0.12),                                                 # slicked back
+    dict(r=1.10, sides_r=1.07, up=0.04, back=0.25, crown=0.020,
+         square=2.68, nape=0.50, back_r=0.04, slick=True, burns=True,
+         slope=0.42, sides=0.12),                                     # slicked, with burns
+    dict(r=1.11, sides_r=1.11, up=-0.05, back=0.23, crown=0.000,
+         square=2.32, nape=0.45, burns=True, recede=0.040, slope=0.40,
+         rough=0.03, temples=True),                                   # thinning
+    dict(r=1.045, sides_r=1.045, up=0.06, back=0.20, crown=0.000,
+         square=2.30, nape=0.55, rough=0.02),                          # buzz cut
+    dict(r=1.12, sides_r=1.12, up=0.16, back=0.21, crown=0.020,
+         square=2.38, nape=0.30, bald=True, burns=True, rough=0.03), # horseshoe: bald on top
+    dict(r=1.08, sides_r=1.07, up=0.05, back=0.24, crown=0.020,
+         square=2.68, nape=0.45, slick=True, slope=0.42, sides=0.12,
+         pony=True),                                                  # ponytail
+    dict(r=1.24, sides_r=1.045, up=0.08, back=0.20, crown=0.100,
+         square=2.40, nape=0.35, lean=0.10, rough=0.05),              # undercut
+    dict(r=1.12, sides_r=1.08, up=0.07, back=0.20, crown=0.120, sy=0.70,
+         square=3.40, nape=0.40, rough=0.04),                         # flat top
+    dict(r=1.34, sides_r=1.30, up=0.10, back=0.18, crown=0.260,
+         square=2.00, nape=0.35, back_r=0.10, fade=0.30, rough=0.10), # afro
+    dict(r=1.20, sides_r=1.17, up=0.05, back=0.20, crown=0.060, flare=0.03,
+         square=2.40, nape=0.65, back_r=0.08, fade=0.25, slope=0.16,
+         sides=0.36),                                                 # shaggy, over the ears
+    dict(r=1.14, sides_r=1.10, up=0.06, back=0.20, crown=0.060,
+         square=2.40, nape=0.45, part=0.0),                           # centre parting, short
+    dict(r=1.18, sides_r=1.18, up=0.05, back=0.20, crown=0.060, flare=0.03,
+         square=2.40, nape=0.70, back_r=0.06, fade=0.20, point=0.3,
+         slope=0.12, sides=0.38, part=0.0),                           # centre parting, curtains
+    dict(r=1.14, sides_r=1.08, up=0.06, back=0.20, crown=0.050,
+         square=2.40, nape=0.45, part=0.35, lean=0.10),               # side parting, short
+    dict(r=1.18, sides_r=1.16, up=0.05, back=0.20, crown=0.060, flare=0.03,
+         square=2.40, nape=0.70, back_r=0.06, fade=0.20, point=0.3,
+         slope=0.14, sides=0.34, part=0.35, lean=0.12),               # side parting, long
 ]
 
 
@@ -153,6 +223,15 @@ def _shell(look, h, style, r, lift, back, squash):
     base = h * (HAIRLINE + style.get("recede", 0.0))
     slope = hh * style.get("slope", 0.28)
     side_drop = hh * style.get("sides", 0.19)
+    nape = hh * style.get("nape", 0.45)
+    point = style.get("point", 1.0)
+    sides_r = style.get("sides_r", r)
+    occiput = style.get("back_r", 0.0)
+    fade_back = style.get("fade", 0.45)
+    lean = style.get("lean", 0.0)
+    part = style.get("part")
+    bald = style.get("bald", False)
+    temples = style.get("temples", False)
     # Above the skull whatever `up` does. A cut with a negative lift -- the
     # thinning one -- pulled its own crown down under the head and went bald at
     # the top, which is not what thinning on top means.
@@ -235,7 +314,7 @@ def _shell(look, h, style, r, lift, back, squash):
             # Sized at one height and centred at another, the rim dipped inside
             # the skull at the brow on a third of the cuts, which is the
             # hairline sawtooth back again.
-            band = np.linspace((z - rise - max(slope, side_drop)) / h,
+            band = np.linspace((z - rise - max(slope + nape, side_drop)) / h,
                                (z - rise + slope) / h, 9)
             widest = float(np.interp(band, zs, scales).max())
             slide = np.interp(band, zs, depths)
@@ -245,8 +324,19 @@ def _shell(look, h, style, r, lift, back, squash):
             width = widest + 0.0080 / hw
             depth = (behind - front) * 0.5 + 0.0080 / hd
             cy = (behind + front) * 0.5 * hd
+            # **The back of the rim is sized for the neck, not the cheek.**
+            # `widest` is the cheek, and at the nape the rim reaches a
+            # skull a fifth narrower, so it stood off the neck all the way
+            # round the back: a beanie's brim. The back half is brought in
+            # to the width the skull has where the rim actually lands.
+            neck = float(np.interp((z - rise - slope - nape) / h, zs, scales))
+            neck = min(1.0, (neck + 0.012 / hw) / width)
         else:
-            grow = r * (1.0 + flare * (1.0 - t) * (1.0 - t))
+            # Sides low down, top high up, and the blend is most of what
+            # tells an undercut from a bowl.
+            blend = t * t * (3.0 - 2.0 * t)
+            grow = (sides_r + (r - sides_r) * blend) \
+                * (1.0 + flare * (1.0 - t) * (1.0 - t))
             width = scale * grow
             depth = thick * grow
         # **The rim takes the skull's own section, not the cut's.** A shell that
@@ -264,8 +354,100 @@ def _shell(look, h, style, r, lift, back, squash):
         fade = (1.0 - t) ** 2.0
         ring.tilt = -slope * fade
         ring.drop = side_drop * fade
+        ring.nape = nape * fade
+        ring.point = point
+        ring.drop_front = True
+        if i == 0:
+            ring.shape = lambda u, v, k=neck: 1.0 + (k - 1.0) * _ease((v - 0.3) / 0.5)
+        else:
+            ring.shape = _back_shape(t, grow, occiput, fade_back, lean, neck,
+                                     part)
+        if bald or temples:
+            ring.shape = _sunk(ring.shape, t, 1.0 if i == 0 else grow,
+                               top=bald, temples=temples)
+        if bald and t > 0.40:
+            # Sunk radially the top rings are still *above* the crown, and a
+            # narrow ring over a skull is a tuft. They go under it as well.
+            ring.z = h * crown_z - hh * 0.15
+            ring.nape = 0.0
+            ring.tilt = 0.0
+            ring.drop = 0.0
         rings.append(ring)
     return rings
+
+
+def _ease(u):
+    u = min(1.0, max(0.0, u))
+    return u * u * (3.0 - 2.0 * u)
+
+
+def _sunk(inner, t, grow, top=False, temples=False):
+    """Hair pulled inside the skull, where a man has lost it.
+
+    `top`: everything above three tenths of the shell's height goes in, and
+    the front between the temples on the rings below. What stands is the
+    band round the sides and back, with its top edge where the sinking starts
+    -- a horseshoe. **Well inside**, at 0.35: the shell is the skull lifted,
+    so near the crown it is far wider than the skull at the same height, and
+    at 0.55 a tuft of the top ring still stood out of the crown.
+
+    `temples`: two notches either side of the front, so the hairline is an M
+    -- receding. The middle keeps its hair.
+    """
+    top_gone = _ease((t - 0.30) / 0.10) if top else 0.0
+    low = 1.0 - _ease((t - 0.42) / 0.15)
+
+    def shape(u, v):
+        ahead = _ease((-v - 0.10) / 0.2)
+        gone = top_gone
+        if top:
+            gone = max(gone, ahead * (1.0 - _ease((abs(u) - 0.55) / 0.25)))
+        if temples:
+            notch = math.exp(-((abs(u) - 0.55) / 0.22) ** 2)
+            gone = max(gone, ahead * notch * low)
+        return inner(u, v) * (1.0 - gone * (1.0 - 0.35 / grow))
+    return shape
+
+
+def _back_shape(t, grow, occiput, fade_back, lean, neck=1.0, part=None):
+    """The section's multiplier for one ring, `t` of the way up the shell.
+
+    Three things, all of them nothing at the front and the widest points:
+    the taper that brings the back half in to the skull towards the nape, the
+    occiput that swells it out at mid height, and the lean that makes one
+    side of the top fuller than the other.
+    """
+    # The taper lands a whisker off the skull, never on it: `M.roughen`
+    # wanders the shell by more than a coincident surface can stand.
+    # And into the neck: the taper's floor follows the rim in, so the
+    # lowest rings behind the head narrow the way the skull does.
+    # Only the lowest rings, though: the neck is narrower than the skull the
+    # ring is sized on, and a ring brought in to it while still up the skull
+    # is inside the head.
+    floor = min(1.0, 1.035 / grow) \
+        * (neck + (1.0 - neck) * _ease(t / max(fade_back * 0.5, 1e-6)))
+    if fade_back > 0.0 and t < fade_back:
+        u = t / fade_back
+        thin = floor + (1.0 - floor) * u * u * (3.0 - 2.0 * u)
+    else:
+        thin = 1.0
+    bump = max(0.0, 1.0 - ((t - 0.45) / 0.45) ** 2)
+
+    def shape(u, v):
+        behind = max(0.0, v) ** 2
+        back = 1.0 + (thin * (1.0 + occiput * bump) - 1.0) * behind
+        out = back * (1.0 + lean * u * t)
+        if part is not None:
+            # The groove: a twelfth of the shell's stand-off, only on the
+            # rings up the top, and gone before it reaches the nape.
+            # To the scalp, and from the hairline up: a parting is a line
+            # of skin, and one that starts above the rim is not seen from
+            # the front, which is where a parting is looked at.
+            groove = math.exp(-((u - part) / 0.20) ** 2) * math.sqrt(t) \
+                * max(0.0, 1.0 - max(0.0, v) ** 2)
+            out *= 1.0 - (1.0 - 1.035 / grow) * groove
+        return out
+    return shape
 
 
 def cuts(look, h, segs, coarse):
@@ -306,88 +488,19 @@ def one(look, h, style, segs, coarse, name):
     if style.get("burns"):
         style = dict(style, sides=style.get("sides", 0.19) + BURN_DROP)
 
+    crown_z = h * F.SKULL[-1][0] + lift
     rings = _shell(look, h, style, r, lift, back, squash)
     mesh = M.tube(rings, segs, HAIR, power=style.get("square", F.HEAD_POWER),
                   name=name)
 
-    crown_z = h * F.SKULL[-1][0] + lift
-
-    if style.get("quiff"):
-        mesh.merge(M.blob((0.0, -hd * r * 0.52 + back, h * 0.905 + lift),
-                          (hw * 0.44, hd * 0.30, hh * 0.24),
-                          coarse, coarse // 2, HAIR, name="quiff"))
-    if style.get("peak"):
-        mesh.merge(M.blob((0.0, -hd * r * 0.80 + back, h * 0.812 + lift),
-                          (hw * 0.20, hd * 0.16, hh * 0.15),
-                          coarse, coarse // 2, HAIR, name="peak"))
-    if style.get("burns"):
-        # **Hung off the hairline, not placed at a fixed height.**
-        #
-        # These were a blob at a flat 0.712 with the shell's own push-back added
-        # to them, and on half the cuts they were simply not touching anything:
-        # the hairline drops at the sides by however much a cut says, and a
-        # slicked head drops it barely at all, so its rim finished two
-        # centimetres above a sideburn that started below the ear. What showed
-        # was a dark lump floating beside a man's head with daylight over it.
-        #
-        # So the rim is computed the same way `_shell` computes it -- base plus
-        # the cut's own lift, less its own side drop -- and the burn is hung
-        # from there, overlapping it. It also comes forward: a sideburn runs
-        # down **in front of** the ear, and this one used to sit behind it.
-        # **Hung off the temple, which is the only place the hairline is in
-        # front of the ear.**
-        #
-        # The rim of a shell is pushed back by `back` -- that is what puts a
-        # hairline on a forehead rather than a fringe over the eyes -- and the
-        # push is a constant round the whole ring, so at the *sides* it carries
-        # the hairline three tenths of a head-depth behind centre, which is
-        # behind the ear. There is no hair in front of an ear on this head to
-        # join a sideburn to, and two goes at moving the sideburn could not fix
-        # that because the thing it was reaching for was not there.
-        #
-        # Where the hairline *is* forward is round the front of the ring, at the
-        # temple: solve the rim's own superellipse at four tenths of a
-        # head-depth forward and it comes out at about 0.9 of a head half-width,
-        # clear in front of the ear and a little above it. The burn hangs from
-        # there, and it is built tall enough that its top is buried in the
-        # shell whatever the cut's slope and side drop do to the rim -- being
-        # swallowed up there costs nothing and is what guarantees the join.
-        #
-        # **It buys the overlap with volume, not with length.** Sized to finish a
-        # few millimetres above where the rim is *calculated* to be, it came
-        # away: the hairline at the temple is lifted by the cut's own `tilt` and
-        # dropped by its `sides`, both of which vary, and then `M.roughen`
-        # wanders every vertex of the shell by a couple of centimetres -- twenty
-        # times the overlap that was left. A join that has to be computed
-        # exactly is a join that comes apart.
-        #
-        # Answering that by stretching it upwards made a strap down the cheek,
-        # by pulling it forward to the temple made a tab on the outline, and by
-        # lifting it put it above the ear. It is a **short fat thing beside the
-        # ear** and it has been in the right place all along; what was wrong was
-        # that the hair stopped a centimetre short of it, so `BURN_DROP` brings
-        # the hair down instead, and this is left exactly where it was.
-        # **Front to back it is half what it was.** At 0.34 of a head-depth it
-        # was as far through as it was tall -- a disc laid on the side of the
-        # head, and a disc reads as a disc however dark it is. A sideburn is a
-        # narrow strip in front of the ear, so the depth comes down and the
-        # height goes up, and what is left in the outline is a vertical thing.
-        # It still overlaps the shell by six centimetres front to back, which is
-        # the join, and `BURN_DROP` is what guarantees it vertically.
-        for side in (-1.0, 1.0):
-            mesh.merge(M.blob((side * hw * 0.99, -hd * 0.15,
-                               burn_rim - hh * 0.18),
-                              (hw * 0.115, hd * 0.185, hh * 0.32),
-                              coarse, coarse // 2, HAIR, name="burn"))
-    if style.get("mass"):
-        # Down the back, not round the sides: a mass that wraps is a hood.
-        # **No `back` on it any more.** It rode the shell's old bodily slide;
-        # the shell's back is where the skull's is now, so a mass carrying the
-        # push as well is a lump hanging in the air behind the hair.
-        long = style["mass"]
-        mesh.merge(M.blob((0.0, hd * r * 0.62, h * (0.790 - 0.055 * long)),
-                          (hw * r * 0.86, hd * 0.44, hh * (0.34 + 0.22 * long)),
-                          segs, coarse, HAIR, name="mass"))
+    if style.get("pony"):
+        # A tail down the neck, and the tie it hangs from.
+        mesh.merge(M.blob((0.0, hd * 0.98, h * 0.700),
+                          (hw * 0.16, hd * 0.15, hh * 0.52),
+                          coarse, coarse, HAIR, power=2.2, name="pony"))
+        mesh.merge(M.blob((0.0, hd * 1.00, h * 0.772),
+                          (hw * 0.21, hd * 0.20, hh * 0.13),
+                          coarse, coarse // 2, HAIR, name="tie"))
     for i in range(style.get("tufts", 0)):
         turn = (i + 0.5) / max(style.get("tufts", 1), 1)
         mesh.merge(M.blob((hw * 0.34 * (1 if i % 2 else -1),
@@ -411,40 +524,76 @@ def one(look, h, style, segs, coarse, name):
     # hairline and only stops being smooth. The seed is the cut's own index, so
     # two men in the same cut are lumpy in the same places -- which is right,
     # they came out of the same mould -- while eighteen cuts differ.
-    M.roughen(mesh, ROLLED, (0.0, 0.0, h * 0.80),
+    M.roughen(mesh, style.get("rough", ROLLED), (0.0, 0.0, h * 0.80),
               seed=float(style.get("seed", 0)) * 3.7, scale=ROLL_SCALE)
     return mesh
 
 
 def _curls(mesh, look, h, style, count, coarse):
-    """A ring of fat lobes round a shell. A perm is exactly that and no more."""
+    """Fat lobes all over a shell. A perm is exactly that and no more.
+
+    **All over, and not in rows.** Two rings of curls round the sides left
+    the top bare and read as a bathing cap with bobbles on, and a curl
+    exactly where the ring said is a row of teeth. So they climb to the
+    crown, fewer per ring as the head narrows, and every one is jogged round,
+    up and in size by the cut's own seed.
+    """
     import math
+    import random
     hw = look.head_w * h
     hd = look.head_d * h
     hh = look.head_h * h
     r = style["r"]
     lift = style.get("up", 0.06) * hh
-    # Scaled up on this head: `HAIR_LIBRARY` measures the push back against a
-    # sphere of `head_r`, and a rounded box of the same width is deeper, so the
-    # same fraction buries less of the shell and the hairline sits too low.
     back = style.get("back", 0.20) * hd * 1.5
     size = style.get("curl_r", 0.30)
-    rows = ((0.855, 1.00), (0.905, 0.86)) if not style.get("curl_skirt") \
-        else ((0.760, 0.96), (0.830, 1.02), (0.898, 0.88))
-    for z, spread in rows:
-        for i in range(count):
-            turn = math.tau * (i + 0.5 * (z * 37 % 2)) / count
-            # The same taper the shell's rings get (`M.Ring.slide`): a curl on
-            # the forehead or over an ear rides the push back, one on the nape
-            # does not, because that is what the shell under them does now.
+    slope = hh * style.get("slope", 0.28) / h
+    # How much further into the shell this cut's curls sit: a short curly
+    # head is curls in the hair, a big one is curls standing off it.
+    setin = style.get("curl_set", 0.0)
+    rnd = random.Random(int(style.get("seed", 0)) * 101 + count)
+    # Six rings from the hairline to the crown, and each curl set into the
+    # shell by a sixth or so of its radius, so they are the surface of the
+    # hair and not balls resting on it.
+    # The upper rings narrow, but less than the skull does: following it
+    # made a cone, holding them wide made a flat top.
+    rows = [(0.800, 1.00, 1.0), (0.840, 1.00, 1.0), (0.878, 0.97, 0.95),
+            (0.912, 0.88, 0.85), (0.940, 0.72, 0.65), (0.962, 0.50, 0.4)]
+    if style.get("curl_skirt"):
+        rows.insert(0, (0.755, 0.96, 1.0))
+    for row, (z, spread, share) in enumerate(rows):
+        n = max(3, int(round(count * share)))
+        for i in range(n):
+            turn = math.tau * (i + 0.5 * (row % 2) + rnd.uniform(-0.3, 0.3)) / n
+            # The hairline is not level -- the shell's rim rises by `slope`
+            # at the front -- so a ring of curls at one height sits below it
+            # over the forehead and is either inside the shell or on the face.
+            # The front of each ring rises with the rim.
+            ahead = max(0.0, -math.cos(turn))
+            # Only the lower rings: lifting the upper ones as well piled the
+            # front up into a point.
+            zc = z + slope * ahead * max(0.0, 1.0 - (z - 0.80) / 0.12)
+            # Set in means down as well as in: the rings above the shell's
+            # crown would otherwise stand up out of a cut that is meant to
+            # be short.
+            zc -= (z - 0.80) * setin * 5.0
+            # Not on the face: a curl below the hairline and in front of the
+            # ears is hair growing out of a cheek.
+            if zc < 0.80 and math.cos(turn) < -0.2:
+                continue
             slide = M.slide(back, math.cos(turn))
-            # **A little bigger and a little further out than they were.** The
-            # rows show the shell between them, and at the back that used to be
-            # hidden by the shell standing out past the curls rather than by the
-            # curls covering it. It is not hidden any more, so they cover it.
+            k = rnd.uniform(0.7, 1.3)
+            # Set in by between an eighth and a fifth, so the curls sit at
+            # different depths in the shell and not all on one surface. The
+            # front sits a little shallower, so the brow is curls too.
+            deep = rnd.uniform(0.84, 0.92) + 0.04 * ahead - setin
             mesh.merge(M.blob(
-                (hw * r * spread * math.sin(turn) * 0.97,
-                 hd * r * spread * math.cos(turn) * 0.97 + slide,
-                 h * z + lift),
-                (hw * size * 0.67, hd * size * 0.67, hh * size * 0.64),
+                (hw * r * spread * math.sin(turn) * deep,
+                 hd * r * spread * math.cos(turn) * deep + slide,
+                 h * (zc + rnd.uniform(-0.012, 0.012)) + lift),
+                (hw * size * 0.67 * k, hd * size * 0.67 * k, hh * size * 0.64 * k),
                 max(5, coarse - 3), max(4, coarse // 2 - 1), HAIR, name="curl"))
+    # And one on the crown, where the rings run out.
+    mesh.merge(M.blob((0.0, back * 0.2, h * (0.970 - 0.17 * setin * 5.0) + lift),
+                      (hw * size * 0.85, hd * size * 0.85, hh * size * 0.55),
+                      max(5, coarse - 3), max(4, coarse // 2 - 1), HAIR, name="curl"))

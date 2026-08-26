@@ -146,6 +146,8 @@ usage: ./run.sh <command> [args]
       [--windowed WxH]      the screen; or a window of that size, where the
                             compositor allows one (not under sway)
       [--hair N]            Keys: < > page, N / P seed, SPACE turn, 1-5
+      [--man N] [--plain]   --man puts squad member N in every column;
+                            --plain takes the accessories off.
       [--anim NAME|all]     expression, [ ] step anim, A roll, 0 stand, Q quit.
       [--shot PATH]         --shot renders one frame from a
                             virtual display and quits, for a look without a

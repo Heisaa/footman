@@ -270,7 +270,7 @@ def main():
 
     if args.sheet:
         clear()
-        sheet(args.sheet, look, args.quality)
+        sheet(args.sheet, look, args.quality, args.yaw)
         return
 
     slots = materials()
@@ -356,7 +356,7 @@ def main():
     print("wrote " + path)
 
 
-def sheet(path, look, quality):
+def sheet(path, look, quality, yaw=0.0):
     """Every cut, one head each, in a grid. The only way to tune seventeen.
 
     Heads only: a rank of whole figures at this count is a row of thumbnails,
@@ -381,6 +381,9 @@ def sheet(path, look, quality):
                           power=toy.HEAD_POWER, name="skull"))
         if cut is not None:
             head.merge(cut)
+        # Each head turned on its own spot, so `--yaw 180` is a sheet of backs
+        # and not a grid seen from behind.
+        head.transform(M.rotation_z(-math.radians(yaw)))
         head.translate((at[0], 0.0, at[2]))
         upload(head, None, (0.0, 0.0, 0.0), slots)
 

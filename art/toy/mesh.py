@@ -269,11 +269,34 @@ class Ring:
         # sides have to keep the push: it is what leaves an ear standing out
         # past the cut, and an ear swallowed by its own hairline is what the
         # `x` fade cost on the first try.
+        #
+        # Full at the ear and gone by the nape, and steep between: at
+        # `(1 - v ** 1.5)` the side-back still carried two thirds of it, and
+        # once the nape ran down the skull that stood the bottom of every
+        # long cut a fifth of a head behind the top -- a tail in profile.
         self.slide = 0.0
         # How far the ring rises towards the back. A hairline is not level --
         # it sits high on the forehead and low on the nape -- and one number
         # per ring says so without a second shape to align.
         self.tilt = 0.0
+        # How far the **back** of the ring alone is carried down, full at the
+        # nape and nothing at the widest points. `tilt` is one slope through
+        # the whole ring; a hairline that runs to the nape needs the back down
+        # by more than the front is up, and this is the extra.
+        self.nape = 0.0
+        # The shape of the nape: 1 is a V, longest in the middle, which is how
+        # most hair ends; 0 is cut straight across. Only read where `nape` is.
+        self.point = 1.0
+        # `drop` is the widest points falling and it is read off `x` alone, so
+        # it carries round to the back corners -- which on a hairline hangs
+        # the corners below the middle and turns the nape into an upside-down
+        # V. Set, the drop fades out over the back half.
+        self.drop_front = False
+        # A multiplier on the section, per point: `shape(u, v)` with `u` and
+        # `v` the point in half-widths and half-depths. This is how one ring
+        # is thicker at the back than the front, or on one side than the
+        # other, without a second ring to align.
+        self.shape = None
         self.power = power
         self.hard = hard
         self.material = material
@@ -307,11 +330,17 @@ def tube(rings, segments, material, power=2.0, cap_lo=True, cap_hi=True,
         # which is a snout. `NARROW` is fitted to the drawn mouth: at four it is
         # down to half by four tenths of a half-width, and the widest mouth in
         # `SimFaceAtlas.MOUTH_STYLES` reaches a quarter.
+        if ring.shape is not None:
+            pts = [(x * ring.shape(x / wide, y / deep),
+                    y * ring.shape(x / wide, y / deep)) for x, y in pts]
         loops.append([(x, y + ring.cy
-                       + ring.slide * (1.0 - max(0.0, y / deep) ** 1.5)
+                       + ring.slide * max(0.0, 1.0 - max(0.0, y / deep)) ** 1.5
                        - (_swell(ring, x / wide) if y < 0.0 else 0.0),
                        ring.z - ring.drop * (abs(x) / wide) ** 2
-                       + ring.tilt * (y / deep))
+                       * (max(0.0, 1.0 - max(0.0, y / deep) ** 2)
+                          if ring.drop_front else 1.0)
+                       + ring.tilt * (y / deep)
+                       - ring.nape * _across(y / deep, ring.point))
                       for x, y in pts])
 
     lower = mesh_ring(mesh, loops[0])
@@ -339,6 +368,22 @@ BROAD = 0.7
 NARROW = 4.0
 
 
+def _across(v, point=1.0):
+    """`Ring.nape`'s profile: nothing at the widest points, full at the back.
+    Level to 0.3 of the half-depth -- the stretch above the ear -- then down.
+    Blunt (`point` 0) is flat from 0.65 on, a straight edge across the nape
+    and not a fin behind the head; a V (`point` 1) keeps going to the middle,
+    which is where most hair is longest."""
+    blunt = _ease((v - 0.3) / 0.35)
+    vee = _ease((v - 0.3) / 0.7)
+    return blunt + (vee - blunt) * point
+
+
+def _ease(u):
+    u = min(1.0, max(0.0, u))
+    return u * u * (3.0 - 2.0 * u)
+
+
 def swell(bulge, lip, u):
     """How far forward the front of a ring moves, `u` sideways in half-widths.
 
@@ -359,7 +404,7 @@ def slide(back, v):
     `v` is where the piece sits front to back, in half-depths: -1 at the face,
     0 at the ear, +1 at the nape.
     """
-    return back * (1.0 - max(0.0, v) ** 1.5)
+    return back * max(0.0, 1.0 - max(0.0, v)) ** 1.5
 
 
 def mesh_ring(mesh, loop):

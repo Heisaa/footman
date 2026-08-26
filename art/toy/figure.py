@@ -830,10 +830,13 @@ def extras(look, h, segs, coarse):
     # head of hair, it is a plank laid across a bald man's forehead. Under the
     # hair on a man who has some is the lesser wrong, and is also what a
     # headband does.
-    band = M.tube([M.Ring(h * 0.822, hw * 1.055, hd * 1.055),
-                   M.Ring(h * 0.840, hw * 1.075, hd * 1.075),
-                   M.Ring(h * 0.858, hw * 1.060, hd * 1.060),
-                   M.Ring(h * 0.872, hw * 1.010, hd * 1.010)],
+    # Thinner than it was (1.055 to 1.075): the tightest cuts sit at 1.11 and
+    # are rolled by three per cent, and at 1.075 the band came through them
+    # on the crown as a yellow patch seen from behind.
+    band = M.tube([M.Ring(h * 0.822, hw * 1.040, hd * 1.040),
+                   M.Ring(h * 0.840, hw * 1.058, hd * 1.058),
+                   M.Ring(h * 0.858, hw * 0.990, hd * 0.990),
+                   M.Ring(h * 0.872, hw * 0.950, hd * 0.950)],
                   segs, SHIRT, power=skull_power(0.845),
                   cap_lo=False, cap_hi=False, name="Accessory0")
     out.append(("Accessory0", band))

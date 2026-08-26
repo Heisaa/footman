@@ -1162,6 +1162,20 @@ const HAIR_LIBRARY := [
 	# a thin-on-top one, and four men in nineteen losing their hair is a squad of
 	# veterans.
 	{"r": 1.13, "up": -0.05, "back": 0.22, "burns": true},  # thinning
+	# The rows below are `art/toy/hair.py`'s and this builder only approximates
+	# them: the index is what has to agree, so a man keeps his cut whichever
+	# builder drew him.
+	{"r": 1.08, "up": 0.08, "back": 0.20},  # buzz cut
+	{"r": 1.12, "up": -0.05, "back": 0.22, "burns": true},  # horseshoe: bald on top
+	{"r": 1.12, "up": 0.06, "back": 0.21, "slick": true, "mass": 1.2},  # ponytail
+	{"r": 1.18, "up": 0.10, "back": 0.20},  # undercut
+	{"r": 1.16, "up": 0.10, "back": 0.20, "sy": 0.80},  # flat top
+	{"r": 1.24, "up": 0.10, "back": 0.16},  # afro
+	{"r": 1.18, "up": 0.05, "back": 0.20, "mass": 0.8},  # shaggy
+	{"r": 1.14, "up": 0.07, "back": 0.20},  # centre parting, short
+	{"r": 1.16, "up": 0.05, "back": 0.20, "mass": 0.8},  # centre parting, curtains
+	{"r": 1.14, "up": 0.07, "back": 0.20},  # side parting, short
+	{"r": 1.16, "up": 0.05, "back": 0.20, "mass": 0.8},  # side parting, long
 ]
 
 
