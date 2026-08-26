@@ -31,14 +31,22 @@ def clear():
 
 
 def cyclorama(colour=Color("f3f0ea"), width=24.0, depth=14.0, rise=9.0,
-              fillet=2.2, steps=12):
+              fillet=2.2, steps=12, stand=4.5, yaw=0.0):
     """Floor curving into a wall with no seam, which is why the background in
-    the references has no horizon in it."""
-    profile = [(-depth, 0.0)]
+    the references has no horizon in it.
+
+    The wall stands `stand` metres behind the origin and the whole thing is
+    turned by `yaw`, the camera's own, so it stays behind the figure from
+    wherever he is shot. It used to rise at y=0, through the middle of the man:
+    hidden from the front, and a plane through his head from the side. `stand`
+    also clears the rim light, which sat behind the wall.
+    """
+    profile = [(stand - depth, 0.0)]
     for i in range(steps + 1):
         a = math.pi * 0.5 * i / steps
-        profile.append((fillet * (1.0 - math.sin(a)), fillet * (1.0 - math.cos(a))))
-    profile.append((0.0, rise))
+        profile.append((stand + fillet * (1.0 - math.sin(a)) - fillet,
+                        fillet * (1.0 - math.cos(a))))
+    profile.append((stand, rise))
 
     verts, faces = [], []
     for y, z in profile:
@@ -64,6 +72,7 @@ def cyclorama(colour=Color("f3f0ea"), width=24.0, depth=14.0, rise=9.0,
     mesh.materials.append(mat)
 
     obj = bpy.data.objects.new("Cyclorama", mesh)
+    obj.rotation_euler = (0.0, 0.0, yaw)
     bpy.context.collection.objects.link(obj)
     return obj
 

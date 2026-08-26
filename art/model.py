@@ -406,7 +406,7 @@ def shot(path, look, yaw=0.0, head=False):
     it is the outline itself -- brow, nose, lip, chin -- and a face that is a
     flat wall in profile cannot be seen to be one from the front.
     """
-    studio.cyclorama()
+    studio.cyclorama(yaw=math.radians(yaw))
     studio.lights()
     lens = 110.0
     if head:
