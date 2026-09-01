@@ -636,15 +636,18 @@ func _record_trace() -> void:
 	var stations := PackedVector3Array()
 	var targets := PackedVector3Array()
 	var errands := PackedInt32Array()
+	var facings := PackedFloat32Array()
 	stations.resize(ctx.players.size())
 	targets.resize(ctx.players.size())
 	errands.resize(ctx.players.size())
+	facings.resize(ctx.players.size())
 	for i in ctx.players.size():
 		var p := ctx.players[i]
 		stations[i] = SimMovement.shape_position(ctx, p)
 		targets[i] = p.move_target
 		errands[i] = p.errand
-	ctx.telemetry.log_shape(stations, targets, errands)
+		facings[i] = p.facing
+	ctx.telemetry.log_shape(stations, targets, errands, facings)
 
 
 # --- Driving ----------------------------------------------------------------

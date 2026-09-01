@@ -97,6 +97,10 @@ var shape_trace: Array[PackedVector3Array] = []
 ## one distance cannot tell them apart.
 var target_trace: Array[PackedVector3Array] = []
 var errand_trace: Array[PackedInt32Array] = []
+## And the hips, sample for sample: `SimPlayer.facing` per player. The body is
+## its own state and may be held off the run (`look_target`), and positions
+## alone cannot say whether a man is running, shuffling or backpedalling.
+var facing_trace: Array[PackedFloat32Array] = []
 var trace_enabled := true
 var events_enabled := true
 
@@ -107,6 +111,7 @@ func clear() -> void:
 	shape_trace.clear()
 	target_trace.clear()
 	errand_trace.clear()
+	facing_trace.clear()
 
 
 ## `poss` is stamped on by `SimContext.log_event`, which is the only caller: it is
@@ -136,11 +141,13 @@ func log_trace(sample: PackedVector3Array) -> void:
 		trace.append(sample)
 
 
-func log_shape(stations: PackedVector3Array, targets: PackedVector3Array, errands: PackedInt32Array) -> void:
+func log_shape(stations: PackedVector3Array, targets: PackedVector3Array, errands: PackedInt32Array,
+		facings: PackedFloat32Array) -> void:
 	if trace_enabled:
 		shape_trace.append(stations)
 		target_trace.append(targets)
 		errand_trace.append(errands)
+		facing_trace.append(facings)
 
 
 func count_of(kind: int) -> int:

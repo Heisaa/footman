@@ -2790,6 +2790,66 @@ const SPRINT_SPEED := 8.0
 ## The reading: a side is holding a shape when most of its player-seconds are on
 ## `station` with a small `pulled`. A large `pulled` on a big share is a
 ## formation that is decoration; a large `behind` is one nobody can keep up with.
+## The body against the run: the angle between each step and the hips, for
+## every moving outfield player, by errand. Positions cannot see it -- a man
+## shuffling sideways and a man running are one dot on the trace -- and it is
+## the instrument for the body being its own state (`SimPlayer.look_target`):
+## `side` and `back` are the shuffles and backpedals, and an errand whose men
+## are mostly held is an errand paying the strafe cap.
+static func _the_body(ctx: SimContext) -> void:
+	var trace := ctx.telemetry.trace
+	var facings := ctx.telemetry.facing_trace
+	var errands := ctx.telemetry.errand_trace
+	if trace.size() < 2 or facings.size() != trace.size() or errands.size() != trace.size():
+		return
+	var dt := float(SimConsts.TRACE_TICKS) / float(SimConsts.TICK_HZ)
+	var arms := SimMovement.ERRAND_NAMES.size()
+	var n := PackedFloat32Array()
+	var angle_sum := PackedFloat32Array()
+	var side := PackedFloat32Array()
+	var back := PackedFloat32Array()
+	n.resize(arms + 1)
+	angle_sum.resize(arms + 1)
+	side.resize(arms + 1)
+	back.resize(arms + 1)
+	for i in range(1, trace.size()):
+		var sample := trace[i]
+		var prev := trace[i - 1]
+		if sample.size() != ctx.players.size() + 1 or prev.size() != sample.size():
+			continue
+		if facings[i].size() != ctx.players.size() or errands[i].size() != ctx.players.size():
+			continue
+		for pid in ctx.players.size():
+			var p := ctx.players[pid]
+			if p.is_keeper or not p.on_pitch:
+				continue
+			var step := sample[pid + 1] - prev[pid + 1]
+			var v := SimConsts.horizontal_length(step) / dt
+			if v < 0.4 or v > SimConsts.SPEED_MAX * 1.2:
+				continue
+			var off: float = absf(angle_difference(facings[i][pid], atan2(step.z, step.x)))
+			var e: int = clampi(errands[i][pid], 0, arms - 1)
+			for slot in [e, arms]:
+				n[slot] += 1.0
+				angle_sum[slot] += off
+				if off > PI * 0.75:
+					back[slot] += 1.0
+				elif off > PI * 0.25:
+					side[slot] += 1.0
+	if n[arms] < 1.0:
+		return
+	print("\nThe body  (angle between the step and the hips, moving outfield players, off the 5 Hz trace)")
+	print("  %-12s %8s %8s %6s %6s %6s" % ["", "samples", "forward", "side", "back", "mean"])
+	for slot in arms + 1:
+		if n[slot] < 1.0:
+			continue
+		var f: float = n[slot] - side[slot] - back[slot]
+		print("  %-12s %8d %7.0f%% %5.0f%% %5.0f%% %5.0f\u00b0" % [
+			SimMovement.ERRAND_NAMES[slot] if slot < arms else "all",
+			int(n[slot]), 100.0 * f / n[slot], 100.0 * side[slot] / n[slot],
+			100.0 * back[slot] / n[slot], rad_to_deg(angle_sum[slot] / n[slot])])
+
+
 static func _holding_shape(ctx: SimContext) -> void:
 	var shapes := ctx.telemetry.shape_trace
 	var targets := ctx.telemetry.target_trace
@@ -4508,6 +4568,7 @@ static func report(m: SimMatch) -> void:
 	_team_width(ctx)
 	_the_clump(ctx)
 	_holding_shape(ctx)
+	_the_body(ctx)
 	_giving_up_ground(ctx)
 	_new_mechanics()
 

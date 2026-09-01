@@ -442,6 +442,22 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   from a sprint in 3.5 m, so the overrun the turn model is built on was mostly
   erased before it could show.
 
+- **The body is its own state, and the predictor keeps the velocity's view.**
+  `SimPlayer.facing` is the hips; `look_target` holds them off the run and
+  `body_slaved` is the latch: slaved with no look or above `STRAFE_SHARE` of top
+  speed, released only below `STRAFE_SHARE * STRAFE_RELEASE`. The latch is not
+  optional -- a desired speed on the threshold flips the body every tick
+  (`_contest_pace`, `_press_side`, the same medicine) -- and a slaved run is
+  bit-identical to a run with no body at all, so a chase is never slowed by a
+  look. `time_to_arrive` and `reach_in` stay the velocity's view: a slaved
+  runner is nearly everyone and they are exact for him, and a side-on start
+  costs a hip turn the test bounds rather than a term the predictor fits.
+  Where a look is set, it ends: `_recompute_target` clears it every cadence,
+  the receiver's ends at his touch (a carrier held on his receiving look was
+  capped to a shuffle), and a restart clears it because a restart is a fact.
+  The strike's run-up is the pace *along* the hips (`SimTouch.drive_of`), one
+  helper for `momentum_of` and `strike_scale` so the two cannot drift.
+
 - **`TURN_COMMIT` needs its `TURN_PIVOT` guard or locomotion deadlocks**, and
   silently. A stationary man facing the wrong way may not accelerate until he has
   turned; `vel` is `new_dir * cur_speed`, so a speed of zero cannot express a

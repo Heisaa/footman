@@ -34,19 +34,19 @@ attack (the order, below), expecting rework.
 | The dwell — a free man keeps it a beat, takes another look, then plays | built | `SimDecision.scan_gain` |
 | Orient before the act — a beat between coming by the ball and striking it | built — a price either side of a gate, because the price alone loses to the shot appetite | `SimDecision.readiness`, `_apply_set_damp`, `SET_STRIKE_FLOOR` |
 | First touch, and the turn | built | `SimTouch.first_touch` |
-| Receive on the half-turn — hips opened while the ball travels | built | `SimMovement._orient_receiver` |
+| Receive on the half-turn — hips opened while the ball travels | built — a look the body holds while he walks onto the ball or waits for it, and a sprint onto it keeps the hips on the run; a tight receiver closes on the ball instead | `SimMovement._orient_receiver`, `SimPlayer.look_target` |
 | The layoff — first-time ball back to the man facing play | built | `SimTouch.redirect_share` |
 | A setting touch out of the feet before the long ball or the shot | built | `SimDecision._add_set_touch` |
 | Body facing priced into the strike, and the turn before you can hit it | built | `SimTouch.facing_penalty` for the aim, `strike_scale` for the range |
 | A stronger foot, and a ball shown onto the weaker one | built — the other axis of the same body model, charged through the same two functions | `SimTouch.foot_cost`, `foot_choice` |
 | Bend on a struck ball, the way the foot that struck it sends it | built — signed by the foot on every solved ball, and since the bent lane (2026-09-01) *meant*: the driven pass and the shot price a bend round a defender, trivela included | `SimTouch.curl_for` |
-| Shielding the ball | built | `_play_hold` sets it, `SimDuel` weighs it |
+| Shielding the ball | built — chosen by the hold, made by the hips turned away from the man under the strafe cap, and worth the body actually between him and the ball | `_play_hold` chooses it, `SimMovement` makes it, `SimDuel.shielded` weighs it |
 | Backheel, dummy, first-time pass | built | `SimTouch.FIRST_TIME_EASY`, `_add_dummy` |
 | Chip the keeper, round him, square it across the face | built | `_add_chip`, `_round_the_keeper`, `SQUARE_CONVERT` |
 | Firm pass driven low, not rolled | built — offered beside the roller, with the lane it buys back and the first touch it costs | `SimDecision.DRIVEN_LANE`, `SimBallistics.ground_launch` |
 | Lofted pass, cross | built — aimed where he is going, and landed short so the hops carry the rest | `_add_passes`, `SimTouch.LOFT_RUNON_SHARE` |
 | Give-and-go, and the executed one-two | built — a named pattern, so the passer is committed to the run and the return ball is lifted to him | `SimPatterns._try_one_two` |
-| Beating a man | partial — the knock, and the cut that wrong-foots a committed challenger; no feint at a standstill | `_try_beat` |
+| Beating a man | built — the knock, the cut, and the feint from a standstill: a body sold at the man without the ball, priced as a lottery in front of the knock across him. On the list in 7 of 100 scenario trials and chosen in none, honestly | `_try_beat`, `_add_feint`, `tools/_feint_probe.gd` |
 | Drawing a foul | built — the duel fouls the skilful or shielding carrier more, and a composed one invites the contact inside shooting range | `SimDuel.INVITE_CONTACT` |
 | Time on the ball — two to three seconds before it is played | partial — about one, and four times football's touch rate with it (**28**) | `SimDecision`, `SimTouch` |
 
@@ -86,7 +86,7 @@ attack (the order, below), expecting rework.
 | Clear under pressure | built | `_add_clear` |
 | Block a shot | partial — a defender in the path can take it; nobody throws himself in the way (**5**) | |
 | Cover a beaten teammate | partial — he is penalised in the chase ranking; nobody covers the space he lost | |
-| Jockey, delay, show him wide | absent — he either goes for it or holds station | |
+| Jockey, delay, show him wide | absent — he either goes for it or holds station. The body frame is in, so a jockey is now an arm that looks at the carrier and shuffles side-on under the strafe cap; held for the defensive pass | |
 | Escort a dying ball over the line | absent — shielding's cheapest special case | |
 | Spring an offside trap | absent — the line exists; stepping up as an act does not | |
 | The deliberate foul | absent | |
@@ -149,7 +149,7 @@ with a ball in the air. The fourth act is not touching it at all.
 | Believed positions, stale and noisy | built | `SimPerception`, `ctx.beliefs` |
 | A believed offside line, not the true one | built | `SimReferee.believed_offside_line` |
 | Options gated by what he can perceive | built — a man outside the arc the passer is facing, beyond nine metres, is never a candidate; the arc widens with `awareness` and with a patient plan | `SimPerception.can_see` |
-| The scan you can see — head turned to where he is looking | partial — the sim looks; nothing draws it | |
+| The scan you can see — head turned to where he is looking | partial — the body is its own state and the figure is drawn where it is held, side-stepping and backpedalling as it goes; the head turns with the hips, never on its own | `SimPlayer.look_target`, `SimMatchView3D.pose_gait` |
 | Morale | absent — it moves when a goal goes in and nothing reads it | |
 | Momentum, a side that is rattled | absent | |
 
@@ -1372,6 +1372,28 @@ looks without it, cheapest first. **Every figure below is measured at
 `docs/STATUS.md`, "what every figure here is worth".
 
 **The attacking pass — the current work**
+
+**Built 2026-09-01: the body frame.** The engine had a heading and no body:
+`facing` was written from the velocity every tick a man moved, so the receiver's
+half-turn was clobbered in the same tick, nobody could move sideways or
+backwards without turning the hips, a shield was a flag, and a feint had nothing
+to turn. Now the body is its own state -- `look_target` holds it, `body_slaved`
+latches it to the run above half pace and releases it below 40%, a slaved run
+is bit-identical to before and a chase is never slowed by a look; held, the
+hips turn at `turn_rate`, the pace is capped at the strafe share and the drive
+off the hips is taxed. The predictor keeps the velocity's view (INVARIANTS).
+Then, one commit each, watched between: the gait reads the body (`SHUFFLE`, the
+run posed in the frame of the hips); the consumers read it honestly (the
+strike's run-up is the pace along the hips, the keeper holds his arc facing the
+ball); the touch turns the hips and the shield is geometry (`SimDuel.shielded`,
+the flag stays as the choice); and the feint is a candidate, with defenders who
+close half-way to where the carrier's hips say the next touch goes. The jockey
+is the same arm with the errand turned round and is held for the defensive
+pass. Measured at ten minutes across four seeds: `could not see` moved 23/25/31/32%
+to 21/30/23/20%, three of the four after-runs scored where none had before;
+`hold-up` lost 58% to 61% at n=160, no move; the feint was on the list in 7 of
+100 trials and chosen in none -- once losing to the coin with a positive score
+gap. `The body` block in `diagnose` reads the shuffles by errand.
 
 **Built 2026-09-01: the bent lane.** The engine could bend a ball (36) and never
 chose to: every lane was priced as a straight chord, so a pass blocked straight
