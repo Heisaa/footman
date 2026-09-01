@@ -238,7 +238,7 @@ func refresh_caps() -> void:
 	var f := fatigue_factor()
 	_cap_speed = _nominal_speed * f * sharpness
 	_cap_accel = lerpf(SimConsts.ACCEL_MIN, SimConsts.ACCEL_MAX, attrs.acceleration) * f
-	_cap_decel = _cap_accel * SimConsts.DECEL_FACTOR
+	_cap_decel = lerpf(SimConsts.DECEL_MIN, SimConsts.DECEL_MAX, attrs.acceleration) * f
 	reaction = lerpf(0.36, 0.16, attrs.awareness)
 
 
@@ -250,8 +250,16 @@ func max_speed() -> float:
 	return _cap_speed
 
 
+## Acceleration off the mark. See `accel_at` for what is left of it at speed.
 func max_accel() -> float:
 	return _cap_accel
+
+
+## Acceleration available at `speed`: the off-the-mark figure, falling
+## linearly to nothing at top speed. `SimValueField.time_to_arrive` and
+## `reach_in` solve this same law; change one and change the other.
+func accel_at(speed: float) -> float:
+	return _cap_accel * clampf(1.0 - speed / maxf(_cap_speed, 0.1), 0.0, 1.0)
 
 
 func max_decel() -> float:
@@ -287,9 +295,15 @@ func steer_to(target: Vector3, speed_cap: float = INF, deadband: float = 0.4) ->
 		desired_vel = Vector3.ZERO
 		return
 	var cap: float = minf(speed_cap, max_speed())
-	# Ease off over the last stride so players settle onto a spot instead of
-	# oscillating around it.
-	var wanted: float = cap * clampf((dist - deadband) / 1.6, 0.15, 1.0)
+	# Approach at the pace he can still stop from, `sqrt(2 a d)` for the ground
+	# left, so he settles onto a spot instead of overrunning it and coming
+	# back. It was a fixed ease-off over the last 1.6 m, which the old brakes
+	# could honour from a sprint and the real ones cannot: with braking cut to
+	# 5.5-8 m/s^2 and that band kept, mean speed over a match rose from 2.09
+	# to 2.63 m/s, all of it men running past their spots. The floor keeps him
+	# walking the last stride rather than creeping.
+	var room: float = maxf(dist - deadband, 0.0)
+	var wanted: float = clampf(sqrt(2.0 * max_decel() * room), cap * 0.15, cap)
 	var scale := wanted / dist
 	desired_vel = Vector3(dx * scale, 0.0, dz * scale)
 
@@ -375,7 +389,7 @@ func locomote(dt: float) -> void:
 
 	var was_speed := cur_speed
 	if target_speed > cur_speed:
-		cur_speed = minf(target_speed, cur_speed + max_accel() * dt)
+		cur_speed = minf(target_speed, cur_speed + accel_at(cur_speed) * dt)
 	else:
 		cur_speed = maxf(target_speed, cur_speed - max_decel() * dt)
 

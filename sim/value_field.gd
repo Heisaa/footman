@@ -364,18 +364,36 @@ static func time_to_arrive_from(p: SimPlayer, at: Vector3, point: Vector3, react
 	# Momentum across the line of travel has to be shed before it helps.
 	var turn_cost := v_perp / (a * 2.0)
 	v_along = clampf(v_along, -vmax, vmax)
+	return arrive_time(d, v_along, vmax, a) + reaction + turn_cost
 
-	var t := 0.0
-	if v_along >= vmax:
-		t = d / vmax
-	else:
-		var t1 := (vmax - v_along) / a
-		var d1 := v_along * t1 + 0.5 * a * t1 * t1
-		if d1 >= d:
-			t = (-v_along + sqrt(maxf(v_along * v_along + 2.0 * a * d, 0.0))) / a
-		else:
-			t = t1 + (d - d1) / vmax
-	return t + reaction + turn_cost
+
+## Seconds to cover `d` from pace `v0` along the line, under the body's own
+## law: acceleration `a0` off the mark falling linearly to nothing at `vmax`
+## (`SimPlayer.accel_at`), so the pace approaches its ceiling as
+## `vmax - (vmax - v0) e^(-t / tau)`, `tau = vmax / a0`, and the ground covered
+## is `vmax t - (vmax - v0) tau (1 - e^(-t / tau))`. That has no closed
+## inverse; two Newton steps from the long-run answer `(d + gap tau) / vmax`,
+## which overestimates and so walks down onto the root, land within a
+## hundredth of a second on anything a match asks.
+##
+## It was a two-stage constant-acceleration model, which is the model the body
+## obeyed until 2026-09-01. The body changed and this changed with it: a
+## predictor of the man that is not the man is the ball bug over again
+## (`docs/INVARIANTS.md`, "The touch and the ball").
+static func arrive_time(d: float, v0: float, vmax: float, a0: float) -> float:
+	if d <= 0.0:
+		return 0.0
+	if v0 >= vmax:
+		return d / vmax
+	var tau := vmax / a0
+	var gap := vmax - v0
+	var t := (d + gap * tau) / vmax
+	for _i in 2:
+		var e := exp(-t / tau)
+		var f := vmax * t - gap * tau * (1.0 - e) - d
+		var slope := vmax - gap * e
+		t -= f / maxf(slope, 0.05)
+	return maxf(t, 0.0)
 
 
 ## `time_to_arrive` to the edge of his reach rather than to the spot.
@@ -397,7 +415,7 @@ static func time_to_reach(p: SimPlayer, point: Vector3, reaction: float = 0.0) -
 
 
 ## How far a player can travel along `dir` in `seconds`, from the pace he is
-## going now. The inverse of `time_to_arrive`, over the same two-stage model, and
+## going now. The inverse of `time_to_arrive`, over the same law, and
 ## it exists because "aim it as far ahead as he can get" was being answered with
 ## `top speed x flight time`.
 ##
@@ -416,10 +434,10 @@ static func reach_in(p: SimPlayer, dir: Vector3, seconds: float) -> float:
 	var a: float = maxf(p.max_accel(), 0.5)
 	var vmax: float = maxf(p.max_speed(), 1.0)
 	var v0: float = clampf(p.vel.x * d.x + p.vel.z * d.z, 0.0, vmax)
-	var t1 := (vmax - v0) / a
-	if seconds <= t1:
-		return v0 * seconds + 0.5 * a * seconds * seconds
-	return v0 * t1 + 0.5 * a * t1 * t1 + vmax * (seconds - t1)
+	# The ground covered under `arrive_time`'s law, which has a closed form
+	# this way round.
+	var tau := vmax / a
+	return vmax * seconds - (vmax - v0) * tau * (1.0 - exp(-seconds / tau))
 
 
 ## Reaction delay before a player can act on new information. Awareness buys

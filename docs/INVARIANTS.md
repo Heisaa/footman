@@ -431,6 +431,17 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   and it fires on every lost duel in the match, not just in a one-on-one.
   Off balance is not stopped: `SimPlayer.RECOVERY_BRAKE`.
 
+- **A predictor of the man is the man, or it is the ball bug over again.**
+  `SimValueField.time_to_arrive` settles every race in the engine, and
+  `reach_in` aims every ball into a run; both solve the law `SimPlayer.locomote`
+  integrates -- acceleration off the mark falling linearly to nothing at top
+  speed, `SimPlayer.accel_at`. Change the body's law and change theirs;
+  `test_locomotion` holds them to it. The body itself went to that law on
+  2026-09-01, with braking cut from 7-15 m/s^2 to 5.5-8: a constant push to
+  top speed had every player there in 1.5 s and 7 m, and the brakes stopped him
+  from a sprint in 3.5 m, so the overrun the turn model is built on was mostly
+  erased before it could show.
+
 - **`TURN_COMMIT` needs its `TURN_PIVOT` guard or locomotion deadlocks**, and
   silently. A stationary man facing the wrong way may not accelerate until he has
   turned; `vel` is `new_dir * cur_speed`, so a speed of zero cannot express a

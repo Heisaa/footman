@@ -190,17 +190,33 @@ const FORECAST_STEPS := 75
 
 # --- Player locomotion ------------------------------------------------------
 
-## Raised from 6.9-9.7 and 3.4-7.6 at the owner's direction, watching: the
-## ball read too fast and the players too slow, both off the mark and flat
-## out. Real sprint data sits around 8-10.5 m/s for professionals, so the
-## ceiling at 10.4 is an elite sprinter and the floor a heavy centre-half.
-## The other half of the same feel change is `SimDecision.arrival_pace`,
-## which came down a tenth.
+## Speed was raised from 6.9-9.7 at the owner's direction, watching: the ball
+## read too fast and the players too slow, both off the mark and flat out.
+## Real sprint data sits around 8-10.5 m/s for professionals, so the ceiling
+## at 10.4 is an elite sprinter and the floor a heavy centre-half. The other
+## half of the same feel change is `SimDecision.arrival_pace`, which came down
+## a tenth.
 const SPEED_MIN := 7.4
 const SPEED_MAX := 10.4
-const ACCEL_MIN := 4.0
-const ACCEL_MAX := 8.4
-const DECEL_FACTOR := 1.8
+## Acceleration off the mark, m/s^2. It falls linearly to zero at top speed
+## (`SimPlayer.accel_at`), which is the standard sprint model: speed approaches
+## its ceiling as 1 - e^(-t / tau) with tau = top speed / this, 0.9-1.0 s here
+## against 1.0-1.3 measured on professionals. Measured 2026-09-01 with a
+## constant 4.0-8.4: every player was at top speed inside 1.5 s and 7 m, where
+## a real one takes four seconds and thirty metres, so the top of the range
+## ran 30 m in 3.50 s -- a track sprinter -- and the difference between a
+## quick man and a fast one collapsed. Now a mid player runs 10/20/30 m in
+## 1.96/3.17/4.32 s and the best in 1.73/2.78/3.77, against tracked
+## professionals at about 1.85/3.05/4.25 and 1.7/2.85/3.85.
+const ACCEL_MIN := 7.0
+const ACCEL_MAX := 11.5
+## Braking, m/s^2. It was 1.8 x acceleration -- 7 to 15 -- and no body brakes
+## at 15: a player stopped from a sprint in 3.5 m and 0.8 s, and reversed in
+## under a second, which erased most of the overrun the turn model is built to
+## produce. Peak deceleration in tracked football sits at 6-8, so a stop from
+## top speed is 5-9 m and a second and a half.
+const DECEL_MIN := 5.5
+const DECEL_MAX := 8.0
 ## Turn rate at a standstill, in rad/s. Falls off as `TURN_BASE / (1 + v * TURN_SPEED_FALLOFF)`.
 const TURN_BASE := 9.0
 const TURN_SPEED_FALLOFF := 0.35

@@ -15,6 +15,8 @@ func run() -> void:
 	_fatigue_slows_a_player_down()
 	_deadband_stops_fidgeting()
 	_separation_pushes_apart_by_strength()
+	_the_race_predictor_is_the_body()
+	_braking_takes_room()
 
 
 func _reaches_top_speed() -> void:
@@ -109,3 +111,42 @@ func _separation_pushes_apart_by_strength() -> void:
 	var gap := a.dist_to(b.pos)
 	check_near(gap, SimConsts.PLAYER_SEPARATION, 0.02, "overlapping players are pushed to the capsule distance")
 	check_less(absf(a.pos.x), absf(b.pos.x - 0.2), "the stronger player yields less ground")
+
+
+func _the_race_predictor_is_the_body() -> void:
+	# Every race in the engine is settled by `time_to_arrive`, so the time it
+	# quotes has to be the time the legs take: a standing start, a running
+	# start, and a start at pace, over short and long ground.
+	for start in [0.0, 3.0, 7.0]:
+		for distance in [4.0, 12.0, 30.0]:
+			var p := make_player(0.6, 0.6)
+			p.pos = Vector3.ZERO
+			p.vel = Vector3(start, 0.0, 0.0)
+			p.facing = 0.0
+			var said := SimValueField.time_to_arrive(p, Vector3(distance, 0.0, 0.0))
+			var t := 0.0
+			while p.pos.x < distance and t < 10.0:
+				p.desired_vel = Vector3(30.0, 0.0, 0.0)
+				p.locomote(SimConsts.DT)
+				t += SimConsts.DT
+			check_near(said, t, 0.05, "time_to_arrive must be the legs' own time, from %.0f m/s over %.0f m" % [start, distance])
+			# And the inverse, read off the start he had.
+			p.vel = Vector3(start, 0.0, 0.0)
+			check_near(SimValueField.reach_in(p, Vector3(1, 0, 0), t), distance, 0.3,
+				"reach_in must be the ground the legs cover in that time")
+
+
+func _braking_takes_room() -> void:
+	# A body brakes at 6-8 m/s^2 at the very most. From top speed that is
+	# metres, not a stride: structural bounds, not a tuned figure.
+	var p := make_player(0.9, 0.9)
+	p.pos = Vector3.ZERO
+	p.vel = Vector3(p.max_speed(), 0.0, 0.0)
+	p.facing = 0.0
+	var t := 0.0
+	while p.speed() > 0.05 and t < 5.0:
+		p.desired_vel = Vector3.ZERO
+		p.locomote(SimConsts.DT)
+		t += SimConsts.DT
+	check_between(p.pos.x, 4.5, 10.0, "a stop from a sprint takes metres")
+	check_between(t, 1.0, 2.5, "and over a second")
