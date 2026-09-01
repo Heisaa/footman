@@ -482,6 +482,8 @@ static func _snap_everyone(ctx: SimContext) -> void:
 			p.vel = Vector3.ZERO
 			var goal := ctx.pitch.target_goal(p.team)
 			p.facing = atan2(goal.z - p.pos.z, goal.x - p.pos.x)
+			p.look_target = Vector3.INF
+			p.body_slaved = true
 
 
 ## For restarts where players jog into position rather than appearing there.

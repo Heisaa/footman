@@ -283,20 +283,24 @@ static func update(ctx: SimContext) -> void:
 ## Receive on the half-turn: the hips are chosen before
 ## the ball arrives, not discovered when it does.
 ##
-## `SimPlayer.facing` is written from velocity, so a man standing still waiting
-## for a pass keeps whatever facing his last run left him -- which is usually
-## square to the ball he came to meet, and every act after his first touch then
-## pays `facing_penalty` and `strike_scale` for it. A footballer opens his body
+## A man waiting for a pass with his body slaved to his last run stands square
+## to the ball he came to meet, and every act after his first touch then pays
+## `facing_penalty` and `strike_scale` for it. A footballer opens his body
 ## while the ball travels: half-way between the line it is coming on and the
 ## way he wants to play, which is what lets the first touch go forward and the
-## next ball be on. Only for the man the pass is for, only while he is not
-## running (a run writes its own facing), and not with a man tight on him --
-## opening up with a challenger on your back is how the ball is nicked off it,
-## so the tight receiver keeps his body closed and shields instead.
+## next ball be on. Written as a look, and `SimPlayer.locomote` decides whether
+## the run allows it: a man sprinting onto the ball keeps his hips on the run,
+## a man walking onto it or waiting for it opens up. Only for the man the pass
+## is for, and not with a man tight on him -- opening up with a challenger on
+## your back is how the ball is nicked off it, so the tight receiver keeps his
+## body closed and shields instead.
 static func _orient_receiver(ctx: SimContext, p: SimPlayer) -> void:
 	if ctx.ball.intended_target != p.id or ctx.ball.last_touch_team != p.team:
 		return
-	if p.speed() > 1.6:
+	# The look is for receiving, and ends at the touch: `intended_target`
+	# outlives it, and a carrier still held on his receiving look was capped
+	# to a shuffle -- standing went from 20% to 31% of a match.
+	if ctx.ball.last_touch_player == p.id:
 		return
 	if ctx.challenge_on(p) > 0.5:
 		return
@@ -307,9 +311,7 @@ static func _orient_receiver(ctx: SimContext, p: SimPlayer) -> void:
 	var open := to_ball.normalized() + to_goal.normalized()
 	if open.length() < 0.2:
 		return
-	var want := atan2(open.z, open.x)
-	var most: float = p.turn_rate(p.speed()) * SimConsts.DT
-	p.facing += clampf(angle_difference(p.facing, want), -most, most)
+	p.look_target = p.pos + open.normalized() * 4.0
 
 
 # --- Chase assignment -------------------------------------------------------
@@ -644,6 +646,8 @@ const RUN_ON_AHEAD := 2.0
 
 
 static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
+	# An arm that wants the body held sets a look; every other arm faces the run.
+	p.look_target = Vector3.INF
 	var role: int = _chase_role[p.id]
 	var is_primary := role == CHASE_PRIMARY
 	var is_support := role == CHASE_SUPPORT

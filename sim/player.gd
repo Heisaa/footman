@@ -53,6 +53,18 @@ const TURN_PIVOT := 1.5
 ## straight line; as the speed comes off, `v * omega` buys a rapidly tightening
 ## turn, and the last ninety degrees happen almost on the spot. Plant, pivot, go.
 const TURN_GRIP := 9.0
+## Share of top speed a man can do without turning his hips, sideways and
+## backwards alike -- and past which the body is slaved to the run. One
+## constant says how fast he can shuffle and past what he must turn.
+const STRAFE_SHARE := 0.5
+## The slaving releases at this share of the threshold. Entry and release
+## differ (INVARIANTS: `_contest_pace`, `_press_side`) or a desired speed on
+## the line flips the body every tick.
+const STRAFE_RELEASE := 0.8
+## Acceleration share at full reverse, linear in the angle between the drive
+## and the body. Floored so a standing man can always start: the `TURN_COMMIT`
+## deadlock, INVARIANTS.
+const OFF_AXIS_ACCEL := 0.5
 
 var id := -1
 var team := SimConsts.TEAM_HOME
@@ -72,9 +84,17 @@ var appearance_seed := 0
 
 var pos := Vector3.ZERO
 var vel := Vector3.ZERO
-## Facing, in radians, as atan2(dir.z, dir.x). Players face where they run
-## unless something (shielding, a set piece) says otherwise.
+## The body -- hips and shoulders, and the eyes with them -- in radians, as
+## atan2(dir.z, dir.x). Slaved to the run unless `look_target` holds it.
 var facing := 0.0
+## Where the movement or decision layer wants the body pointed; INF means
+## face the run. Held between recomputes like `move_target`, and cleared where
+## a restart is a fact (`SimScenario.settle`, `SimSetPiece._snap_everyone`).
+var look_target := Vector3.INF
+## Whether the hips follow the velocity. Latched in `locomote`: slaved above
+## `STRAFE_SHARE` of top speed or with no look to hold, released only below
+## `STRAFE_SHARE * STRAFE_RELEASE`.
+var body_slaved := true
 
 # --- Condition --------------------------------------------------------------
 
@@ -326,29 +346,49 @@ func locomote(dt: float) -> void:
 	# Hand-rolled 2D rotation. Vector3.rotated() builds a Basis, which is far
 	# too much machinery for twenty-two players sixty times a second.
 	var cur_speed := sqrt(vel.x * vel.x + vel.z * vel.z)
+	var looking := not is_inf(look_target.x)
 	if cur_speed < 0.02 and desired_vel.x == 0.0 and desired_vel.z == 0.0:
 		# Standing still and asked to stay there. Half the squad is in this
-		# state at any moment, so it is worth the early exit.
+		# state at any moment, so it is worth the early exit. The receiver
+		# waiting for the ball is this man, and his body still turns.
 		vel = Vector3.ZERO
+		if looking:
+			body_slaved = false
+			_turn_body(0.0, dt)
 		_update_stamina(dt, 0.0)
 		_update_anim(0.0, false)
 		if touch_cooldown > 0.0:
 			touch_cooldown = maxf(0.0, touch_cooldown - dt)
 		return
+	var desired_speed := sqrt(desired_vel.x * desired_vel.x + desired_vel.z * desired_vel.z)
+	# The body: slaved to the run, or held on the look. Latched, because a
+	# desired speed on the threshold would otherwise flip it every tick, and
+	# a chase is never slowed by a look -- the sprint takes the hips with it.
+	if not looking or desired_speed > max_speed() * STRAFE_SHARE:
+		body_slaved = true
+	elif desired_speed < max_speed() * STRAFE_SHARE * STRAFE_RELEASE:
+		body_slaved = false
+	var want_x := 0.0
+	var want_z := 0.0
+	if desired_speed > 1e-4:
+		want_x = desired_vel.x / desired_speed
+		want_z = desired_vel.z / desired_speed
 	var dir_x := 0.0
 	var dir_z := 0.0
 	if cur_speed > 0.05:
 		dir_x = vel.x / cur_speed
 		dir_z = vel.z / cur_speed
-	else:
+	elif body_slaved or desired_speed <= 1e-4:
 		dir_x = cos(facing)
 		dir_z = sin(facing)
-	var desired_speed := sqrt(desired_vel.x * desired_vel.x + desired_vel.z * desired_vel.z)
-	var want_x := dir_x
-	var want_z := dir_z
-	if desired_speed > 1e-4:
-		want_x = desired_vel.x / desired_speed
-		want_z = desired_vel.z / desired_speed
+	else:
+		# A standing man with his hips held steps off in any direction: the
+		# side-step is what a held body is for.
+		dir_x = want_x
+		dir_z = want_z
+	if desired_speed <= 1e-4:
+		want_x = dir_x
+		want_z = dir_z
 
 	# Signed angle from current heading to desired heading, about +Y.
 	var cross := dir_x * want_z - dir_z * want_x
@@ -366,6 +406,8 @@ func locomote(dt: float) -> void:
 	# the turn would cost him at this pace -- see `TURN_SWING`.
 	var swing := 1.0 - cos(turn_needed)
 	var speed_ceiling := max_speed()
+	if not body_slaved:
+		speed_ceiling = minf(speed_ceiling, max_speed() * STRAFE_SHARE)
 	if swing > 1e-3:
 		speed_ceiling = minf(speed_ceiling, sqrt(TURN_GRIP * TURN_SWING / swing))
 	var target_speed: float = minf(desired_speed, speed_ceiling)
@@ -388,16 +430,34 @@ func locomote(dt: float) -> void:
 		target_speed = minf(target_speed, cur_speed)
 
 	var was_speed := cur_speed
+	var run := atan2(new_dir.z, new_dir.x)
 	if target_speed > cur_speed:
-		cur_speed = minf(target_speed, cur_speed + accel_at(cur_speed) * dt)
+		var push := accel_at(cur_speed)
+		if not body_slaved:
+			# Driving off the hips costs him: a shuffle starts slower than a
+			# stride, and a backpedal slower still.
+			push *= lerpf(1.0, OFF_AXIS_ACCEL, absf(angle_difference(facing, run)) / PI)
+		cur_speed = minf(target_speed, cur_speed + push * dt)
 	else:
 		cur_speed = maxf(target_speed, cur_speed - max_decel() * dt)
 
 	vel = new_dir * cur_speed
 	pos += vel * dt
 	pos.y = 0.0
-	if cur_speed > 0.05:
-		facing = atan2(new_dir.z, new_dir.x)
+	if body_slaved:
+		if cur_speed > 0.05:
+			# The velocity turned at most `max_turn`, which is inside the
+			# body's own rate, so a body on the run stays on it exactly; a
+			# body caught off it -- a look just released -- turns onto it at
+			# the rate the hips have, rather than snapping.
+			var most: float = turn_rate(cur_speed) * dt
+			var owed: float = angle_difference(facing, run)
+			if absf(owed) <= most:
+				facing = run
+			else:
+				facing += clampf(owed, -most, most)
+	else:
+		_turn_body(cur_speed, dt)
 	distance_run += cur_speed * dt
 
 	_update_stamina(dt, cur_speed)
@@ -405,6 +465,16 @@ func locomote(dt: float) -> void:
 
 	if touch_cooldown > 0.0:
 		touch_cooldown = maxf(0.0, touch_cooldown - dt)
+
+
+## Turns the body toward `look_target` at the hips' rate for this pace.
+func _turn_body(cur_speed: float, dt: float) -> void:
+	var dx := look_target.x - pos.x
+	var dz := look_target.z - pos.z
+	if dx * dx + dz * dz < 0.01:
+		return
+	var most: float = turn_rate(cur_speed) * dt
+	facing += clampf(angle_difference(facing, atan2(dz, dx)), -most, most)
 
 
 func _update_stamina(dt: float, cur_speed: float) -> void:

@@ -198,6 +198,10 @@ func settle(ctx: SimContext, ball_at: Vector3, holder: SimPlayer) -> void:
 		# who has been standing on it for a minute and can strike it at once.
 		p.spell_start_tick = -1
 		p.spell_prep_seconds = 0.0
+		# And the body: a restart is a fact, not a tick, so a look from the
+		# play this replaced does not survive it.
+		p.look_target = Vector3.INF
+		p.body_slaved = true
 
 	ctx.ball.reset(Vector3(ball_at.x, SimConsts.BALL_RADIUS, ball_at.z))
 	ctx.ball.last_touch_player = holder.id

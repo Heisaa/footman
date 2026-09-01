@@ -17,6 +17,10 @@ func run() -> void:
 	_separation_pushes_apart_by_strength()
 	_the_race_predictor_is_the_body()
 	_braking_takes_room()
+	_a_look_survives_the_run()
+	_a_sprint_slaves_the_body()
+	_a_side_on_start_costs_the_hips()
+	_slaving_is_latched()
 
 
 func _reaches_top_speed() -> void:
@@ -150,3 +154,100 @@ func _braking_takes_room() -> void:
 		t += SimConsts.DT
 	check_between(p.pos.x, 4.5, 10.0, "a stop from a sprint takes metres")
 	check_between(t, 1.0, 2.5, "and over a second")
+
+
+func _a_look_survives_the_run() -> void:
+	# A held body: the look turns the hips while he stands, and a shuffle along
+	# his old facing does not take them back. Structural: the strafe cap is the
+	# one figure, and it is the constant itself.
+	var p := make_player(0.6, 0.6)
+	p.pos = Vector3.ZERO
+	p.facing = 0.0
+	p.look_target = Vector3(0.0, 0.0, 1000.0)
+	for i in 30:
+		p.desired_vel = Vector3.ZERO
+		p.locomote(SimConsts.DT)
+	check_near(angle_difference(p.facing, PI * 0.5), 0.0, 0.05, "a standing man turns his body onto the look")
+	for i in 120:
+		p.desired_vel = Vector3(3.0, 0.0, 0.0)
+		p.locomote(SimConsts.DT)
+	check_near(angle_difference(p.facing, PI * 0.5), 0.0, 0.05, "a shuffle along the old facing leaves the hips on the look")
+	check_greater(p.pos.x, 2.0, "and he still gets there")
+	check_less(p.speed(), p.max_speed() * SimPlayer.STRAFE_SHARE + 0.01, "at no more than the strafe cap")
+
+
+func _a_sprint_slaves_the_body() -> void:
+	# A chase is never slowed by a look: the sprint takes the hips with it and
+	# the predictor's time stands.
+	var p := make_player(0.6, 0.6)
+	p.pos = Vector3.ZERO
+	p.facing = PI * 0.5
+	p.look_target = Vector3(0.0, 0.0, 1000.0)
+	for i in 30:
+		p.desired_vel = Vector3.ZERO
+		p.locomote(SimConsts.DT)
+	for i in SimConsts.TICK_HZ:
+		p.desired_vel = Vector3(20.0, 0.0, 0.0)
+		p.locomote(SimConsts.DT)
+	check_near(angle_difference(p.facing, 0.0), 0.0, 0.05, "a sprint slaves the body to the run within a second")
+	for i in 240:
+		p.desired_vel = Vector3(20.0, 0.0, 0.0)
+		p.locomote(SimConsts.DT)
+	check_near(p.speed(), p.max_speed(), 0.05, "and reaches top speed")
+	# The predictor's case again, with a look set the whole way.
+	for distance in [4.0, 12.0, 30.0]:
+		var q := make_player(0.6, 0.6)
+		q.pos = Vector3.ZERO
+		q.facing = 0.0
+		q.look_target = Vector3(0.0, 0.0, 1000.0)
+		var said := SimValueField.time_to_arrive(q, Vector3(distance, 0.0, 0.0))
+		var t := 0.0
+		while q.pos.x < distance and t < 10.0:
+			q.desired_vel = Vector3(30.0, 0.0, 0.0)
+			q.locomote(SimConsts.DT)
+			t += SimConsts.DT
+		check_near(said, t, 0.05, "time_to_arrive stands with a look set, over %.0f m" % distance)
+
+
+func _a_side_on_start_costs_the_hips() -> void:
+	# The predictor is the velocity's view; a start with the body side-on to
+	# the run costs one hip turn on top of it, and no more than a stride.
+	for distance in [4.0, 12.0, 30.0]:
+		var p := make_player(0.6, 0.6)
+		p.pos = Vector3.ZERO
+		p.facing = PI * 0.5
+		var said := SimValueField.time_to_arrive(p, Vector3(distance, 0.0, 0.0))
+		var t := 0.0
+		while p.pos.x < distance and t < 10.0:
+			p.desired_vel = Vector3(30.0, 0.0, 0.0)
+			p.locomote(SimConsts.DT)
+			t += SimConsts.DT
+		check_between(t - said, -0.05, 0.25, "a side-on start costs at most a hip turn over %.0f m" % distance)
+
+
+func _slaving_is_latched() -> void:
+	# A desired speed straddling the threshold must not flip the body every
+	# tick: once the sprint takes the hips, the shuffle does not give them back.
+	var p := make_player(0.6, 0.6)
+	p.pos = Vector3.ZERO
+	p.facing = 0.0
+	p.look_target = Vector3(0.0, 0.0, 1000.0)
+	for i in 30:
+		p.desired_vel = Vector3.ZERO
+		p.locomote(SimConsts.DT)
+	var last := p.facing
+	var last_sign := 0.0
+	var flips := 0
+	for i in 120:
+		var share := 0.55 if i % 2 == 0 else 0.45
+		p.desired_vel = Vector3(p.max_speed() * share, 0.0, 0.0)
+		p.locomote(SimConsts.DT)
+		var d := angle_difference(last, p.facing)
+		if absf(d) > 1e-6:
+			var sign := signf(d)
+			if last_sign != 0.0 and sign != last_sign:
+				flips += 1
+			last_sign = sign
+		last = p.facing
+	check_less(flips, 1, "the body turns one way, never back and forth")
+	check_near(angle_difference(p.facing, 0.0), 0.0, 0.05, "and ends on the run")
