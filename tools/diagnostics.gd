@@ -4774,6 +4774,7 @@ static func _new_mechanics() -> void:
 	print("  cuts tried %4d   beat his man %4d   and was fouled %4d" % [
 		SimDecision.tally_feint, SimDecision.tally_beat, SimDecision.tally_beat_foul])
 	print("  chips                   %4d" % SimTouch.chips_played)
+	print("  driven ground passes    %4d" % SimTouch.driven_played)
 	print("  volleys                 %4d" % SimTouch.volleys_struck)
 	# Does the foot reach the strike. `mean across` at zero would mean every ball
 	# in the match is played straight down the line the striker is facing, and the
@@ -4791,7 +4792,8 @@ static func _new_mechanics() -> void:
 	if SimDecision.rare_offered.size() == SimDecision.RARE_ACTS.size():
 		var parts := PackedStringArray()
 		for i in SimDecision.RARE_ACTS.size():
-			parts.append("%s %d offered" % [SimDecision.RARE_ACTS[i], SimDecision.rare_offered[i]])
+			parts.append("%s %d offered / %d played" % [SimDecision.RARE_ACTS[i],
+				SimDecision.rare_offered[i], SimDecision.rare_played[i]])
 		print("  and were they even on the list:  %s" % ",  ".join(parts))
 	if SimDecision.shortlisted + SimDecision.unseen > 0:
 		print("  teammates he could not see, and so never weighed:  %d of %d (%.0f%%)" % [

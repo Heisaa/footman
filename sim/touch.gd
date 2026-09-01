@@ -122,6 +122,37 @@ const DIFFICULTY_MAX := 1.6
 ## Sized against the bench's sideways column, which has to stay inside `said`.
 const PASS_CURL_SIGMA := 1.6
 const PASS_CURL_CLAMP := 1.4
+## The bend on a driven pass, in rad/s of yaw before technique scales it --
+## the cross's own whip, because it is the same act of the boot. Every driven
+## ball carries it as shape, signed by the foot (`pass_shape_curl`): about
+## 0.2 m of bow over twenty metres, because a skimming drive is only in the
+## air for half its journey. When the decision layer prices a bent lane worth
+## having (`SimDecision`, the curled driven ball) the same spin is *meant*,
+## and a meant bend is also a *lifted* ball (`BEND_LIFT`): the
+## first cut of this mechanic set 25 rad/s on an ordinary drive and measured
+## 0.18 m of bow against a defender's 0.9 m of free reach, so the bent lane
+## never opened -- the spin was saturating (`MAGNUS_S_HALF`) and the ball was
+## on the grass for half its journey. Clipped up at the cross's spin, the bow
+## comes out near half a metre over twenty. Starting value, unturned.
+const PASS_CURL := 40.0
+
+
+## The bend every driven pass along `dir` carries as shape: `PASS_CURL` signed
+## by the striking foot and scaled by technique. The decision layer prices the
+## driven lane with the bow this gives, so the ball the model sees is the ball
+## that is struck.
+static func pass_shape_curl(player: SimPlayer, dir: Vector3) -> float:
+	var sign: float = 1.0 if striking_foot(player, dir) == SimAttributes.FOOT_RIGHT else -1.0
+	return sign * PASS_CURL * clampf(player.attrs.technique, 0.0, 1.0)
+## The outside of the boot. A trivela bends the ball the *other* way -- the way
+## the striking foot cannot -- and costs control: this multiplies the aim error
+## at the strike, and `SimDecision.TRIVELA_CONTROL` taxes the success it was
+## priced at. Deliberately no attribute gate: technique already scales the curl
+## and the two taxes price the rest. The owner's claim that the outside of the
+## boot is *power* is recorded as an open question in `docs/THE_FOOTBALL.md` --
+## no inside-curl pace cost exists yet for the trivela to be exempt from, so
+## there is nothing to refund without asserting a direction nobody has decided.
+const TRIVELA_SIGMA := 1.35
 ## A lofted ball carries sidespin and nothing else, and that is deliberate.
 ##
 ## Backspin was tried here, because a ball struck underneath really does come off
@@ -240,6 +271,7 @@ static func is_footed(kind: int) -> bool:
 
 static func reset_tallies() -> void:
 	ft_played = 0
+	driven_played = 0
 	ft_layoff = 0
 	chips_played = 0
 	volleys_struck = 0
@@ -576,6 +608,13 @@ const CROSS_CURL := 40.0
 const CROSS_CURL_SIGMA := 9.0
 const SHOT_CURL := 1.9
 const SHOT_CURL_SIGMA := 1.3
+## And the bend a shot *means*, when the decision layer has found a blocker the
+## curl takes out of the corridor (`SimDecision._add_shot`). `SHOT_CURL` is
+## shape -- the small bend every strike carries; this is intent, a footballer's
+## whip, and it bows a 20 m shot about half a metre (`SimBallistics.curl_bow`)
+## -- a ball around a body. Technique scales it before it gets here. Starting
+## value, unturned (`PLAN.md` 11.1.1).
+const SHOT_CURL_BENT := 45.0
 const LOFT_CURL := 1.2
 const LOFT_CURL_SIGMA := 1.2
 
@@ -1172,7 +1211,7 @@ static func is_thrown(kind: int) -> bool:
 ## Ground pass toward a point, arriving at roughly `arrive_pace` m/s.
 ## `first_time` is a ball struck while it is still moving, priced by how far it
 ## has to be redirected -- see `FIRST_TIME_EASY`.
-static func ground_pass(ctx: SimContext, player: SimPlayer, target: Vector3, arrive_pace: float, target_id: int, kind: int = SimTelemetry.Touch.GROUND_PASS, expected_value: float = 0.0, first_time: bool = false) -> void:
+static func ground_pass(ctx: SimContext, player: SimPlayer, target: Vector3, arrive_pace: float, target_id: int, kind: int = SimTelemetry.Touch.GROUND_PASS, expected_value: float = 0.0, first_time: bool = false, curl_mean: float = NAN, trivela: bool = false) -> void:
 	if not is_thrown(kind):
 		target = clamp_to_reach(player, ctx.ball.pos, target, GROUND_RANGE)
 	var delta := SimConsts.horizontal(target - ctx.ball.pos)
@@ -1183,13 +1222,44 @@ static func ground_pass(ctx: SimContext, player: SimPlayer, target: Vector3, arr
 	# solved is the ball that is struck. A throw is always rolled out flat.
 	var speed: float
 	var drive := 0.0
+	var curl := 0.0
+	var lift := 0.0
+	var launch_yaw := 0.0
 	if is_thrown(kind):
 		speed = ctx.ballistics.ground_pass_speed(distance, arrive_pace, ctx.env)
 	else:
-		var launch := ctx.ballistics.ground_launch(distance, arrive_pace, ctx.env)
+		# The curl on a driven ball, drawn *before* the solve so the launch is
+		# solved with the spin in hand and comes back with the yaw that answers
+		# it -- the ball bends and still arrives. Every driven ball carries the
+		# bend its foot gives it (`curl_for`'s sign: the inside of the right boot
+		# turns it left), at `PASS_CURL` and scaled by technique, as *shape*;
+		# it was zero-mean noise until the solver could put a signed bend back
+		# on its target, and now nothing keeps it so. A *meant* bend replaces
+		# the shape with `curl_mean` -- the decision's signed, technique-scaled
+		# whip, flipped for the trivela -- and lifts the ball so the same spin
+		# has the air to work in. The noise is scaled here and the mean is not:
+		# one charge, not two. The draw happens whether or not a bend was
+		# meant, so the stream reads the same either way. Whether the ball is
+		# driven is read off the closed-form speed, the same test
+		# `ground_launch` opens with, so the draw happens exactly when the
+		# solver can use it.
+		if SimBallistics.drive_loft(
+				ctx.ballistics.ground_pass_speed(distance, arrive_pace, ctx.env)) > 0.0:
+			curl = ctx.rng.gauss_clamped(0.0, PASS_CURL_SIGMA, PASS_CURL_CLAMP) \
+				* player.attrs.technique
+			if is_nan(curl_mean):
+				curl += pass_shape_curl(player, dir)
+			else:
+				curl += curl_mean
+				# A meant bend is a lifted ball -- see `BEND_LIFT`.
+				lift = SimBallistics.BEND_LIFT
+		var launch := ctx.ballistics.ground_launch(distance, arrive_pace, ctx.env, curl, lift)
 		speed = launch["speed"]
+		launch_yaw = launch["yaw"]
 
 	var sigma := aim_sigma(ctx, player, player.attrs.passing, distance, GROUND_AIM_BASE, dir)
+	if trivela:
+		sigma *= TRIVELA_SIGMA
 	# Struck first-time, the error grows with how far the moving ball has to be
 	# redirected. Read off the ball as it arrives, before `apply` replaces it.
 	if first_time:
@@ -1197,29 +1267,23 @@ static func ground_pass(ctx: SimContext, player: SimPlayer, target: Vector3, arr
 		ft_played += 1
 		if redirect_share(ctx.ball.vel, dir) < 0.45:
 			ft_layoff += 1
-	var vel := _perturb(ctx, dir * speed, sigma, weight_sigma(player, player.attrs.passing), 0.0)
+	# The launch leaves the boot along the solved yaw -- off the line of the
+	# aim, so the bend brings it back on -- while the aim error above was read
+	# off the line he *means*, which is the ball he is charged for.
+	var vel := _perturb(ctx, dir.rotated(Vector3.UP, launch_yaw) * speed, sigma,
+		weight_sigma(player, player.attrs.passing), 0.0)
 	vel.y = 0.0
 	# The skim and the backspin are re-read off the *perturbed* speed, so an
 	# overhit ball is driven a little harder and flatter, the way it came off
 	# the boot, rather than wearing the intended strike's shape.
 	if not is_thrown(kind):
 		drive = SimBallistics.drive_loft(vel.length())
-	vel.y = drive
+		if drive > 0.0:
+			driven_played += 1
+	vel.y = drive + lift
 	var roll_rate := SimConsts.horizontal_length(vel) / SimConsts.BALL_RADIUS
 	var spin := -Vector3.UP.cross(SimConsts.horizontal(vel).normalized()) \
-		* (roll_rate * SimBallistics.drive_backspin(drive))
-	# And the curl that rides on the driven ball. **Zero-mean, and the only one
-	# left that is** -- see `curl_for`, which signs the shot, the cross and the
-	# lofted ball by the foot that struck them. This one cannot be signed as it
-	# stands: the spin is stapled on after `ground_launch` has solved the speed,
-	# so it is an error the solution never saw, and a signed mean would simply
-	# bend every driven pass in the game consistently off its target. Signing it
-	# means solving the launch with the spin in hand, which is a change to the
-	# most-used strike in the engine for a ball that spends most of its life on
-	# the grass, where Magnus does nothing.
-	if drive > 0.0:
-		spin += Vector3.UP * (ctx.rng.gauss_clamped(0.0, PASS_CURL_SIGMA, PASS_CURL_CLAMP)
-			* player.attrs.technique)
+		* (roll_rate * SimBallistics.drive_backspin(drive)) + Vector3.UP * curl
 
 	apply(ctx, player, kind, vel, spin, target_id, {"dist": distance, "ft": first_time})
 	_log_pass_attempt(ctx, player, kind, target, target_id, expected_value, distance, vel.length())
@@ -1268,6 +1332,9 @@ static func chip_flight(distance: float) -> float:
 
 ## Chips actually struck. Counted, not logged; reset with the other tallies.
 static var chips_played := 0
+## Driven ground passes struck -- the ball the bent lane rides inside, so a bend
+## count reads against this and not against every pass.
+static var driven_played := 0
 
 
 ## Shot at a point in the goal mouth. `power` is 0..1 over the shot speed range.
@@ -1283,7 +1350,7 @@ const VOLLEY_POWER := 1.12
 static var volleys_struck := 0
 
 
-static func shot(ctx: SimContext, player: SimPlayer, aim_point: Vector3, power: float, first_time: bool, chance_quality: float, chip: bool = false) -> void:
+static func shot(ctx: SimContext, player: SimPlayer, aim_point: Vector3, power: float, first_time: bool, chance_quality: float, chip: bool = false, curl_mean: float = NAN, trivela: bool = false) -> void:
 	var line := aim_point - ctx.ball.pos
 	var speed: float = lerpf(SimConsts.SHOT_SPEED_MIN, SimConsts.SHOT_SPEED_MAX, clampf(power * lerpf(0.65, 1.0, player.attrs.power), 0.0, 1.0))
 	# Nobody strikes one hard off his back foot. The same reach the passes are
@@ -1293,7 +1360,15 @@ static func shot(ctx: SimContext, player: SimPlayer, aim_point: Vector3, power: 
 	# takes is the shot it scored.
 	speed *= strike_scale(player, line)
 	var distance := SimConsts.horizontal_length(line)
-	var curl := curl_for(ctx, player, line, SHOT_CURL, SHOT_CURL_SIGMA)
+	# The unmeant default, or the bend the decision priced. A meant mean comes
+	# in technique-scaled, so only the noise is scaled here -- one charge, the
+	# driven pass's contract. One draw either way; the stream cannot tell.
+	var curl: float
+	if is_nan(curl_mean):
+		curl = curl_for(ctx, player, line, SHOT_CURL, SHOT_CURL_SIGMA)
+	else:
+		curl = curl_mean + ctx.rng.gauss_clamped(0.0, SHOT_CURL_SIGMA, 2.0) \
+			* clampf(player.attrs.technique, 0.0, 1.0)
 	var spin := Vector3.UP * curl
 	var vel: Vector3
 	if chip:
@@ -1306,6 +1381,8 @@ static func shot(ctx: SimContext, player: SimPlayer, aim_point: Vector3, power: 
 	# scoring fit".
 	var sigma := aim_sigma(ctx, player, player.attrs.finishing, distance,
 		SHOT_AIM_BASE * ctx.config.shot_sigma_scale(), line)
+	if trivela:
+		sigma *= TRIVELA_SIGMA
 	if first_time:
 		sigma *= 1.45
 	# The volley, as its own act rather than an ordinary shot at a ball that

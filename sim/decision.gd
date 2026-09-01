@@ -593,7 +593,7 @@ const REGAIN_WINDOW := 2.0
 ## answered by reading a line rather than by adding an instrument.
 ##
 ## Indexed by `RARE_ACTS`. One-way, like every tally here.
-const RARE_ACTS := ["chip", "round him", "dummy", "cut back", "open it"]
+const RARE_ACTS := ["chip", "round him", "dummy", "cut back", "open it", "bend it", "trivela"]
 static var rare_offered := PackedInt32Array()
 static var rare_played := PackedInt32Array()
 
@@ -636,6 +636,8 @@ const RARE_ROUND := 1
 const RARE_DUMMY := 2
 const RARE_PULLBACK := 3
 const RARE_OPENING := 4
+const RARE_BEND := 5
+const RARE_TRIVELA := 6
 
 ## Measured on the day it landed, twenty seeds: **it costs 1.58 goals a match**
 ## (4.04 to 2.46) and 0.07 of the conversion rate. That is the largest single
@@ -706,6 +708,15 @@ const FEINT_COST := 0.55
 const DRIVEN_LANE := 0.55
 const DRIVEN_PACE := 1.9
 const DRIVEN_TOUCH := 0.82
+## How much more of the lane the bent ball must survive before the driven
+## candidate becomes the curled one. `OPENING_MIN`'s shape and reason: below
+## this it is the same option and the bend is theatre.
+const CURL_MIN := 0.05
+## What a trivela keeps of the success it was priced at. The outside of the
+## boot is the harder surface, and `SimTouch.TRIVELA_SIGMA` charges the strike
+## the same fact; this is the half the decision sees, so the flipped bend is a
+## fallback and not a free second lane.
+const TRIVELA_CONTROL := 0.85
 const LOFTED_FROM := 24.0
 const MAX_GROUND_PASS := 32.0
 ## **45 to 55, 2026-08-23** (owner). The old ceiling was shorter than football's
@@ -909,6 +920,45 @@ static func _add_shot(ctx: SimContext, player: SimPlayer, first_time: bool) -> v
 	# The chip is generated whether or not the driven shot clears its floor: the
 	# moment it exists for is exactly the one where the straight shot is poor.
 	_add_chip(ctx, player, from, goal, distance, first_time, tactics, restart, loss)
+	# The bend. When bodies sit on the straight corridor, a technician curls it
+	# round them -- the foot picks the side (`curl_for`'s sign), so the choice
+	# is whether, never which way. A variant *inside* the shot candidate, the
+	# curled driven ball's shape, and the improvement is an integer -- a blocker
+	# out of the corridor -- so there is no tuned threshold to argue with.
+	var power := clampf(0.5 + distance / 40.0, 0.45, 1.0)
+	var curl := 0.0
+	var trivela := false
+	var straight_blockers := _shot_blockers(ctx, player, from, aim)
+	if straight_blockers > 0:
+		var foot_sign: float = 1.0 if SimTouch.striking_foot(player, aim - from) \
+			== SimAttributes.FOOT_RIGHT else -1.0
+		var meant: float = SimTouch.SHOT_CURL_BENT \
+			* clampf(player.attrs.technique, 0.0, 1.0) * foot_sign
+		var speed: float = lerpf(SimConsts.SHOT_SPEED_MIN, SimConsts.SHOT_SPEED_MAX,
+			clampf(power * lerpf(0.65, 1.0, player.attrs.power), 0.0, 1.0))
+		var bow := SimBallistics.curl_bow(meant, speed, SimConsts.horizontal_length(aim - from))
+		var bent_blockers := _shot_blockers(ctx, player, from, aim, bow)
+		if bent_blockers < straight_blockers:
+			curl = meant
+			# What the bend buys, as the exact multiplier `expected_goals`
+			# charged for the bodies it removes, so `--ablate` can take the
+			# bend back out.
+			var bought := pow(0.72, float(bent_blockers - straight_blockers))
+			quality = minf(quality * bought, 0.92)
+			_note_rare(RARE_BEND, false)
+			_note_factor(SimAblation.F_CURL, bought)
+		else:
+			# The trivela, same fallback as the driven ball's: the natural bend
+			# curls into a body, the other side is open.
+			var flip_blockers := _shot_blockers(ctx, player, from, aim, -bow)
+			if flip_blockers < straight_blockers:
+				curl = -meant
+				trivela = true
+				var bought := pow(0.72, float(flip_blockers - straight_blockers)) \
+					* TRIVELA_CONTROL
+				quality = minf(quality * bought, 0.92)
+				_note_rare(RARE_TRIVELA, false)
+				_note_factor(SimAblation.F_CURL, bought)
 	if quality < 0.025:
 		return
 	_candidates.append({
@@ -939,8 +989,12 @@ static func _add_shot(ctx: SimContext, player: SimPlayer, first_time: bool) -> v
 		# see `SimMatchConfig`, "the compressed match's scoring fit".
 		"bias": lerpf(0.75, 1.25, tactics.directness) * (0.6 if first_time else 1.0)
 			* ctx.config.shot_appetite_at(quality),
-		"power": clampf(0.5 + distance / 40.0, 0.45, 1.0),
+		"power": power,
 	})
+	if curl != 0.0:
+		_candidates[-1]["curl"] = curl
+		if trivela:
+			_candidates[-1]["trivela"] = true
 	_keep_factors()
 
 
@@ -1030,14 +1084,21 @@ static func expected_goals(ctx: SimContext, player: SimPlayer, from: Vector3, ai
 	# -- it is what waiting for the right moment waits for, and until this the
 	# model could not see it, so the number never rose and there was never a
 	# reason not to shoot early.
+	base *= pow(0.72, float(_shot_blockers(ctx, player, from, aim)))
+	return clampf(base, 0.002, 0.92)
+
+
+## Bodies on a shot's corridor, the count `expected_goals` charges -- and, with
+## a `bow`, the same count on the bent corridor, which is what the curled shot
+## is priced by. Split out so the two paths cannot drift apart.
+static func _shot_blockers(ctx: SimContext, player: SimPlayer, from: Vector3, aim: Vector3, bow: float = 0.0) -> int:
 	var blockers := 0
 	for oid in ctx.opponent_ids(player.team):
 		var o := ctx.players[oid]
 		if o.on_pitch and o.recovery_ticks == 0 \
-				and _near_segment(o.pos, from, aim, 1.1) and o.dist_to(from) > 0.8:
+				and _near_segment(o.pos, from, aim, 1.1, bow) and o.dist_to(from) > 0.8:
 			blockers += 1
-	base *= pow(0.72, float(blockers))
-	return clampf(base, 0.002, 0.92)
+	return blockers
 
 
 ## How far off his line the keeper has to be before there is anything to chip
@@ -1322,10 +1383,73 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 			# (`SimBallistics.DRIVE_FROM`), because below that they are the same
 			# strike and the engine would be offering one act twice.
 			if raw_distance >= SimBallistics.DRIVE_FROM:
-				var d_pace: float = minf(pace * DRIVEN_PACE, 1.0)
+				# Capped at `arrival_pace`'s own ceiling, in the m/s the whole
+				# expression is in. It was `minf(..., 1.0)` from the day the
+				# driven ball landed -- a normalized cap typed into a
+				# real-units field -- so every driven ball arrived at one
+				# metre a second, softer than the roller beside it, the 1.9
+				# was dead code, and under ~24 m the launch never reached
+				# `DRIVE_FROM`: the ball this block priced as airborne
+				# (`DRIVEN_LANE`) and taxed as hot (`DRIVEN_TOUCH`) was a
+				# roller arriving dead. Found by the bent lane, which needed
+				# the hops that were not there (`tools/_curl_probe.gd`).
+				var d_pace: float = minf(pace * DRIVEN_PACE, 12.0)
 				var d_speed := ctx.ballistics.ground_pass_speed(lead_distance, d_pace, ctx.env)
 				var d_travel := ctx.ballistics.ground_travel_time(lead_distance, d_speed, ctx.env)
-				var d_success := _pass_success(ctx, player, from, lead, d_travel, mate, into_space, true)
+				# The bend. Every driven ball carries its foot's bend as shape
+				# (`SimTouch.pass_shape_curl`), so the plain driven candidate is
+				# priced on that bowed path and not on the chord -- the ball the
+				# model sees is the ball that is struck. The *meant* bend is a
+				# variant *inside* the same candidate, never a third one beside
+				# it -- the cross's whipped-and-fitted precedent; a
+				# near-duplicate reads to the softmax as evidence for the act.
+				# The foot picks the side (`curl_for`'s sign, off the same
+				# comparison the strike is charged by), so what is chosen here
+				# is whether, never which way. Offered only when the lifted,
+				# whipped ball's lane is a real improvement on the shape's,
+				# priced against the path the ball actually takes.
+				var curl := 0.0
+				var bow := 0.0
+				var trivela := false
+				var lane_tail: float = LANE_TAIL if into_space else FEET_TAIL
+				if SimBallistics.drive_loft(d_speed) > 0.0:
+					var meant := SimTouch.pass_shape_curl(player, lead - from)
+					bow = SimBallistics.curl_bow(meant, d_speed, lead_distance,
+						SimBallistics.DRIVEN_BOW_SHARE)
+					var b := SimBallistics.curl_bow(meant, d_speed, lead_distance,
+						SimBallistics.BEND_BOW_SHARE)
+					var lane_straight := _lane_survival(ctx, player, from, lead, d_travel,
+						lane_tail, -1, bow)
+					var lane_bent := _lane_survival(ctx, player, from, lead, d_travel, lane_tail, -1, b)
+					var straight_buy := maxf(lerpf(lane_straight, 1.0, DRIVEN_LANE), 0.001)
+					if lane_bent >= lane_straight + CURL_MIN:
+						curl = meant
+						bow = b
+						_note_rare(RARE_BEND, false)
+						# What the bend is worth to `success`: the exact
+						# multiplier the lane term gains from it, after the
+						# `DRIVEN_LANE` buy-back both lanes get, so `--ablate`
+						# can take the bend back out.
+						_note_factor(SimAblation.F_CURL,
+							lerpf(lane_bent, 1.0, DRIVEN_LANE) / straight_buy)
+					else:
+						# The trivela: when the game is closed on the side his
+						# foot bends and open on the other, the outside of the
+						# boot is the fallback -- flipped sign, control taxed.
+						var lane_flip := _lane_survival(ctx, player, from, lead, d_travel,
+							lane_tail, -1, -b)
+						if lane_flip >= lane_straight + CURL_MIN:
+							curl = -meant
+							bow = -b
+							trivela = true
+							_note_rare(RARE_TRIVELA, false)
+							_note_factor(SimAblation.F_CURL,
+								lerpf(lane_flip, 1.0, DRIVEN_LANE) / straight_buy
+								* TRIVELA_CONTROL)
+				var d_success := _pass_success(ctx, player, from, lead, d_travel, mate,
+					into_space, true, bow)
+				if trivela:
+					d_success *= TRIVELA_CONTROL
 				if flagged:
 					d_success *= OFFSIDE_DISCOUNT
 				var d_arrival := _arrival_gain(ctx, player.team, lead, believed, mate, d_travel)
@@ -1343,7 +1467,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				_note_factor(SimAblation.F_SECURE, secure)
 				_note_factor(SimAblation.F_CALL, call)
 				_note_factor(SimAblation.F_TOUCH, touch * DRIVEN_TOUCH)
-				_candidates.append({
+				var driven_ball := {
 					"action": Action.GROUND_PASS,
 					"target": mate_id,
 					"point": lead,
@@ -1358,7 +1482,12 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 					# already prices exactly that about a man.
 					"bias": tactics.retention_bias() * length_bias * secure * call
 						* give_go * touch * DRIVEN_TOUCH * layoff,
-				})
+				}
+				if curl != 0.0:
+					driven_ball["curl"] = curl
+					if trivela:
+						driven_ball["trivela"] = true
+				_candidates.append(driven_ball)
 				_keep_parts()
 				_keep_factors()
 
@@ -2457,7 +2586,7 @@ static func _clear_ahead(ctx: SimContext, team: int, point: Vector3, goal: Vecto
 const THERE_FIRST_MARGIN := 0.35
 
 
-static func _pass_success(ctx: SimContext, player: SimPlayer, from: Vector3, to: Vector3, travel: float, receiver: SimPlayer, into_space: bool = false, driven: bool = false) -> float:
+static func _pass_success(ctx: SimContext, player: SimPlayer, from: Vector3, to: Vector3, travel: float, receiver: SimPlayer, into_space: bool = false, driven: bool = false, bow: float = 0.0) -> float:
 	# Three separate questions, and conflating them is how an engine talks
 	# itself into forty-metre passes: who owns that space, can this particular
 	# receiver be there when the ball is, and does the ball survive the journey.
@@ -2545,7 +2674,8 @@ static func _pass_success(ctx: SimContext, player: SimPlayer, from: Vector3, to:
 		var receiver_time := SimValueField.time_to_arrive(receiver, to, receiver.reaction)
 		in_time = _in_time(travel + 0.3 - receiver_time,
 			SimConsts.horizontal_length(to - receiver.pos))
-	var lane := _lane_survival(ctx, player, from, to, travel, LANE_TAIL if into_space else FEET_TAIL)
+	var lane := _lane_survival(ctx, player, from, to, travel,
+		LANE_TAIL if into_space else FEET_TAIL, -1, bow)
 	# The driven ball is airborne over the middle of its journey, and that is the
 	# whole football reason for hitting one (`docs/THE_FOOTBALL.md` 26). A leg put
 	# in the lane takes a rolled ball and misses a driven one, so the interception
@@ -2839,7 +2969,10 @@ const LANE_TAIL := 6.0
 ## line -- charged at almost a certainty here, so the take-on could not be worth
 ## anything however the rest of it was priced. 84% of trials ended `lost` and
 ## none in a goal (`docs/THE_FOOTBALL.md` 45).
-static func _lane_survival(ctx: SimContext, player: SimPlayer, from: Vector3, to: Vector3, travel: float, tail: float = 0.0, ignore_id: int = -1) -> float:
+## `bow` is the mid-chord offset of a curled ball's path in metres, signed
+## positive toward the passer's left -- `SimBallistics.curl_bow`'s convention.
+## Zero is the straight ball every caller priced before the bend existed.
+static func _lane_survival(ctx: SimContext, player: SimPlayer, from: Vector3, to: Vector3, travel: float, tail: float = 0.0, ignore_id: int = -1, bow: float = 0.0) -> float:
 	var survival := 1.0
 	var seg := SimConsts.horizontal(to - from)
 	var length: float = maxf(seg.length(), 0.1)
@@ -2849,7 +2982,7 @@ static func _lane_survival(ctx: SimContext, player: SimPlayer, from: Vector3, to
 		var o := ctx.players[oid]
 		if not o.on_pitch or o.id == ignore_id:
 			continue
-		survival *= 1.0 - _cut_chance(ctx, player, o, o.pos, from, dir, length, journey, travel)
+		survival *= 1.0 - _cut_chance(ctx, player, o, o.pos, from, dir, length, journey, travel, bow)
 	return clampf(survival, 0.0, 1.0)
 
 
@@ -2857,15 +2990,26 @@ static func _lane_survival(ctx: SimContext, player: SimPlayer, from: Vector3, to
 ## his position now for every caller but `_add_opening`, which asks about where
 ## he will be after the carrier has moved him.
 static func _cut_chance(ctx: SimContext, passer: SimPlayer, o: SimPlayer, at: Vector3, from: Vector3, dir: Vector3,
-		length: float, journey: float, travel: float) -> float:
+		length: float, journey: float, travel: float, bow: float = 0.0) -> float:
 	var rel := SimConsts.horizontal(at - from)
 	var along: float = rel.dot(dir)
 	if along <= 0.5 or along >= journey:
 		return 0.0
-	var lateral: float = absf(rel.x * -dir.z + rel.z * dir.x)
+	# A curled ball is priced where the ball actually goes: a bend of `bow` at
+	# mid-chord offsets the path by 4*bow*u*(1-u) at each station, positive
+	# toward the passer's left. The station stays the chord projection and the
+	# local direction stays the chord's -- both a few degrees off on a real
+	# bend, accepted here -- but the metres of offset are what move a leg in
+	# or out of reach, and those are real.
+	var side: float = rel.x * -dir.z + rel.z * dir.x
+	var u := along / length
+	# `side` is positive to the right of travel, so a left bow sits negative.
+	var path_side := -4.0 * bow * u * (1.0 - u)
+	var lateral: float = absf(side - path_side)
 	if lateral > 12.0:
 		return 0.0
-	var point := from + dir * along
+	var lat_dir := Vector3(-dir.z, 0.0, dir.x)
+	var point := from + dir * along + lat_dir * path_side
 	# A ball coming from behind him is not his until it is round to where his leg
 	# reaches -- `SimDuel.in_reach_arc`, the contact rule's own gate -- so the
 	# meeting is not at the foot of the perpendicular but further along the lane,
@@ -2884,7 +3028,9 @@ static func _cut_chance(ctx: SimContext, passer: SimPlayer, o: SimPlayer, at: Ve
 			else:
 				lo = mid
 		along += hi
-		point = from + dir * along
+		u = along / length
+		path_side = -4.0 * bow * u * (1.0 - u)
+		point = from + dir * along + lat_dir * path_side
 	var ball_time := travel * (along / length)
 	# When does the ball get there, and when could they?
 	#
@@ -5871,9 +6017,20 @@ static func _execute(ctx: SimContext, player: SimPlayer, c: Dictionary, uncontro
 	var ft := bool(c.get("first_time", false))
 	match action:
 		Action.SHOOT:
-			SimTouch.shot(ctx, player, c["aim"], c["power"], c["first_time"], c["success"], bool(c.get("chip", false)))
+			# The candidate's signed bend executes, as the pass's does.
+			if c.has("curl"):
+				_note_rare(RARE_TRIVELA if c.get("trivela", false) else RARE_BEND, true)
+			SimTouch.shot(ctx, player, c["aim"], c["power"], c["first_time"], c["success"],
+				bool(c.get("chip", false)), float(c.get("curl", NAN)),
+				bool(c.get("trivela", false)))
 		Action.GROUND_PASS:
-			SimTouch.ground_pass(ctx, player, c["point"], c["pace"], c["target"], SimTelemetry.Touch.GROUND_PASS, xv, ft)
+			# The candidate's signed bend executes -- never `curl_for` re-read
+			# here, where the foot could disagree with the one that was priced.
+			if c.has("curl"):
+				_note_rare(RARE_TRIVELA if c.get("trivela", false) else RARE_BEND, true)
+			SimTouch.ground_pass(ctx, player, c["point"], c["pace"], c["target"],
+				SimTelemetry.Touch.GROUND_PASS, xv, ft, float(c.get("curl", NAN)),
+				bool(c.get("trivela", false)))
 		Action.THROUGH_BALL:
 			SimTouch.ground_pass(ctx, player, c["point"], c["pace"], c["target"], SimTelemetry.Touch.THROUGH_BALL, xv, ft)
 		Action.LOFTED_PASS:
@@ -6066,11 +6223,19 @@ static func _hold_obstacle(ctx: SimContext, player: SimPlayer, forward: Vector3,
 	return best
 
 
-## True if `point` lies within `radius` of the segment from `a` to `b`.
-static func _near_segment(point: Vector3, a: Vector3, b: Vector3, radius: float) -> bool:
+## True if `point` lies within `radius` of the segment from `a` to `b` -- or,
+## given a `bow`, of the curled path over the same chord: offset by
+## 4*bow*t*(1-t) at each station, positive toward the striker's left
+## (`SimBallistics.curl_bow`'s sign). The station stays the chord projection,
+## the same approximation `_cut_chance` accepts and says why.
+static func _near_segment(point: Vector3, a: Vector3, b: Vector3, radius: float, bow: float = 0.0) -> bool:
 	var ab := SimConsts.horizontal(b - a)
 	var length_sq: float = ab.length_squared()
 	if length_sq < 1e-6:
 		return SimConsts.horizontal_length(point - a) <= radius
 	var t: float = clampf(SimConsts.horizontal(point - a).dot(ab) / length_sq, 0.0, 1.0)
-	return SimConsts.horizontal_length(point - (a + ab * t)) <= radius
+	var at := a + ab * t
+	if bow != 0.0:
+		var dir := ab / sqrt(length_sq)
+		at += Vector3(-dir.z, 0.0, dir.x) * (-4.0 * bow * t * (1.0 - t))
+	return SimConsts.horizontal_length(point - at) <= radius

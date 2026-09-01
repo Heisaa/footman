@@ -230,6 +230,9 @@ throw-in           4%    3%    3%    2%   74%   14% |  7.84   14.3   0.56  0.16 
 goal-kick          0%    0%    0%    0%   33%   67% |     -      -   0.00  0.00     - |  2.3  0.21  0.40   1%
 ```
 
+`curl-blocked` and `curl-wrong` (the bent lane, 2026-09-01) are newer than this
+table and unmeasured in it.
+
 Sanity holds: every attacking row shoots, `gap s` under 1.5 s everywhere (the
 `race` 1.5 is the knock in behind itself), `away` under 1.7 m. `build-up` and
 `goal-kick` have no shots by design.

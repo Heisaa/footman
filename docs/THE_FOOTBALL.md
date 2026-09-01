@@ -39,7 +39,7 @@ attack (the order, below), expecting rework.
 | A setting touch out of the feet before the long ball or the shot | built | `SimDecision._add_set_touch` |
 | Body facing priced into the strike, and the turn before you can hit it | built | `SimTouch.facing_penalty` for the aim, `strike_scale` for the range |
 | A stronger foot, and a ball shown onto the weaker one | built — the other axis of the same body model, charged through the same two functions | `SimTouch.foot_cost`, `foot_choice` |
-| Bend on a struck ball, the way the foot that struck it sends it | built — the shot, the cross and the lofted ball; the driven pass is still zero-mean and says why | `SimTouch.curl_for` |
+| Bend on a struck ball, the way the foot that struck it sends it | built — signed by the foot on every solved ball, and since the bent lane (2026-09-01) *meant*: the driven pass and the shot price a bend round a defender, trivela included | `SimTouch.curl_for` |
 | Shielding the ball | built | `_play_hold` sets it, `SimDuel` weighs it |
 | Backheel, dummy, first-time pass | built | `SimTouch.FIRST_TIME_EASY`, `_add_dummy` |
 | Chip the keeper, round him, square it across the face | built | `_add_chip`, `_round_the_keeper`, `SQUARE_CONVERT` |
@@ -1373,6 +1373,82 @@ looks without it, cheapest first. **Every figure below is measured at
 
 **The attacking pass — the current work**
 
+**Built 2026-09-01: the bent lane.** The engine could bend a ball (36) and never
+chose to: every lane was priced as a straight chord, so a pass blocked straight
+and open on a bend was never a candidate. Now the bend is intent. The two named
+solver holes closed first — `solve_direct` corrects a yaw the way `solve_lofted`
+does (the invariant said it would bite the day a shot meant its bend; this was
+that day), and `ground_launch` solves the driven ball with its spin in hand,
+exactly, because rotating a launch about UP rotates the whole trajectory
+rigidly. `SimBallistics.curl_bow` predicts the bow closed-form, validated
+against the integrator by two-flight difference in `test_ball`. `_cut_chance`
+prices a defender against the path the ball actually takes (a `bow`, quadratic
+offset, station kept on the chord and said so); the driven pass offers the
+curled variant *inside* its one candidate when the bent lane clears `CURL_MIN`,
+the shot when the bend takes a blocker out of the corridor — an integer, no
+tuned threshold. The foot picks the side, so the decision is whether, never
+which way; the trivela is the fallback when the natural side is closed and the
+other open, taxed twice (`TRIVELA_CONTROL`, `TRIVELA_SIGMA`) and gated by no
+band. Tallied under `The small acts` (`bend it`, `trivela`) and ablatable
+(`curl (the bent lane)`): over ten-minute fragments the term is in at 2–8% of
+decisions, swings 0.88–1.39 on success, and flips nothing yet — rare and small
+at the unturned starting values, which is a result and not a target.
+
+**Second cut, same day: the lifted bend.** The first cut measured out. 0.18 m
+of bow against a leg's 0.9 m of *free* reach — `_cut_chance` charges nothing
+for the first `CONTROL_RANGE` of gap — so `curl-blocked` offered the bend in 0
+of 25 seeds; the gate was honest and the ball could not bend enough to pay it
+(`tools/_curl_probe.gd`). Two causes, both physics: the lift coefficient
+saturates, so past `MAGNUS_S_HALF` more spin stops buying bend, and a driven
+ball bends only in its hops. The football answer is football's own — you
+cannot whip a flat skimmer. A *meant* bend is now a lifted ball: `BEND_LIFT`
+clips it up into knee-high hops, `PASS_CURL` rises to the cross's 40 rad/s
+(the same act of the boot), and the bow comes out near half a metre over
+twenty. The lesson, for the next lane mechanic: a bend buys nothing until it
+clears the leg's free reach — and a man with the ball's whole journey in hand
+covers that extra half-metre anyway, so the bend beats the *closing window*,
+the defender arriving with nothing to spare, and never the man stood on the
+chord with time. The paired rows were re-cut to place exactly that window.
+
+**And a correction fell out of it.** The probe found the driven ball's bend
+branch dead at twenty metres, and the reason was the driven ball itself:
+`d_pace` was `minf(pace * DRIVEN_PACE, 1.0)` from the day **26** landed — a
+normalized cap typed into a real-units field — so every driven pass in the
+game arrived at one metre a second, softer than the roller beside it, and
+under ~24 m its launch never reached `DRIVE_FROM` at all. The ball priced as
+airborne and taxed as hot was a roller arriving dead. The cap is now
+`arrival_pace`'s own 12 m/s. A correction, not a tune, like `SHOT_AT_PACE`:
+whatever it moves is recorded, not absorbed.
+
+**Third cut, same day: the bend as shape.** Measured with the tallies that were
+missing (offered *and* played, and how many driven balls there were to ride
+in): 25 of 32 ground passes in ten minutes were driven, the bend was offered on
+nine to sixteen candidates and played once. The gate was honest and the
+geometry it needs is rare, and a played bend bowed 0.35 m -- a straight ball
+from the stand. The owner saw no curled balls because there were none to see.
+The old reason the driven pass stayed zero-mean was that the solver could not
+put a signed bend back on its target; that closed above, so nothing kept it.
+Now every driven ball carries its foot's bend as *shape*, the cross's own spin
+scaled by technique -- about 0.2 m over twenty metres, more on a longer ball --
+and the plain driven candidate is priced on that bowed path, so the model and
+the strike agree. The meant, lifted bend stays as the variant on top, and it
+is now measured against the shape's lane rather than the chord. A skimming
+drive is airborne for half its journey, so the shape bend is modest by
+physics; the visible whip is the lifted one.
+
+**Open question, recorded rather than asserted:** the owner's "outside of the
+boot is power". No inside-curl pace cost exists yet for the trivela to be
+exempt from, so a power refund would assert a direction nobody has decided;
+when an inside-curl pace cost lands, the trivela's exemption is the power.
+
+**Not built, said out loud:** the curled *cross* changes nothing in pricing,
+because `_lofted_success` has no lane term at all — the aerial lane model is
+the missing mechanic, not the bend; a rolling ball cannot bend by design
+(`SimBall`, yaw does nothing on grass), so curl is a driven and airborne act
+for free; and `_pick_shot_aim` still chooses its corner blocker-blind.
+`curl-blocked` and `curl-wrong` are the paired rows. The golden digests moved,
+as a changed mechanic makes them, and were re-recorded.
+
 **Built 2026-08-23: the foot, and what it does to the ball.** **35** and **36**,
 taken together because they are one subject — a footballer's strike has two body
 axes and the engine had one.
@@ -1407,10 +1483,14 @@ so the ball bends off the boot he was billed for.
 
 Only balls whose launch is *solved* with the spin in hand can carry a signed mean:
 the shot, the lofted pass and the cross all pass their spin to `solve_direct` or
-`solve_lofted` and arrive where they were aimed along a bent path. **The driven
-ground pass does not** — its spin is stapled on after `ground_launch` has solved
-the speed — so it keeps its zero-mean noise and a comment saying why, which is the
-one place a signed curl would simply bend every pass in the game off its target.
+`solve_lofted` and arrive where they were aimed along a bent path. The driven
+ground pass used to be the exception — its spin was stapled on after
+`ground_launch` had solved the speed, an error the solution never saw — and is
+not any more: the curl is drawn before the solve and `ground_launch` answers it
+with a yaw, exact because rotating a launch about UP rotates the whole trajectory
+rigidly. So it carries a signed mean like the rest: every driven ball bends the
+way its foot sends it (`SimTouch.pass_shape_curl`, at `PASS_CURL`), and the
+decision prices the driven lane on that bowed path.
 
 **And a bug fell out of it.** The corner's swing was `-signf(taker.pos.z)`, which
 reads the same at both ends of the pitch while the goal being attacked does not:

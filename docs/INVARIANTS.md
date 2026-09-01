@@ -236,6 +236,14 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   one without the other is the drift below, and it was measured the day the
   facing charge went in alone: 0.44 said against 82% cut out.
 
+- **The bent lane is the chord plus an offset, and nothing tighter.**
+  `_cut_chance` and `_near_segment` price a curled ball by shifting the path
+  `4*bow*u*(1-u)` sideways at each defender's station; the station and the local
+  direction stay the chord's, a few degrees off on a real bend. The metres of
+  offset are what move a leg in or out of reach and those are real; anything
+  that needs the exact station or heading re-derives it rather than trusting
+  this.
+
 - **Two models of the same event drift apart unless something makes them agree.**
   `expected_goals` is calibrated against real shots; `SimTouch.shot` decided where
   the ball went from an aim error nothing reconciled with it — five times the
@@ -394,9 +402,20 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   is that it does not travel down that line. So every bend the game put on a ball
   was a bend *away* from where it was aimed: measured, 1.5 m off at the engine's
   old cross curl and six metres off at a footballer's. The fix is a yaw on the
-  launch, iterated like the other two. `solve_direct` still has the hole and it
-  does not bite while `SHOT_CURL` is small; it will the day a shot is meant to
-  bend.
+  launch, iterated like the other two -- in both solvers. `solve_direct` had the
+  same hole; it was closed before the bent shot went in, which is the day it
+  would have bitten.
+
+- **A closed form of the ball is a model of a strike the touch may not make.**
+  The ground pass was priced off a slide-then-roll formula for a spinless flat
+  ball, and the touch strikes a backspun roller or a skimming drive. Measured
+  2026-09-01, the priced journey was 5-17% long over 15-40 m and 8-11% short
+  on a slow roller, and `_pass_success` prices every interception off it.
+  `SimBallistics` now reads the four ground predictors off a table of the
+  engine's own strike, integrated once per surface; change `drive_loft`,
+  `drive_backspin` or the integrator and the table follows. Add a predictor of
+  the ball by integrating the ball, or by proving in a test that the closed
+  form matches it -- `test_ball` does both.
 
 - **Inverting a roll distance means inverting the square.** Travel goes as the
   square of launch speed, so scaling a knock by `room / travel` does not make the

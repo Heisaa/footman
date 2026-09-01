@@ -66,85 +66,291 @@ static func drive_backspin(loft: float) -> float:
 	return lerpf(ROLL_BACKSPIN, DRIVE_BACKSPIN, loft / DRIVE_LOFT_MAX)
 
 
-## The complete prescription for a ground pass: launch speed, skim, and the
-## backspin that matches, as `{"speed", "loft", "backspin"}`.
+## The complete prescription for a ground pass: launch speed, skim, the
+## backspin that matches, and the launch heading that answers the sidespin, as
+## `{"speed", "loft", "backspin", "yaw"}`.
 ##
-## A roller comes straight off the closed form. A driven ball cannot — the hops
-## replace grass friction with drag and bounce losses in a mix no closed form
-## sees, and fitting a scale factor instead would break the invariant the solve
-## exists for: arrival pace is solved *against* the surface, so a wet or long
-## pitch strikes the ball differently and it still arrives at the pace asked
-## for. So the driven launch iterates the real integrator, like the lofted
-## solver above it and for the same reason.
-func ground_launch(distance: float, arrive_pace: float, env: SimEnv) -> Dictionary:
+## The speed comes off the ground table (`_table_for`), which is this exact
+## strike integrated once per surface, so a plain ball needs no iteration. A
+## bent or lifted one does: the hops replace grass friction with drag and
+## bounce losses in a mix no closed form sees, and the solve exists so that
+## arrival pace is solved *against* the surface -- a wet or long pitch strikes
+## the ball differently and it still arrives at the pace asked for.
+##
+## `curl` is sidespin in rad/s of yaw, solved with the strike rather than
+## stapled on after it. Unlike the lofted solver's damped yaw iteration, the
+## correction here is exact and costs nothing: rotating a launch about UP
+## rotates the whole trajectory rigidly — the horizontal physics has no
+## preferred direction and UP-spin is invariant under the turn — so the yaw
+## that cancels the drift is read straight off the unrotated landing.
+## `lift` is `BEND_LIFT` when the bend is meant, and the solve carries it so
+## the clipped ball still decays to its arrival pace at its distance.
+func ground_launch(distance: float, arrive_pace: float, env: SimEnv, curl: float = 0.0, lift: float = 0.0) -> Dictionary:
 	var speed := ground_pass_speed(distance, arrive_pace, env)
 	var loft := drive_loft(speed)
 	if loft <= 0.0:
-		return {"speed": speed, "loft": 0.0, "backspin": ROLL_BACKSPIN}
+		# A roller: Magnus does nothing on the grass, so neither does the curl.
+		return {"speed": speed, "loft": 0.0, "backspin": ROLL_BACKSPIN, "yaw": 0.0}
+	if curl == 0.0 and lift == 0.0:
+		# `ground_pass_speed` is read off the table of this exact strike, so
+		# there is nothing left to iterate for.
+		return {"speed": speed, "loft": loft, "backspin": drive_backspin(loft), "yaw": 0.0}
 	var slide_decel: float = maxf(env.slide_friction * SimConsts.GRAVITY, 0.5)
 	var roll_decel: float = maxf(env.roll_decel, 0.1)
 	var k := _SLIDE_FRACTION / (2.0 * slide_decel) + _ROLL_FRACTION / (2.0 * roll_decel)
+	var landing := Vector2(distance, 0.0)
 	for i in 6:
-		var reached := _driven_range(speed, arrive_pace, env)
-		var short := distance - reached
+		landing = _driven_range(speed, arrive_pace, env, curl, lift)
+		var short := distance - landing.length()
 		if absf(short) < 0.15:
 			break
 		# Newton step on the law's own slope, range = k v^2, which is close
 		# enough to steer by even though the hops are what it cannot see.
 		speed = clampf(speed + short / maxf(2.0 * k * speed, 0.5), DRIVE_FROM, 34.0)
-	return {"speed": speed, "loft": drive_loft(speed), "backspin": drive_backspin(drive_loft(speed))}
+	return {"speed": speed, "loft": drive_loft(speed), "backspin": drive_backspin(drive_loft(speed)),
+		"yaw": atan2(landing.y, maxf(landing.x, 0.5))}
 
 
 ## Where a driven ball launched at `h_speed` has decayed to `arrive_pace` —
 ## the point the pass model aims at and the point a receiver meets it. The same
-## criterion the strike bench lands on, deliberately.
-func _driven_range(h_speed: float, arrive_pace: float, env: SimEnv) -> float:
+## criterion the strike bench lands on, deliberately. Returns the landing as
+## `(x, z)` in the launch frame: the sideways drift a `curl` puts on the hops
+## is the whole reason `ground_launch` asks for the point and not the distance.
+func _driven_range(h_speed: float, arrive_pace: float, env: SimEnv, curl: float = 0.0, lift: float = 0.0) -> Vector2:
 	_scratch.reset(Vector3(0.0, SimConsts.BALL_RADIUS, 0.0))
 	var loft := drive_loft(h_speed)
 	# Backspin for travel along +X. `SimBall`'s own convention: rolling without
 	# slipping along +X is (0, 0, -v/r), so backspin is the positive z.
-	var spin := Vector3(0.0, 0.0, h_speed / SimConsts.BALL_RADIUS * drive_backspin(loft))
-	_scratch.launch(Vector3(h_speed, loft, 0.0), spin)
+	var spin := Vector3(0.0, curl, h_speed / SimConsts.BALL_RADIUS * drive_backspin(loft))
+	_scratch.launch(Vector3(h_speed, loft + lift, 0.0), spin)
 	var t := 0.0
 	while t < 6.0:
 		_scratch.integrate(SimConsts.FORECAST_DT, env)
 		t += SimConsts.FORECAST_DT
 		if _scratch.vel.length() <= arrive_pace:
 			break
-	return _scratch.pos.x
+	return Vector2(_scratch.pos.x, _scratch.pos.z)
+
+
+# --- The ground pass, tabulated ---------------------------------------------
+#
+# Every question the decision layer asks about a ground pass -- how hard to
+# strike it, when it gets there, what pace it has left, where it stops -- is
+# answered off one table: the engine's own strike (`drive_loft`,
+# `drive_backspin`) launched at each speed and integrated at the match step, on
+# a flat pitch. The predictor *is* the integrator, to a grid.
+#
+# It replaced a two-phase slide-then-roll closed form that had two errors of
+# opposite sign. It knew nothing of the skim, so it under-struck every driven
+# ball and then, at its own under-struck speed, overstated the journey by 5-17%
+# over 15-40 m; and it assumed a spinless slide, so the backspun roller the
+# engine actually plays ran 8-11% longer than it said. `_pass_success` prices
+# every interception in the match off the travel time, and the ball it priced
+# was not the ball that was struck. Measured 2026-09-01.
+#
+# One table per surface, keyed on the numbers that shape the run, and kept in
+# a static: it is a pure function of the constants, not match state, so the
+# rule about statics in `docs/INVARIANTS.md` does not apply. Built lazily,
+# ~100 ms once per process per surface.
+
+const TABLE_SPEED_MIN := 2.0
+const TABLE_SPEED_MAX := 34.0
+const TABLE_SPEED_STEP := 0.5
+const TABLE_DIST_STEP := 0.5
+const TABLE_DIST_MAX := 100.0
+## Longer than any ball in the table takes to stop.
+const TABLE_MAX_SECONDS := 20.0
+
+
+class GroundTable:
+	var speeds := 0
+	var cols := 0
+	## Per launch speed and distance column: seconds to reach the column, or
+	## the time the ball stopped if it never does; and the ball's speed there,
+	## zero if it stopped short.
+	var time := PackedFloat32Array()
+	var pace := PackedFloat32Array()
+	## Per launch speed: where it stopped and when.
+	var range := PackedFloat32Array()
+	var stop_time := PackedFloat32Array()
+
+
+static var _tables: Dictionary = {}
+
+
+static func _table_for(env: SimEnv) -> GroundTable:
+	var key := "%s|%s|%s" % [env.roll_decel, env.slide_friction, env.restitution]
+	if _tables.has(key):
+		return _tables[key]
+	var t := _build_table(env)
+	_tables[key] = t
+	return t
+
+
+static func _build_table(env: SimEnv) -> GroundTable:
+	var flat := env.duplicate_env()
+	flat.surface_amplitude = 0.0
+	flat.camber = 0.0
+	var t := GroundTable.new()
+	t.speeds = int(round((TABLE_SPEED_MAX - TABLE_SPEED_MIN) / TABLE_SPEED_STEP)) + 1
+	t.cols = int(round(TABLE_DIST_MAX / TABLE_DIST_STEP)) + 1
+	t.time.resize(t.speeds * t.cols)
+	t.pace.resize(t.speeds * t.cols)
+	t.range.resize(t.speeds)
+	t.stop_time.resize(t.speeds)
+	var ball := SimBall.new()
+	for i in t.speeds:
+		var v := TABLE_SPEED_MIN + float(i) * TABLE_SPEED_STEP
+		var loft := drive_loft(v)
+		ball.reset(Vector3(0.0, SimConsts.BALL_RADIUS, 0.0))
+		# Backspin for travel along +X, `SimBall`'s convention.
+		ball.launch(Vector3(v, loft, 0.0), Vector3(0.0, 0.0, v / SimConsts.BALL_RADIUS * drive_backspin(loft)))
+		var row := i * t.cols
+		t.time[row] = 0.0
+		t.pace[row] = v
+		var col := 1
+		var elapsed := 0.0
+		var last_x := 0.0
+		var last_v := v
+		while elapsed < TABLE_MAX_SECONDS:
+			ball.integrate(SimConsts.DT, flat)
+			elapsed += SimConsts.DT
+			var speed := ball.vel.length()
+			while col < t.cols and ball.pos.x >= float(col) * TABLE_DIST_STEP:
+				var x := float(col) * TABLE_DIST_STEP
+				var f := (x - last_x) / maxf(ball.pos.x - last_x, 1e-6)
+				t.time[row + col] = lerpf(elapsed - SimConsts.DT, elapsed, f)
+				t.pace[row + col] = lerpf(last_v, speed, f)
+				col += 1
+			last_x = ball.pos.x
+			last_v = speed
+			if ball.grounded and ball.ground_speed() < 1e-3:
+				break
+		t.range[i] = ball.pos.x
+		t.stop_time[i] = elapsed
+		while col < t.cols:
+			t.time[row + col] = elapsed
+			t.pace[row + col] = 0.0
+			col += 1
+	return t
+
+
+## Bilinear read of one of the per-speed, per-distance arrays.
+static func _read(t: GroundTable, arr: PackedFloat32Array, speed: float, distance: float) -> float:
+	var fi: float = clampf((speed - TABLE_SPEED_MIN) / TABLE_SPEED_STEP, 0.0, float(t.speeds - 1))
+	var fd: float = clampf(distance / TABLE_DIST_STEP, 0.0, float(t.cols - 1))
+	var i := mini(int(fi), t.speeds - 2)
+	var d := mini(int(fd), t.cols - 2)
+	var wi := fi - float(i)
+	var wd := fd - float(d)
+	var a := lerpf(arr[i * t.cols + d], arr[i * t.cols + d + 1], wd)
+	var b := lerpf(arr[(i + 1) * t.cols + d], arr[(i + 1) * t.cols + d + 1], wd)
+	return lerpf(a, b, wi)
 
 
 ## Launch speed for a ground pass that travels `distance` and arrives at
-## `arrive_pace` metres per second.
+## `arrive_pace` metres per second. The lowest speed in the table that still
+## has that pace at that distance, interpolated; clamped to the table's ends
+## like the old solve was.
 func ground_pass_speed(distance: float, arrive_pace: float, env: SimEnv) -> float:
-	var slide_decel: float = maxf(env.slide_friction * SimConsts.GRAVITY, 0.5)
-	var roll_decel: float = maxf(env.roll_decel, 0.1)
-	var k := _SLIDE_FRACTION / (2.0 * slide_decel) + _ROLL_FRACTION / (2.0 * roll_decel)
-	var needed := (distance + arrive_pace * arrive_pace / (2.0 * roll_decel)) / k
-	return clampf(sqrt(maxf(needed, 0.0)), 2.0, 34.0)
+	var t := _table_for(env)
+	# The distance column, interpolated once; then each row is two reads.
+	var fd: float = clampf(distance / TABLE_DIST_STEP, 0.0, float(t.cols - 1))
+	var d := mini(int(fd), t.cols - 2)
+	var wd := fd - float(d)
+	var pace := t.pace
+	var cols := t.cols
+	var hi := t.speeds - 1
+	if lerpf(pace[hi * cols + d], pace[hi * cols + d + 1], wd) <= arrive_pace:
+		return TABLE_SPEED_MAX
+	var lo := 0
+	var p_lo: float = lerpf(pace[d], pace[d + 1], wd)
+	if p_lo >= arrive_pace:
+		return TABLE_SPEED_MIN
+	# Pace at a distance rises with the launch, so bisect the rows.
+	while hi - lo > 1:
+		var mid := (lo + hi) >> 1
+		var p_mid: float = lerpf(pace[mid * cols + d], pace[mid * cols + d + 1], wd)
+		if p_mid < arrive_pace:
+			lo = mid
+			p_lo = p_mid
+		else:
+			hi = mid
+	var p_hi: float = lerpf(pace[hi * cols + d], pace[hi * cols + d + 1], wd)
+	var f: float = clampf((arrive_pace - p_lo) / maxf(p_hi - p_lo, 1e-6), 0.0, 1.0)
+	return TABLE_SPEED_MIN + (float(lo) + f) * TABLE_SPEED_STEP
 
 
 ## Pace a ground pass struck at `speed` still has after running `distance`.
-##
-## The exact inverse of `ground_pass_speed`, and it has to be that rather than
-## anything simpler. There are two friction models in this file: the two-phase
-## slide-then-roll one the strike is solved against, and the single blended decel
-## `ground_travel_time` uses. Backing the arrival pace out of the second gives
-## about a metre a second too much over twenty-five, which is exactly the
-## difference between a ball a runner catches and one he does not — it read a
-## through ball out at 8.1 m/s that had been struck to arrive at 7.2. Nothing in
-## `sim/` calls this; the instruments do, and they were getting it wrong.
+## Zero if it stops short.
 func ground_pace_after(speed: float, distance: float, env: SimEnv) -> float:
-	var roll_decel: float = maxf(env.roll_decel, 0.1)
-	return sqrt(maxf(ground_pass_range(speed, env) - distance, 0.0) * 2.0 * roll_decel)
+	var t := _table_for(env)
+	if distance > TABLE_DIST_MAX:
+		return 0.0
+	return _read(t, t.pace, speed, distance)
 
 
 ## Distance a ground pass struck at `speed` will run before stopping.
 func ground_pass_range(speed: float, env: SimEnv) -> float:
-	var slide_decel: float = maxf(env.slide_friction * SimConsts.GRAVITY, 0.5)
-	var roll_decel: float = maxf(env.roll_decel, 0.1)
-	var k := _SLIDE_FRACTION / (2.0 * slide_decel) + _ROLL_FRACTION / (2.0 * roll_decel)
-	return k * speed * speed
+	var t := _table_for(env)
+	var fi: float = clampf((speed - TABLE_SPEED_MIN) / TABLE_SPEED_STEP, 0.0, float(t.speeds - 1))
+	var i := mini(int(fi), t.speeds - 2)
+	return lerpf(t.range[i], t.range[i + 1], fi - float(i))
+
+
+## Time for the ball, struck at `speed`, to cover `distance` on the ground; the
+## time it stops if it never gets there. Used for interception geometry, and
+## the number every pass in the match is priced off.
+func ground_travel_time(distance: float, speed: float, env: SimEnv) -> float:
+	var t := _table_for(env)
+	if distance > TABLE_DIST_MAX:
+		var fi: float = clampf((speed - TABLE_SPEED_MIN) / TABLE_SPEED_STEP, 0.0, float(t.speeds - 1))
+		var i := mini(int(fi), t.speeds - 2)
+		return lerpf(t.stop_time[i], t.stop_time[i + 1], fi - float(i))
+	return _read(t, t.time, speed, distance)
+
+
+# --- The bend, predicted -----------------------------------------------------
+
+## What one rough constant holds: the spin decays and the ball slows over the
+## flight, both of which shrink the Magnus force the launch figures promise.
+const CURL_BOW_DECAY := 0.7
+## The share of a driven pass's journey the ball spends up in its hops, where
+## Magnus acts. A roller bends not at all; a skimming drive bends about half as
+## much as the same ball in clean air. Starting value, read against the
+## two-flight test in `test_ball` -- if the measurement disagrees, this moves.
+const DRIVEN_BOW_SHARE := 0.5
+## The extra climb a *meant* bend is struck with, in m/s of launch loft on top
+## of `drive_loft`. Sidespin only works in the air, and the first cut of the
+## bent lane measured that out: an ordinary drive is airborne for half its
+## journey and bowed 0.18 m over twenty metres -- less than a leg's free reach
+## -- so the bent lane never opened. You cannot whip a flat skimmer; the meant
+## bend is clipped up into knee-high hops (apex around 0.6 m) and the same
+## spin gets most of the flight to work in.
+const BEND_LIFT := 1.5
+## And that lifted ball's airborne share, for `curl_bow`. Read against the
+## lifted two-flight case in `test_ball`, like `DRIVEN_BOW_SHARE`.
+const BEND_BOW_SHARE := 0.85
+
+
+## How far a ball struck at `speed` with `curl` rad/s of sidespin departs from
+## its chord at mid-flight, in metres, signed: positive curl bows the path
+## toward the striker's left (`UP.cross(vel)` -- `curl_for`'s convention).
+##
+## The closed form under the integrator's own constants: lift saturates in the
+## spin factor S, the lateral acceleration is `MAGNUS_K * Cl * v^2`, and a
+## constant sideways acceleration over a chord of time T bows it `a T^2 / 8`.
+## The decision layer prices a bend with this *before* choosing it, which is
+## why it exists -- the integrator answers the same question exactly and costs
+## a flight per candidate. Validated against the integrator by two-flight
+## difference in `test_ball`, the way every lateral figure here has been.
+static func curl_bow(curl: float, speed: float, distance: float, airborne_share := 1.0) -> float:
+	var v: float = maxf(speed, 1.0)
+	var s: float = absf(curl) * SimConsts.BALL_RADIUS / v
+	var cl: float = SimConsts.MAGNUS_CL_MAX * s / (s + SimConsts.MAGNUS_S_HALF)
+	var accel: float = SimConsts.MAGNUS_K * cl * v * v
+	var t: float = distance / v
+	return signf(curl) * accel * t * t * 0.125 * airborne_share * CURL_BOW_DECAY
 
 
 ## Velocity that lofts the ball from `from` to `to` with roughly the requested
@@ -180,8 +386,8 @@ func solve_lofted(from: Vector3, to: Vector3, flight_time: float, env: SimEnv, s
 	# `SimTouch.CROSS_CURL` came down **1.5 m** off its target, and at a
 	# footballer's spin it was six. Every bend the game could put on a ball was
 	# therefore a bend away from where it was aimed, which is why there was
-	# almost none. `solve_direct` has the same hole and it does not bite yet:
-	# `SHOT_CURL` is small and a shot is over in half the time.
+	# almost none. `solve_direct` had the same hole; it is closed the same way,
+	# for the day a shot means its bend.
 	var yaw := 0.0
 	var best := dir * vh + Vector3(0.0, vy, 0.0)
 	var best_err := INF
@@ -215,6 +421,10 @@ func solve_lofted(from: Vector3, to: Vector3, flight_time: float, env: SimEnv, s
 
 ## Velocity that sends the ball from `from` toward `to` at a given speed,
 ## choosing the flat trajectory root. Used for shots and driven passes.
+##
+## Corrects the launch heading for sidespin the same way `solve_lofted` does --
+## see the note there. A ball with a meant bend on it is aimed off the line so
+## the bend brings it back onto the point.
 func solve_direct(from: Vector3, to: Vector3, speed: float, env: SimEnv, spin: Vector3 = Vector3.ZERO) -> Vector3:
 	var delta := SimConsts.horizontal(to - from)
 	var distance: float = maxf(delta.length(), 0.5)
@@ -232,17 +442,36 @@ func solve_direct(from: Vector3, to: Vector3, speed: float, env: SimEnv, spin: V
 	else:
 		angle = atan((v2 - sqrt(disc)) / (g * distance))
 
-	for _i in 3:
-		var vel := dir * (speed * cos(angle)) + Vector3(0.0, speed * sin(angle), 0.0)
+	# Two corrections share the loop -- the height at the target, and the yaw
+	# that answers the sidespin. Best guess kept, like `solve_lofted` and for
+	# the same reason.
+	var yaw := 0.0
+	var best := dir * (speed * cos(angle)) + Vector3(0.0, speed * sin(angle), 0.0)
+	var best_err := INF
+	for _i in 5:
+		var aim_dir := dir.rotated(Vector3.UP, yaw)
+		var vel := aim_dir * (speed * cos(angle)) + Vector3(0.0, speed * sin(angle), 0.0)
 		var height_at := _height_at_distance(from, vel, spin, env, distance)
-		if height_at.y < -900.0:
-			break
+		if height_at.x < -900.0:
+			# Never covered the distance: nothing to measure, more angle.
+			angle = clampf(angle + 0.25, -0.35, 1.2)
+			continue
 		var error := height_at.x - to.y
+		# How far to the side of the intended line it crossed the target
+		# distance, positive toward the left of it -- `solve_lofted`'s
+		# convention, corrected the same way.
+		var rel := SimConsts.horizontal(_at_distance_pos - from)
+		var off := rel.x * dir.z - rel.z * dir.x
+		var err := absf(error) / maxf(distance, 1.0) + absf(off) / distance
+		if err < best_err:
+			best_err = err
+			best = vel
 		# Small-angle correction: raising the launch angle by da lifts the ball
 		# at the target by roughly distance * da for a flat trajectory.
 		angle -= clampf(error / maxf(distance, 1.0), -0.25, 0.25)
 		angle = clampf(angle, -0.35, 1.2)
-	return dir * (speed * cos(angle)) + Vector3(0.0, speed * sin(angle), 0.0)
+		yaw = clampf(yaw - clampf(off / distance, -0.5, 0.5) * CORRECTION_DAMPING, -0.6, 0.6)
+	return best
 
 
 ## Speed needed for a driven ground-height pass to cover `distance` in `time`.
@@ -291,15 +520,20 @@ func _simulate_to_ground(from: Vector3, vel: Vector3, spin: Vector3, env: SimEnv
 	return Vector2(SimConsts.horizontal_length(_scratch.pos - from), t)
 
 
+## Where the flight crossed the target distance, for `solve_direct`'s yaw
+## correction. Held like `_land_pos` and for the same reason.
+var _at_distance_pos := Vector3.ZERO
+
+
 ## Height of the ball when it has travelled `distance` horizontally, plus the
-## time taken. Returns y = -1000 if the ball never gets there.
+## time taken. Returns a height of -1000 if the ball never gets there.
 func _height_at_distance(from: Vector3, vel: Vector3, spin: Vector3, env: SimEnv, distance: float) -> Vector2:
 	_scratch.pos = from
 	_scratch.vel = vel
 	_scratch.spin = spin
 	_scratch.grounded = false
 	var t := 0.0
-	var last_h := from.y
+	var last_p := from
 	var last_d := 0.0
 	while t < 4.0:
 		_scratch.integrate(SimConsts.FORECAST_DT, env)
@@ -309,55 +543,10 @@ func _height_at_distance(from: Vector3, vel: Vector3, spin: Vector3, env: SimEnv
 			# Interpolate across the step for a smoother correction.
 			var span: float = maxf(d - last_d, 1e-4)
 			var f: float = clampf((distance - last_d) / span, 0.0, 1.0)
-			return Vector2(lerpf(last_h, _scratch.pos.y, f), t)
-		last_h = _scratch.pos.y
+			_at_distance_pos = last_p.lerp(_scratch.pos, f)
+			return Vector2(lerpf(last_p.y, _scratch.pos.y, f), t)
+		last_p = _scratch.pos
 		last_d = d
 		if _scratch.grounded and _scratch.ground_speed() < 0.3:
 			break
 	return Vector2(-1000.0, t)
-
-
-## The single deceleration that reproduces the slide-then-roll range, in m/s^2.
-##
-## `ground_pass_range` is `k v^2`, and constant deceleration gives `v^2 / 2a`, so
-## the `a` the two agree on is `1 / 2k` and there is nothing to choose. It used to
-## be `roll_decel * 1.7`, a fitted number that happened to sit 21% high at a
-## rolling resistance of 1.6 and went to 38% high when that was raised -- so the
-## interception geometry believed the ball was slower than the ball was, by an
-## amount that depended on the grass. `_pass_success` prices every pass off the
-## travel time this returns, and a long ball was being charged for a journey it
-## did not make.
-func blended_decel(env: SimEnv) -> float:
-	var slide_decel: float = maxf(env.slide_friction * SimConsts.GRAVITY, 0.5)
-	var roll_decel: float = maxf(env.roll_decel, 0.1)
-	var k := _SLIDE_FRACTION / (2.0 * slide_decel) + _ROLL_FRACTION / (2.0 * roll_decel)
-	return 1.0 / (2.0 * maxf(k, 1e-6))
-
-
-## Time for the ball, launched flat at `speed`, to cover `distance` on the
-## ground. Used for interception geometry.
-##
-## The two phases solved in turn, not a single blended deceleration. `blended_decel`
-## is the `a` that reproduces the *range*, which is what it was written for and all
-## it is good for: matching the total distance to a stop says nothing about how long
-## the ball takes to get anywhere short of it. Measured, a 25 m pass struck at
-## 14.6 m/s takes 2.39 s and the blended answer was 2.21 -- 7% quick, and
-## `_pass_success` prices every interception in the match off exactly this number,
-## so every pass in the engine was charged for a journey quicker than the one it
-## makes. It is the same class of error the note above records being fixed once
-## before, surviving in the half of the model nobody had checked.
-func ground_travel_time(distance: float, speed: float, env: SimEnv) -> float:
-	var slide_decel: float = maxf(env.slide_friction * SimConsts.GRAVITY, 0.5)
-	var roll_decel: float = maxf(env.roll_decel, 0.1)
-	# The slide, which ends when the ball has lost 2/7 of its speed.
-	var rolling := speed * _SLIP
-	var slide_span := _SLIDE_FRACTION * speed * speed / (2.0 * slide_decel)
-	if distance <= slide_span:
-		var d1 := speed * speed - 2.0 * slide_decel * distance
-		return (speed - sqrt(maxf(d1, 0.0))) / slide_decel
-	var t1 := (speed - rolling) / slide_decel
-	# And the roll, from the speed the slide left it at.
-	var disc := rolling * rolling - 2.0 * roll_decel * (distance - slide_span)
-	if disc <= 0.0:
-		return t1 + rolling / roll_decel  # ball stops short; time until it stops
-	return t1 + (rolling - sqrt(disc)) / roll_decel

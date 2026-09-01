@@ -69,6 +69,8 @@ static func all() -> Array[SimScenario]:
 		aerial_duel(),
 		hold_up(),
 		take_on(),
+		curl_blocked(),
+		curl_wrong(),
 		corner_right(),
 		corner_left(),
 		free_kick_shot(),
@@ -508,6 +510,85 @@ static func _widest(ctx: SimContext, team: int, across: float, ball_at: Vector3)
 
 
 ## The boilerplate every scenario below repeats, in one place.
+# --- The bent lane ----------------------------------------------------------
+
+
+## A driven ball up the flank through a closing window: a defender sliding
+## across from the outside who reaches the straight lane exactly as the ball
+## does, where the passer's natural bend -- a right foot forced onto him, so
+## the ball turns infield -- buys the quarter-second that beats him. The
+## margin is the point. A set man with the ball's whole journey in hand covers
+## the half-metre a bend buys every time (`_cut_chance` gives a leg its first
+## `CONTROL_RANGE` free, and the first cut of these rows proved it at 0/25);
+## the man a bend beats is the man arriving *just* in time, which is the
+## football too -- the window closing is what the whipped ball is for. The
+## pair with `curl-wrong` is the measurement: identical except one extra body
+## closing from the bend side, so the difference between the rows is what
+## choosing the right side of a man is worth. Read `lost` first; watch with
+## `view3d --scenario curl-blocked` for the turn.
+##
+## The flank scales with the attack direction so the infield side *is* the
+## natural-bend side in both halves: left of travel is `UP.cross(vel)`, which
+## is -z going +x and +z going -x.
+static func curl_blocked() -> SimScenario:
+	return _curl("curl-blocked", "a leg on the line, the bend side open", false)
+
+
+## The same ball with a second man closing from the natural-bend side: bending
+## in is bending into his window, and the football answers are the outside of
+## the boot or not playing it. The trivela tally says which the engine took.
+static func curl_wrong() -> SimScenario:
+	return _curl("curl-wrong", "the same leg, and the bend side closed", true)
+
+
+static func _curl(name: String, title: String, second_body: bool) -> SimScenario:
+	return _make(name, title, 5.0,
+		func(sc: SimScenario, ctx: SimContext) -> void:
+			var team := sc.attacking_team
+			var dir := ctx.pitch.attack_dir(team)
+			var side_z := 24.0 * dir
+			var at := Vector3(-4.0 * dir, 0.0, side_z)
+			var passer := ctx.players[_SUPPORT]
+			sc.settle(ctx, at + Vector3(dir * 0.4, 0.0, 0.0), passer)
+			passer.pos = at
+			passer.facing = 0.0 if dir > 0.0 else PI
+			# The man must be able to mean the bend, and the row must not
+			# change its question with the draw: a right foot and the
+			# technique to whip one, every seed.
+			passer.attrs.foot = SimAttributes.FOOT_RIGHT
+			passer.attrs.weak_foot = 0.2
+			passer.attrs.technique = 0.9
+			var receiver := ctx.players[_STRIKER]
+			receiver.pos = at + Vector3(20.0 * dir, 0.0, 0.0)
+			receiver.facing = PI if dir > 0.0 else 0.0
+			var other := SimConsts.other_team(team)
+			# The closing defender: halfway along, a stride and a half off the
+			# chord on the outside, facing the lane. He makes the straight
+			# ball's station with almost nothing to spare, so the bend's extra
+			# half-metre is the difference -- the closing window, placed.
+			var d1 := _nearest_outfielder(ctx, other, at)
+			if d1 != null:
+				d1.pos = at + Vector3(10.0 * dir, 0.0, dir * 2.3)
+				d1.facing = atan2(-dir, 0.0)
+			if second_body:
+				# A second window closing from the bend side (left of travel).
+				# Chosen by hand rather than by `_nearest_outfielder`, which
+				# would answer with the man already posed on the chord.
+				var mid := at + Vector3(8.0 * dir, 0.0, -dir * 2.3)
+				var d2: SimPlayer = null
+				var d2_d := INF
+				for p in ctx.players:
+					if p.team != other or p.is_keeper or p == d1:
+						continue
+					if p.dist_to(mid) < d2_d:
+						d2_d = p.dist_to(mid)
+						d2 = p
+				if d2 != null:
+					d2.pos = mid
+					d2.facing = atan2(dir, 0.0)
+			ctx.update_possession())
+
+
 static func _make(name: String, title: String, seconds: float, place: Callable) -> SimScenario:
 	var s := SimScenario.new()
 	s.name = name

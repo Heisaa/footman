@@ -15,8 +15,12 @@ func run() -> void:
 	_backspin_checks_up()
 	_topspin_runs_on()
 	_sidespin_bends_a_cross()
+	_solve_direct_lands_a_bent_ball()
+	_ground_solve_lands_a_curled_driven_pass()
+	_bow_prediction_matches_a_simulated_flight()
 	_ball_never_sinks()
 	_forecast_agrees_with_the_integrator()
+	_ground_predictors_are_the_integrator()
 
 
 func _projectile_range_is_plausible() -> void:
@@ -139,6 +143,162 @@ func _sidespin_bends_a_cross() -> void:
 	check_greater(absf(curled.pos.z), 0.5, "the curled ball must actually go sideways")
 
 
+func _solve_direct_lands_a_bent_ball() -> void:
+	# `solve_direct`'s yaw correction: a ball with real sidespin on it must bend
+	# on the way and still cross the target on line. Structure, not a tuned
+	# figure -- it went sideways, and it arrived.
+	var env := dry_env()
+	var solver := SimBallistics.new()
+	var from := Vector3(0.0, SimConsts.BALL_RADIUS, 0.0)
+	var to := Vector3(20.0, 1.2, 0.0)
+	var spin := Vector3.UP * 45.0
+	var vel := solver.solve_direct(from, to, 24.0, env, spin)
+	var b := launch_ball(vel, spin, from)
+	var bow := 0.0
+	var crossed := false
+	for i in 400:
+		b.integrate(SimConsts.DT, env)
+		if b.pos.x >= to.x:
+			crossed = true
+			break
+		bow = maxf(bow, absf(b.pos.z))
+		if b.grounded:
+			break
+	check(crossed, "a 24 m/s bent drive must reach a target 20 m out")
+	check_less(absf(b.pos.z - to.z), 1.0, "the bent ball must still cross the target on line")
+	check_greater(bow, 0.2, "the flight must actually leave the chord on the way")
+
+
+func _ground_solve_lands_a_curled_driven_pass() -> void:
+	# `ground_launch` with the spin in hand: a driven ball with sidespin must
+	# drift off its chord in the hops and still decay to its arrival pace on
+	# the line it was aimed down. Same structure as the bent shot's test.
+	var env := dry_env()
+	var solver := SimBallistics.new()
+	var curl := 25.0
+	var launch := solver.ground_launch(22.0, 7.0, env, curl)
+	var speed: float = launch["speed"]
+	var loft: float = launch["loft"]
+	var backspin: float = launch["backspin"]
+	var yaw: float = launch["yaw"]
+	check_greater(loft, 0.0, "a 22 m ball arriving at 7 m/s must be driven")
+	var dir := Vector3(1.0, 0.0, 0.0).rotated(Vector3.UP, yaw)
+	var vel := dir * speed
+	vel.y = loft
+	var spin := -Vector3.UP.cross(dir) * (speed / SimConsts.BALL_RADIUS * backspin) \
+		+ Vector3.UP * curl
+	var b := launch_ball(vel, spin, Vector3(0.0, SimConsts.BALL_RADIUS, 0.0))
+	var excursion := 0.0
+	var t := 0.0
+	while t < 6.0:
+		b.integrate(SimConsts.DT, env)
+		t += SimConsts.DT
+		excursion = maxf(excursion, absf(b.pos.z))
+		if b.vel.length() <= 7.0:
+			break
+	check_near(b.pos.x, 22.0, 2.0, "the curled drive must still decay to pace near its distance")
+	check_less(absf(b.pos.z), 0.8, "the curled drive must come back onto its line")
+	check_greater(excursion, 0.1, "the hops must actually leave the chord on the way")
+
+	# And the *meant* bend, which is a lifted ball: the cross's spin, clipped
+	# up (`BEND_LIFT`), must bend visibly more than the flat drive and still
+	# come back onto its line.
+	var l2 := solver.ground_launch(22.0, 7.0, env, 36.0, SimBallistics.BEND_LIFT)
+	var s2: float = l2["speed"]
+	var y2: float = l2["yaw"]
+	var dir2 := Vector3(1.0, 0.0, 0.0).rotated(Vector3.UP, y2)
+	var vel2 := dir2 * s2
+	vel2.y = float(l2["loft"]) + SimBallistics.BEND_LIFT
+	var spin2 := -Vector3.UP.cross(dir2) * (s2 / SimConsts.BALL_RADIUS * float(l2["backspin"])) \
+		+ Vector3.UP * 36.0
+	var b2 := launch_ball(vel2, spin2, Vector3(0.0, SimConsts.BALL_RADIUS, 0.0))
+	var excursion2 := 0.0
+	var t2 := 0.0
+	while t2 < 6.0:
+		b2.integrate(SimConsts.DT, env)
+		t2 += SimConsts.DT
+		excursion2 = maxf(excursion2, absf(b2.pos.z))
+		if b2.vel.length() <= 7.0:
+			break
+	check_less(absf(b2.pos.z), 1.0, "the lifted bend must come back onto its line")
+	check_greater(excursion2, 0.3, "the lifted bend must be a visible one")
+	check_greater(excursion2, excursion, "the lift is what buys the bend")
+
+
+func _bow_prediction_matches_a_simulated_flight() -> void:
+	# `curl_bow` against the integrator, by two-flight difference -- the way
+	# every lateral figure in this project has been measured. Mid-journey,
+	# because that is where the uncorrected path sits `a t^2 / 8` off its
+	# launch line, which is the bow the predictor claims. Loose on purpose:
+	# same sign, half to double.
+	var env := dry_env()
+
+	# In clean air.
+	var straight := launch_ball(Vector3(18.0, 7.0, 0.0))
+	var curled := launch_ball(Vector3(18.0, 7.0, 0.0), Vector3(0.0, 6.0, 0.0))
+	var total := 0.0
+	for i in 300:
+		straight.integrate(SimConsts.DT, env)
+		curled.integrate(SimConsts.DT, env)
+		if straight.grounded:
+			break
+		total = straight.pos.x
+	var mid_diff := 0.0
+	straight = launch_ball(Vector3(18.0, 7.0, 0.0))
+	curled = launch_ball(Vector3(18.0, 7.0, 0.0), Vector3(0.0, 6.0, 0.0))
+	for i in 300:
+		straight.integrate(SimConsts.DT, env)
+		curled.integrate(SimConsts.DT, env)
+		if straight.pos.x >= total * 0.5:
+			mid_diff = curled.pos.z - straight.pos.z
+			break
+	var said := SimBallistics.curl_bow(6.0, 18.0, total)
+	check_greater(said, 0.0, "positive curl must predict a bow to the left")
+	check_less(mid_diff, 0.0, "positive curl must deflect toward -z, the striker's left")
+	check_between(absf(mid_diff) / maxf(said, 0.001), 0.5, 2.0,
+		"the airborne bow prediction must sit within half to double the flight")
+
+	# And in the driven pass's hops.
+	var solver := SimBallistics.new()
+	var launch := solver.ground_launch(22.0, 7.0, env)
+	var speed: float = launch["speed"]
+	var loft: float = launch["loft"]
+	var backspin: float = launch["backspin"]
+	var base_spin := Vector3(0.0, 0.0, speed / SimConsts.BALL_RADIUS * backspin)
+	var s2 := launch_ball(Vector3(speed, loft, 0.0), base_spin)
+	var c2 := launch_ball(Vector3(speed, loft, 0.0), base_spin + Vector3.UP * 25.0)
+	var drift := 0.0
+	var t := 0.0
+	while t < 6.0:
+		s2.integrate(SimConsts.DT, env)
+		c2.integrate(SimConsts.DT, env)
+		t += SimConsts.DT
+		if s2.pos.x >= 11.0:
+			drift = c2.pos.z - s2.pos.z
+			break
+	var said_driven := SimBallistics.curl_bow(25.0, speed, 22.0, SimBallistics.DRIVEN_BOW_SHARE)
+	check_less(drift, 0.0, "the driven ball's hops must drift toward the striker's left too")
+	check_between(absf(drift) / maxf(said_driven, 0.001), 0.5, 2.0,
+		"the driven bow prediction must sit within half to double the hops")
+
+	# And the lifted bend's share, against the lifted flight.
+	var s3 := launch_ball(Vector3(speed, loft + SimBallistics.BEND_LIFT, 0.0), base_spin)
+	var c3 := launch_ball(Vector3(speed, loft + SimBallistics.BEND_LIFT, 0.0),
+		base_spin + Vector3.UP * 36.0)
+	var drift3 := 0.0
+	var t3 := 0.0
+	while t3 < 6.0:
+		s3.integrate(SimConsts.DT, env)
+		c3.integrate(SimConsts.DT, env)
+		t3 += SimConsts.DT
+		if s3.pos.x >= 11.0:
+			drift3 = c3.pos.z - s3.pos.z
+			break
+	var said_lifted := SimBallistics.curl_bow(36.0, speed, 22.0, SimBallistics.BEND_BOW_SHARE)
+	check_between(absf(drift3) / maxf(said_lifted, 0.001), 0.5, 2.0,
+		"the lifted bow prediction must sit within half to double the flight")
+
+
 func _ball_never_sinks() -> void:
 	var env := dry_env()
 	var rng := SimRng.new(4)
@@ -168,3 +328,37 @@ func _forecast_agrees_with_the_integrator() -> void:
 	var predicted := traj.position_at(1.0)
 	advance(b, env, 1.0)
 	check_less(predicted.distance_to(b.pos), 0.9, "the shared forecast must track the real integrator")
+
+
+func _ground_predictors_are_the_integrator() -> void:
+	# The decision layer prices every ground pass off `ground_pass_speed` and
+	# `ground_travel_time`, and the touch strikes what `ground_pass_speed`
+	# says. So the ball that is priced has to be the ball that is struck: the
+	# same launch, integrated at the match step, arrives when and as fast as
+	# the table said. Held to the grid, not to a tuned figure.
+	var env := dry_env()
+	env.surface_amplitude = 0.0
+	env.camber = 0.0
+	var solver := SimBallistics.new()
+	for pair in [[8.0, 6.0], [15.0, 4.0], [20.0, 8.0], [30.0, 10.0], [40.0, 12.0]]:
+		var distance: float = pair[0]
+		var pace: float = pair[1]
+		var speed := solver.ground_pass_speed(distance, pace, env)
+		var loft := SimBallistics.drive_loft(speed)
+		var b := launch_ball(Vector3(speed, loft, 0.0),
+			Vector3(0.0, 0.0, speed / SimConsts.BALL_RADIUS * SimBallistics.drive_backspin(loft)))
+		var t := 0.0
+		while b.pos.x < distance and t < 10.0:
+			b.integrate(SimConsts.DT, env)
+			t += SimConsts.DT
+		var label := "%.0f m at %.0f m/s" % [distance, pace]
+		check_near(b.vel.length(), pace, 0.25, "the struck ball must arrive at the pace it was solved for, " + label)
+		check_near(t, solver.ground_travel_time(distance, speed, env), 0.03,
+			"the priced journey must be the ball's, " + label)
+		check_near(b.vel.length(), solver.ground_pace_after(speed, distance, env), 0.25,
+			"the pace read back must be the ball's, " + label)
+		while not (b.grounded and b.ground_speed() < 1e-3) and t < 20.0:
+			b.integrate(SimConsts.DT, env)
+			t += SimConsts.DT
+		check_near(b.pos.x, solver.ground_pass_range(speed, env), 0.5,
+			"the run to a stop must be the ball's, " + label)

@@ -143,6 +143,10 @@ usage: ./run.sh <command> [args]
                             display (SHOT_AT, SHOT_SPEED, SHOT_PATH, SHOT_RES)
   poses                     render every animation state side by side, labelled
                             (POSE_U picks where in each arc to freeze)
+  ramp [--flat]             the FIFA ramp test on the match ball: four surfaces
+      [--speed S]           side by side, a 1 m ramp at 45 degrees, and the
+      [--shot PATH --at T]  4-10 m band the standard wants. Needs a display;
+                            --shot renders one frame at T seconds and quits
   parade [--seed N]         a rank of that seed's players, close up, turning,
       [--page N] [--still]  each captioned with number, name, height and
       [--turn DEG]          appearance seed. The squad is the match squad, so a
@@ -402,6 +406,13 @@ case "$cmd" in
 		xvfb-run -a "$GODOT" res://presentation/match_3d.tscn --resolution 1920x1080 \
 			-- --poses --pose-u "${POSE_U:-0.55}" --shot 1 --shot-path "$out" "$@"
 		echo "wrote $out"
+		;;
+	ramp)
+		if printf '%s\n' "$@" | grep -qx -- "--shot"; then
+			exec xvfb-run -a -s "-screen 0 1920x1080x24" \
+				"$GODOT" res://presentation/ramp.tscn -- "$@"
+		fi
+		exec "$GODOT" res://presentation/ramp.tscn -- "$@"
 		;;
 	parade)
 		# The rank of players, close up and numbered. Same squad a match of that
