@@ -118,7 +118,7 @@ func _is_pullback(c: Dictionary, mark: float) -> bool:
 func _row(ctx: SimContext, man: SimPlayer, c: Dictionary, parts: PackedFloat32Array,
 		at: int, mark: float) -> void:
 	var kind: String = ["hold", "dribble", "pass", "lofted", "through", "cross",
-		"shot", "clear", "set", "dummy"][int(c["action"])]
+		"shot", "clear", "set", "dummy", "feint"][int(c["action"])]
 	var label := kind
 	var target := int(c.get("target", -1))
 	if target >= 0:

@@ -150,7 +150,7 @@ static func _acts(list: Array[SimScenario], trials: int, quality: float) -> void
 	var rows := {}
 	for s in list:
 		var totals := PackedInt32Array()
-		totals.resize(SimTelemetry.TOUCH_NAMES.size() + 3)
+		totals.resize(SimTelemetry.TOUCH_NAMES.size() + 4)
 		for i in trials:
 			var opts := SimRunner.Options.new()
 			opts.seed_value = SEED_BASE + i
@@ -161,9 +161,10 @@ static func _acts(list: Array[SimScenario], trials: int, quality: float) -> void
 			var r := s.run(SimRunner.build(opts))
 			for k in r.acts.size():
 				totals[k] += r.acts[k]
-			totals[totals.size() - 3] += r.duels
-			totals[totals.size() - 2] += r.offsides
-			totals[totals.size() - 1] += r.fouls
+			totals[totals.size() - 4] += r.duels
+			totals[totals.size() - 3] += r.offsides
+			totals[totals.size() - 2] += r.fouls
+			totals[totals.size() - 1] += r.feints
 		rows[s.name] = totals
 		for k in totals.size():
 			if totals[k] > 0 and not shown.has(k):
@@ -175,9 +176,9 @@ static func _acts(list: Array[SimScenario], trials: int, quality: float) -> void
 		if k < SimTelemetry.TOUCH_NAMES.size():
 			names.append(SimTelemetry.TOUCH_NAMES[k].substr(0, 5))
 		else:
-			names.append(["duel", "ofsd", "foul"][k - SimTelemetry.TOUCH_NAMES.size()])
+			names.append(["duel", "ofsd", "foul", "feint"][k - SimTelemetry.TOUCH_NAMES.size()])
 	print("")
-	print("What the attacking side played, per trial  (touch kinds, then duels, offsides, fouls)")
+	print("What the attacking side played, per trial  (touch kinds, then duels, offsides, fouls, feints)")
 	print("  a kind nothing ever played is not a column: the act was never chosen anywhere")
 	var head := "  %-16s" % ""
 	for n in names:

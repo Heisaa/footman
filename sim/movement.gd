@@ -648,6 +648,14 @@ const RUN_ON_THROUGH := 3.0
 const RUN_ON_AHEAD := 2.0
 
 
+## Defenders read the body. With the ball at a carrier's feet, the chaser
+## closes half-way between the ball and where the carrier's hips say the next
+## touch goes -- `READ_AHEAD`, the next touch's length at a walk -- inside
+## `READ_RANGE`. It is what a feint sells to.
+const READ_AHEAD := 1.5
+const READ_RANGE := 4.5
+
+
 static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 	# An arm that wants the body held sets a look; every other arm faces the run.
 	p.look_target = Vector3.INF
@@ -679,6 +687,14 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 					var on := SimConsts.horizontal(dest - point)
 					if on.length() > 1.0:
 						point += on / on.length() * RUN_ON_THROUGH
+		# Their man on the ball: read his body.
+		var holder_id := ctx.ball.last_touch_player
+		if holder_id >= 0 and holder_id != p.id and ctx.players[holder_id].team != p.team:
+			var holder: SimPlayer = ctx.players[holder_id]
+			var at := ctx.ball.ground_pos()
+			if holder.on_pitch and holder.dist_to(at) < SimConsts.CONTROL_RANGE \
+					and p.dist_to(at) < READ_RANGE:
+				point = point.lerp(at + holder.heading_dir() * READ_AHEAD, 0.5)
 		# A chaser coming from behind a man in possession runs round him rather
 		# than into the back of him.
 		var recovery := _recovery_weight(ctx, p)

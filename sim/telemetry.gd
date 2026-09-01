@@ -30,12 +30,14 @@ enum Ev {
 	## these are ints in a hashed log, and renumbering the enum would move every
 	## digest for nothing.
 	POSSESSION_END,
+	## A body sold without the ball (`SimDecision._add_feint`). Appended, as above.
+	FEINT,
 }
 
 const EV_NAMES := [
 	"kickoff", "touch", "pass_attempt", "pass_outcome", "shot", "duel", "foul",
 	"card", "recovery", "pattern", "phase_change", "goal", "offside", "set_piece",
-	"period", "substitution", "save", "out_of_play", "possession_end",
+	"period", "substitution", "save", "out_of_play", "possession_end", "feint",
 ]
 
 ## Touch kinds. Shared with the touch module.

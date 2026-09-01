@@ -160,6 +160,9 @@ class Result extends RefCounted:
 	var duels := 0
 	var offsides := 0
 	var fouls := 0
+	## Bodies sold without the ball, by the attacking side. No touch, so not in
+	## `acts`; its own count for the same table.
+	var feints := 0
 	## Filled only when the scenario is `traced`.
 	var log: Array = []
 
@@ -360,6 +363,8 @@ func run(m: SimMatch) -> Result:
 				r.offsides += 1
 			elif kind == SimTelemetry.Ev.FOUL:
 				r.fouls += 1
+			elif kind == SimTelemetry.Ev.FEINT and int(e.get("team", -1)) == attacking_team:
+				r.feints += 1
 			elif kind == SimTelemetry.Ev.GOAL:
 				if int(e.get("team", -1)) == attacking_team:
 					scored = true

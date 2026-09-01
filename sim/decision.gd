@@ -14,7 +14,9 @@ extends RefCounted
 ## and the counter-attacking threat conceded on a turnover are directly
 ## comparable.
 
-enum Action { HOLD, DRIBBLE, GROUND_PASS, LOFTED_PASS, THROUGH_BALL, CROSS, SHOOT, CLEAR, SET, DUMMY }
+## `FEINT` is appended: the enum's numbers index the lost/calib tallies and
+## the probes' name tables.
+enum Action { HOLD, DRIBBLE, GROUND_PASS, LOFTED_PASS, THROUGH_BALL, CROSS, SHOOT, CLEAR, SET, DUMMY, FEINT }
 
 ## Which term an option that was on the list lost on.
 ##
@@ -593,12 +595,15 @@ const REGAIN_WINDOW := 2.0
 ## answered by reading a line rather than by adding an instrument.
 ##
 ## Indexed by `RARE_ACTS`. One-way, like every tally here.
-const RARE_ACTS := ["chip", "round him", "dummy", "cut back", "open it", "bend it", "trivela"]
+const RARE_ACTS := ["chip", "round him", "dummy", "cut back", "open it", "bend it", "trivela", "feint"]
 static var rare_offered := PackedInt32Array()
 static var rare_played := PackedInt32Array()
 
 
 static func reset_rare() -> void:
+	feint_gate.resize(FEINT_GATES.size())
+	for i in FEINT_GATES.size():
+		feint_gate[i] = 0
 	rare_offered.resize(RARE_ACTS.size())
 	rare_played.resize(RARE_ACTS.size())
 	for i in RARE_ACTS.size():
@@ -638,6 +643,7 @@ const RARE_PULLBACK := 3
 const RARE_OPENING := 4
 const RARE_BEND := 5
 const RARE_TRIVELA := 6
+const RARE_FEINT := 7
 
 ## Measured on the day it landed, twenty seeds: **it costs 1.58 goals a match**
 ## (4.04 to 2.46) and 0.07 of the conversion rate. That is the largest single
@@ -705,6 +711,10 @@ static func _joint(a: float, b: float, c: float) -> float:
 ## pace. See `_try_beat`.
 const FEINT_RANGE := 3.2
 const FEINT_COST := 0.55
+## The feint as a candidate (`_add_feint`): how long the body is sold before
+## the ball moves. A quarter of a second is a dropped shoulder, and it is what
+## the act costs against knocking it past him at once.
+const FEINT_HOLD := 0.25
 const DRIVEN_LANE := 0.55
 const DRIVEN_PACE := 1.9
 const DRIVEN_TOUCH := 0.82
@@ -860,6 +870,7 @@ static func _generate(ctx: SimContext, player: SimPlayer) -> float:
 	_add_pullback(ctx, player, _uncontrolled)
 	_add_dribbles(ctx, player, _uncontrolled, challenger, regain)
 	_add_opening(ctx, player, _uncontrolled, challenger)
+	_add_feint(ctx, player, _uncontrolled, challenger)
 	_add_hold(ctx, player, _uncontrolled, regain)
 	_add_set_touch(ctx, player, _uncontrolled)
 	if _uncontrolled:
@@ -3242,6 +3253,88 @@ static func _add_opening(ctx: SimContext, player: SimPlayer, uncontrolled: bool,
 		_note_rare(RARE_OPENING, false)
 
 
+## The feint: a body turned without the ball, and the knock the other way.
+##
+## `_try_beat` already rolls a feint from a standstill *inside* a scored touch,
+## which is a cut priced as the touch it rides on. This is the act on its own:
+## the carrier stands, the man is closing on him, and he sells a step at the
+## man for `FEINT_HOLD`, then knocks it past him on the scored probe across
+## him. Priced as a lottery in front of that probe: with `beat_odds` the man is
+## left -- his race for the landing void, so the probe's `success` over its own
+## `escape` -- and otherwise the probe as it stands, which is generous by the
+## quarter of a second given away. The gain and the loss are the probe's, a
+## quarter of a second later. Offered on both sides, whichever has a probe;
+## `RARE_FEINT` counts whether it was on the list at all, which is the first
+## thing to know about it (CLAUDE.md, "a value knob cannot create an option").
+static func _add_feint(ctx: SimContext, player: SimPlayer, uncontrolled: bool, challenger: SimPlayer) -> void:
+	if feint_gate.size() != FEINT_GATES.size():
+		feint_gate.resize(FEINT_GATES.size())
+	if uncontrolled or challenger == null or challenger.recovery_ticks > 0:
+		feint_gate[0] += 1
+		return
+	if player.speed() >= 1.5:
+		feint_gate[1] += 1
+		return
+	var gap := challenger.dist_to(player.pos)
+	if gap > FEINT_RANGE or gap < 1e-3:
+		feint_gate[2] += 1
+		return
+	var to_me := SimConsts.horizontal(player.pos - challenger.pos) / gap
+	var closing: float = challenger.vel.dot(to_me)
+	if closing < 1.5:
+		feint_gate[3] += 1
+		return
+	var to_man := -to_me
+	var odds := beat_odds(player, challenger, closing, true)
+	var offered := false
+	for side in [-1.0, 1.0]:
+		var want := Vector3(-to_man.z * side, 0.0, to_man.x * side)
+		var probe := {}
+		var best := 0.5
+		for c in _candidates:
+			if int(c["action"]) != Action.DRIBBLE or c.has("push") or c.has("opening"):
+				continue
+			var d: float = Vector3(c["dir"]).dot(want)
+			if d > best:
+				best = d
+				probe = c
+		if probe.is_empty():
+			feint_gate[4] += 1
+			continue
+		var stood: float = float(probe["success"])
+		var left: float = clampf(stood / maxf(float(probe.get("escape", 1.0)), 0.05), stood, 0.98)
+		_candidates.append({
+			"action": Action.FEINT,
+			"point": probe["point"],
+			"end": probe["end"],
+			"dir": probe["dir"],
+			"sell": to_man,
+			"escape": probe["escape"],
+			"away": probe["away"],
+			"space": probe["space"],
+			"max_ahead": probe.get("max_ahead", INF),
+			"success": clampf(odds * left + (1.0 - odds) * stood, 0.0, 0.98),
+			"gain": probe["gain"],
+			"loss": probe["loss"],
+			"bias": float(probe.get("bias", 1.0)),
+			"seconds": float(probe.get("seconds", DISCOUNT_SECONDS)) + FEINT_HOLD,
+			"odds": odds,
+		})
+		_keep_parts()
+		_keep_factors()
+		offered = true
+	if offered:
+		feint_gate[5] += 1
+		_note_rare(RARE_FEINT, false)
+
+
+## Which test the feint failed, per decision it was asked on. The off-ball
+## table's "first test failed" for this act: a zero on the list is a gate
+## before it is a price. Reset with the rare acts.
+const FEINT_GATES := ["no man closing", "moving", "too far", "not committed", "no probe", "offered"]
+static var feint_gate := PackedInt32Array()
+
+
 ## The race for a dribble's landing point, between the carrier and the man
 ## closing on him.
 ##
@@ -3930,13 +4023,25 @@ static func _try_beat(ctx: SimContext, player: SimPlayer, dir: Vector3) -> bool:
 	var closing: float = challenger.vel.dot(to_me / gap)
 	if closing < 1.5:
 		return false
-	tally_feint += 1
+	return _beat_roll(ctx, player, challenger, closing, standing)
+
+
+## The odds the man is left. One model, so the candidate that prices a feint
+## (`_add_feint`) and the roll that settles one read the same number.
+static func beat_odds(player: SimPlayer, challenger: SimPlayer, closing: float, standing: bool) -> float:
 	var edge: float = (player.attrs.dribbling * 0.6 + player.attrs.agility * 0.4) \
 		- (challenger.attrs.tackling * 0.5 + challenger.attrs.agility * 0.5)
 	var p: float = BEAT_BASE * clampf(0.5 + edge, 0.15, 0.95) * clampf(closing / 6.0, 0.4, 1.2)
 	if standing:
 		p *= lerpf(FEINT_COST, 1.0, player.attrs.agility)
-	if ctx.rng.chance(clampf(p, 0.02, 0.7)):
+	return clampf(p, 0.02, 0.7)
+
+
+## The roll, and what follows it: the man left for `BEAT_RECOVERY`, or the foul.
+## True when the foul stopped play.
+static func _beat_roll(ctx: SimContext, player: SimPlayer, challenger: SimPlayer, closing: float, standing: bool) -> bool:
+	tally_feint += 1
+	if ctx.rng.chance(beat_odds(player, challenger, closing, standing)):
 		tally_beat += 1
 		# Left. The recovery is the turn he now has to make from a standing
 		# start, and it is what the eye reads as a man being beaten.
@@ -6050,6 +6155,25 @@ static func _execute(ctx: SimContext, player: SimPlayer, c: Dictionary, uncontro
 			SimTouch.dribble(ctx, player, c["dir"], c["space"], float(c.get("push", 0.0)), float(c.get("away", 0.0)), float(c.get("max_ahead", INF)))
 			player.move_target = c["point"]
 			player.move_speed_cap = INF
+		Action.FEINT:
+			# The body sold at the man, the ball untouched for the hold, and
+			# the man rolled for now: he has committed, and what he has
+			# committed to is settled here. The knock past him is the next
+			# decision's, with the man in recovery and the body to turn back.
+			_note_rare(RARE_FEINT, true)
+			var sell: Vector3 = c["sell"]
+			player.look_target = player.pos + sell * 2.0
+			player.touch_cooldown = maxf(player.touch_cooldown, FEINT_HOLD)
+			ctx.log_event(SimTelemetry.Ev.FEINT, {
+				"player": player.id, "team": player.team, "pos": ctx.ball.ground_pos(),
+			})
+			var challenger := ctx.nearest_challenger(player)
+			if challenger != null and challenger.recovery_ticks <= 0:
+				var gap := challenger.dist_to(player.pos)
+				if gap > 1e-3:
+					var closing: float = challenger.vel.dot(
+						SimConsts.horizontal(player.pos - challenger.pos) / gap)
+					_beat_roll(ctx, player, challenger, closing, true)
 		Action.CLEAR:
 			SimTouch.clearance(ctx, player)
 		Action.SET:

@@ -4795,6 +4795,11 @@ static func _new_mechanics() -> void:
 			parts.append("%s %d offered / %d played" % [SimDecision.RARE_ACTS[i],
 				SimDecision.rare_offered[i], SimDecision.rare_played[i]])
 		print("  and were they even on the list:  %s" % ",  ".join(parts))
+	if SimDecision.feint_gate.size() == SimDecision.FEINT_GATES.size():
+		var gates := PackedStringArray()
+		for i in SimDecision.FEINT_GATES.size():
+			gates.append("%s %d" % [SimDecision.FEINT_GATES[i], SimDecision.feint_gate[i]])
+		print("  the feint, first test failed:  %s" % ",  ".join(gates))
 	if SimDecision.shortlisted + SimDecision.unseen > 0:
 		print("  teammates he could not see, and so never weighed:  %d of %d (%.0f%%)" % [
 			SimDecision.unseen, SimDecision.shortlisted + SimDecision.unseen,

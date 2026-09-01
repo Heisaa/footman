@@ -137,7 +137,7 @@ const TERM_SLOT := [
 
 ## Mirrors `SimDecision.Action`, deliberately rather than importing it: this file
 ## is referenced from `SimDecision`, and naming it back would be a cycle.
-const ACTION_NAMES := ["hold", "carry", "pass", "lofted", "through", "cross", "shot", "clear", "set", "dummy"]
+const ACTION_NAMES := ["hold", "carry", "pass", "lofted", "through", "cross", "shot", "clear", "set", "dummy", "feint"]
 const ACTIONS := 10
 
 const APPLIED := 0

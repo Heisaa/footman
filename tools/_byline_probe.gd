@@ -47,7 +47,7 @@ func _init() -> void:
 
 func _row(ctx: SimContext, man: SimPlayer, c: Dictionary, score: float) -> void:
 	var kind: String = ["hold", "dribble", "pass", "lofted", "through", "cross",
-		"shot", "clear", "set", "dummy"][int(c["action"])]
+		"shot", "clear", "set", "dummy", "feint"][int(c["action"])]
 	var label := kind
 	var target := int(c.get("target", -1))
 	var p: Vector3 = c.get("point", man.pos)
