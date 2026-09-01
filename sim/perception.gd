@@ -170,6 +170,29 @@ static func view_half(observer: SimPlayer, scan: float) -> float:
 		(observer.attrs.awareness + clampf(scan, 0.0, 1.0)) * 0.5)
 
 
+## Whether the observer has had the target in his eyes lately: inside the arc
+## now, or inside it within `SEEN_MEMORY`. `can_see` with the near rule taken
+## off -- knowing a man is behind you is not seeing him strike a ball.
+static func saw_recently(ctx: SimContext, observer: SimPlayer, target: SimPlayer) -> bool:
+	if not ENABLED:
+		return true
+	var to := SimConsts.horizontal(target.pos - observer.pos)
+	var d := to.length()
+	if d < 0.1:
+		return true
+	var facing := SimConsts.horizontal(observer.heading_dir())
+	var f := facing.length()
+	if f < 0.01:
+		return true
+	if to.dot(facing) / (d * f) >= cos(view_half(observer, 0.5)):
+		return true
+	var idx := observer.id * ctx.players.size() + target.id
+	if idx >= ctx.seen_ticks.size():
+		return true
+	var since := float(ctx.tick_index - ctx.seen_ticks[idx]) * SimConsts.DT
+	return since <= lerpf(SEEN_MEMORY_POOR, SEEN_MEMORY_GOOD, observer.attrs.awareness)
+
+
 static func can_see(ctx: SimContext, observer: SimPlayer, target: SimPlayer, scan: float = 0.5) -> bool:
 	if not ENABLED:
 		return true

@@ -134,6 +134,10 @@ var spell_prep_seconds := 0.0
 ## second or two afterwards his priority is to secure it rather than to advance
 ## it; `SimDecision.regain_urgency` reads it and decays it.
 var regain_tick := -100000
+## The tick the ball came into his view, or -1 while it is behind him. Stamped
+## by `SimDuel.resolve_contacts`, which lets him play a ball he did not see
+## struck only a reaction after this.
+var ball_seen_tick := -1
 ## Tick at which the ball was last taken off this player by an opponent. Read by
 ## the chase assignment: a man who has just been beaten is not the one who
 ## should be leading the press back.

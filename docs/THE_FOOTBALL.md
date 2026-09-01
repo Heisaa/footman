@@ -15,13 +15,16 @@ the commit that built it.
 
 **The attacking rows are the current pass** (`PLAN.md` §11.4). The defending rows
 and the keeper's saves are the next one, held on purpose — a defending row marked
-*absent* is scheduled, not overlooked.
+*absent* is scheduled, not overlooked. And *built* on an attacking row means
+judged against today's defence: the defensive pass ends with a re-watch of the
+attack (the order, below), expecting rework.
 
 ## With the ball at his feet
 
 | Behaviour | | Where |
 |---|---|---|
 | Pass to feet | built | `SimDecision._add_passes` |
+| The ball to feet aimed off the marker, a step to the free side | built | `SimDecision.FREE_SIDE_STEP` |
 | Through ball in behind | built | `_add_passes` |
 | Shot, with a chosen placement | built | `_add_shot`, `_pick_shot_aim` |
 | Clearance | built | `_add_clear` |
@@ -65,7 +68,7 @@ and the keeper's saves are the next one, held on purpose — a defending row mar
 | A pattern's runner being aimed at | built — `destination_for` did not read `movement_override`, so a man a pattern had sent was passed to by dead reckoning | `SimOffBall.destination_for` |
 | Break on the counter | built | `SimDecision.break_on` prices the ball, `SimOffBall` sends the runners |
 | Attack a cross — near post, far post, the pull-back | built — the three posts are authored in `_box_point` and `_add_crosses`, and the pull-back is its own act along the floor. It fires in `cross-pullback` and **never in a match**: 0 offered over five seeds of ten minutes (2026-08-25), because nothing takes the ball to the byline — 0% of passes and 4% of touches start in the final sixth. The act is built; the approach is **51** | `SimDecision._add_pullback` |
-| Arrive as the ball does, easing the last metres | partial — box runners and runs in behind do; shows and drifts stop on their spot | `SimOffBall.point_for` |
+| Arrive as the ball does, easing the last metres | built — box runners and runs in behind did; the show and the drift now hold the last stride until the ball is struck to them | `SimOffBall.MEET_EASE` |
 | Link the defence to the strikers, holding height and width | partial — shape slides with play; there are no authored link players, and the middle third holds 78% of touches (**30**) | `SimMovement.shape_position` |
 | Be served when the run is made | partial — a `box` run is made 26 times a match and receives the ball 0% of the time (**33**) | `SimOffBall`, `SimDecision._add_passes` |
 
@@ -78,6 +81,7 @@ and the keeper's saves are the next one, held on purpose — a defending row mar
 | Mark a man | built | `SimPlayer.marking_target` |
 | Recovery run | built | `SimMovement` |
 | Intercept, tackle, poke it away | built | `SimDuel`, `SimTouch.poke` |
+| React to the strike before running, as before reaching — a ball played out of his sight is not chased until it is news | built | `SimDuel.ball_news_age`, `SimMovement._recompute_target` |
 | Hold a defensive line, with offside off it | built | `SimReferee.offside_line` |
 | Clear under pressure | built | `_add_clear` |
 | Block a shot | partial — a defender in the path can take it; nobody throws himself in the way (**5**) | |
@@ -344,7 +348,7 @@ the byline pair, and `cross-loaded`, which is `cross-right` with three of ours
 already running at the box and nothing else changed. First numbers, n=40:
 
 ```
-                     goal  saved    off  block   lost   none | shot s shot m box s  cross drop m | touch
+					 goal  saved    off  block   lost   none | shot s shot m box s  cross drop m | touch
   cross-early          0%     2%     2%     2%    82%    10% |   4.64   18.0  0.93   0.90    5.1 |   6.2
   cross-right          5%     2%     5%     0%    82%     5% |   2.78   13.7  1.26   0.95    4.4 |   5.9
   cross-left          12%     5%     5%     0%    72%     5% |   3.22   14.7  1.32   0.82    6.4 |   6.3
@@ -373,6 +377,66 @@ line with two men arriving at the edge of the area, where `SimDecision._add_pull
 can fire and does, 0.25 a trial; the rest is 1.4 dribbles and 0.6 through balls a
 trial. When it is played the shot comes from **5.2 m**, which is what the act is
 for. 92% of trials end `lost`.
+
+**The ball played into the keeper's hands, 2026-08-29** (owner, from a bookmark:
+*sometimes it looks like he is passing straight to the opponents*). `cross-pullback`
+seed 12, tick 28: the winger on the byline plays a through ball to a point
+**1.0 m from the keeper**, succ 0.38, 99% of the pick. Two faults.
+
+**Pitch control had no reach.** `_lane_survival` has always given a defender
+`CONTROL_RANGE` for free -- he sticks a leg out -- and `SimValueField._control`
+never did: the keeper a metre off the point, drifting away at 2.8 m/s, was priced
+at 1.22 s to turn and *stand on it*, level with a receiver ten metres away at
+full pace, and then charged `AIMED_STEP_IN` on top. `space` said 0.79 for a ball
+into his hands. `time_to_reach` now runs the race to the edge of a man's reach:
+`CONTROL_RANGE` outfield, `SimKeeper.REACH_STANDING` for a keeper. That ball is
+0.15. `./run.sh control` block A at 1 m went 0.84 to 0.11 with the engine keeping
+100% -- `AIMED_STEP_IN` was fitted to a model without reach and the comment's own
+rows are stale either way; a refit is a tuning question and waits.
+
+**And nothing on the list could see two touches ahead.** At 0.15 the ball into
+the keeper still won 92%: gain 0.35 against a hold at 0.065. The touch sideways
+that would have opened the cut-back read as "0.6 m left, gain 0.03", because a
+carry is worth the grass it lands on. `_add_opening` offers the sideways touch
+again, worth the through ball or cut-back it opens: the scored probe's own odds,
+times the pass re-priced from where the touch leaves the ball with the challenger
+where he will be by then -- still closing on where the ball *was*, for the length
+of the touch. Only when the re-priced ball clears the one-step ball by
+`OPENING_MIN`. At that tick it puts `carry, then through -> #10` on the list at
+0.033 against the blocked ball's 0.056 -- a candidate now, and the rest is the
+pass model's generosity to that 0.15. Counted under `open it` in the rare acts.
+Measured on `cross-pullback`, 40 trials: offered in 27, played once, never top
+of the list -- compound success about 0.12 (sideways touch under pressure ~0.45
+x re-priced pass ~0.3) against a cut-back worth 0.09. The parts say no, and the
+parts are the carry model's price on a sideways touch, the cut-back's worth, and
+the lane.
+
+**The lane priced by facing, 2026-08-29** (owner: *price the lane by facing*;
+then *reach should not be instant -- a player reacts and reaches out with his leg
+if it is not struck right at his feet*). The lane read bodies and not which way
+they pointed, and the contact rule was worse: any ball inside `CONTROL_RANGE`
+was played the tick it got there, whichever way the man faced, whether or not
+he saw it struck. Priced in the lane alone the models disagreed at once --
+`./run.sh control` block B said 0.44 at 1 m against 82% cut out -- so the
+mechanic went into the contact rule first and the lane reads the same facts:
+
+- `SimDuel.REACH_ARC`: a leg reaches a ball in front of the hips or beside, not
+  behind. `in_reach_arc` gates the contender; `_cut_chance` meets the ball where
+  it first enters the arc rather than at the foot of the perpendicular.
+- `SimDuel._ready_for`: a ball not at his feet (`AT_FEET`) takes a reaction from
+  when it became news -- the strike, if he had the striker in his eyes
+  (`SimPerception.saw_recently`, arc plus memory; his own side always did),
+  otherwise the tick it came into view. `_facing_cost` charges the lane the
+  same second reaction for a striker he had not seen.
+
+Block B after: 0.5 m 80% cut out against 0.07 said, 1 m 48% against 0.17, 1.5 m
+20% against 0.51 -- the same shape, the model a little keen. Blocks A and D did
+not move. **And the cut-back did not move**: lane 0.200 before and after over
+the probe's 25 seeds, `cross-pullback` goals 5% to 8% at n=40. The man 0.8 m
+off the line is the one chasing the winger, facing him, and he sees the strike;
+the back line facing its own goal is not in that lane. So facing was true and
+was not the cut-back's answer; what the scenario still wants is a defender who
+is *not* looking, which is a marking question for the defensive pass.
 
 **Where the cross is aimed and how it bends, 2026-08-23** (owner, watching
 `cross-right` and `cross-loaded`: *a lot of the crosses are aimed too much
@@ -531,7 +595,7 @@ about the flight.
 **Measured, n=40** -- against the whipped-only ball of an hour earlier:
 
 ```
-                 whipped only                 both flights
+				 whipped only                 both flights
   cross-right    lost 68%, drop 7.1 m         lost 75%, drop 3.9 m
   cross-loaded   lost 52%, drop 5.1 m         lost 52%, drop 4.0 m
   cross-deep     lost 92%, drop 9.0 m         lost 62%, drop 4.1 m
@@ -1466,8 +1530,15 @@ The subject in one line: **a positioning rule is answerable for how fast the
 point it names moves**, and its corollary — **a boolean in one is a station that
 teleports.**
 
-**Tried, measured and reverted — results, not gaps.** Each is left in the code with
-its numbers, because the next reader of the proposal will reach for the same thing:
+**Tried, measured and reverted.** Each is left in the code with its numbers,
+because the next reader of the proposal will reach for the same thing. They are
+not all the same kind of result. `CORRELATED`, `LENGTH_COST_DIRECT` and
+`line_broken` failed on **mechanism** — the thing each proposal claimed did not
+happen — and are closed. `_worth_at`, `QUOTA` and `CROSS_ON` were reverted on
+**goal cost**, which is the band-gating `CLAUDE.md` forbids, and the cost was
+measured in an engine missing the serve (**33**) and the byline (**51**) that
+would make men in the box pay. **Re-try those three after 33 and 51 land**;
+until then they are provisional, not results:
 
 - **`SimOffBall._worth_at`** — pricing the run in behind and the run into the box
   like positions cost 1.1 goals. The men who go beyond are the men who were
@@ -1500,6 +1571,102 @@ line, which is **5**.
 1. **33, second half — the runner is made and not served.** `behind` runs 52 a
    match, received about 3% of the time. `A man could be played in behind` refuses
    42% at "not moving forward yet" and offers 7%.
+   **Stages one and two of the serve, built 2026-09-01.** The run bends into a
+   channel now: `_behind_point` aims at the nearest interior gap of 4 m or more
+   between the line's defenders instead of `p.pos.z * 0.85`, and generated
+   points land 4.8-7.9 m wide of the nearest man on the line (three seeds).
+   The gate tally gained a committed-runner row, and it reversed the diagnosis:
+   a committed runner is never refused at "not moving forward yet" -- he is
+   refused at the shortlist (14-27%, perception and the 60 m cap) and at
+   striking range (36-57%), and the refused ball averages 37 m, which is the
+   lofted ball's own ground (24-55 m, aimed at his committed destination
+   through `_lead_point`). "Run too short" never fires: every "no run to make"
+   is `BEHIND_MAX_RUN` at 18 m refusing a midfielder far back, not a striker
+   on the shoulder. Offered rose from 10% to 27-29% of committed runners on
+   two seeds (the third made one run); **it scored best 0% everywhere**, so
+   the item now stands at the pick, not the offer -- and the lane refusal
+   recorded above is already known to be real football.
+   **And seen from the receiving end, owner, 2026-09-01 (`M`):** the man the
+   ball in behind is played to stops on it and turns back toward the passer
+   instead of taking it in stride past the line. The mechanism is in the code:
+   the struck ball makes its man the designated chaser (`SimMovement`), which
+   stops his off-ball errand and aims him at the intercept point -- a spot, not
+   a direction -- and `_orient_receiver` then turns any receiver moving under
+   1.6 m/s halfway between ball and goal, which is the turn the eye sees.
+   `MEET_EASE`'s release half is counted for `show` and `space` only; a `behind`
+   runner has no arriving-ball handling of his own. Taking it in stride is a
+   chase target ahead of the intercept along the run, for the man the ball is
+   for -- the serve half of this item, not a new proposal. Built the same day:
+   `SimMovement.RUN_ON_THROUGH` carries his chase target past the intercept
+   along the run. Unverified by number -- no measured fragment played a through
+   ball -- so the through-ball scenario's eye is the check.
+
+   **And the strike under it, same day, owner's eye again: too long, mostly too
+   short and slow, and into the runner's back.** The bench had it exactly --
+   `ahead` 11.5-14.1 m against `he covers` 14.8-29.0 -- and the cause was three
+   deep. `_behind_aim` capped the lead at the *destination* of the run, so every
+   flight that outlasted the run was under-led by the difference: it aims at the
+   meeting point of his flat-out run and the ball's flight now, two rounds of a
+   loop. A meeting point past the passer's reach was then not a reason to offer
+   nothing: the aim clamps to what he can strike (`clamp_to_reach`). And a
+   clamped ball crawled, because `BEHIND_ARRIVE` slows the strike for a chasing
+   man -- a man who beats the ball to the spot by a stride (`BEHIND_EARLY`) gets
+   it firm, priced as the pass to feet it has become. The bench reads met in
+   stride at 1.6 m, rolled a stride ahead, or firm to a man arrived; offered
+   went 27% to 64% of committed runners on seed 7.
+
+   **The first cut of the stride fix was a regression the scenario caught.**
+   `RUN_ON_THROUGH` ran the receiver through *every* ball while he was
+   committed, a pass to feet included, so he overran those on purpose:
+   `through-ball` read 90% lost with two touches a trial, every trial ending on
+   the first ball. Gated on the intercept sitting ahead of him along his own
+   run (`RUN_ON_AHEAD`), and with the gate the row reads lost 65%, through
+   balls **0.7 a trial against 0.1** at the 2026-08-26 measurement, box shots
+   0.72 against 0.44 (n=40, about 8 points of error on a share near a half).
+   The act the scenario is named for is played at last. In a full match it is
+   still offered and never picked -- scored best 0% -- which is where the item
+   stands. **Second look, same day: mostly too slow, some way
+   too hard** -- the two pace branches, read separately. `BEHIND_ARRIVE` 0.8 to
+   0.9, then to 1.0 on the third look ("looks like a normal pass"): under the
+   meeting-point aim the catch is geometry, so the arrival pace is only the
+   character of the ball, and at his full pace the strike is firmer and the
+   meet deeper. And the firm branch capped at the runner's own top speed instead of the
+   uncapped `arrival_pace` (11-12 m/s down to about 9.4). Both are eye
+   constants; the bench reads 0.9-3.4 m to spare in stride, and the 37 m
+   clamped ball still waits -- no ground ball covers that in the time, and that
+   geometry is the lofted ball's, refused honestly.
+
+   **Fourth look, same day: most still slow, "no chance of getting past the
+   defenders" -- and they were not through balls.** `_lead_point` follows a
+   committed run wherever it goes, so the *ordinary ground pass* to a runner in
+   behind was aimed past the line at pass-to-feet weight: the through ball's
+   slow twin, played six times as often, and the safer-priced duplicate that
+   kept the real act from ever scoring best ("price every path to the same
+   outcome"). The ground pass now stops at the believed line (`BEHIND_BREAK`);
+   the ball in behind is the through ball's act and the loft's.
+
+   **Fifth look: still slow -- and the pick was the fault, measured to its
+   factor.** `tools/_behind_probe.gd` (the pull-back probe's twin) splits the
+   through ball's success: succ 0.127 = space 0.484 x lane 0.849 x struck
+   0.620 x set 0.500, and the geometry line convicts the aim -- 11.8 m beyond
+   the line, 12.3 m from goal, **the keeper there in 1.97 s against the ball's
+   2.30**. The meeting point of a deep run lands where the keeper collects:
+   the room a ball in behind has ends at the goalkeeper, not at the paint --
+   `keeper_room`'s rule, in its fourth home. `_behind_aim` now steps the aim
+   back toward the runner until the ball beats the keeper by `KEEPER_BEAT`.
+   Probed: space 0.484 to 0.647, succ to 0.181, and the scenario's box shots
+   0.44 to 0.96 a trial with misses 8% to 2% (n=40). `set` 0.50 is the scenario's own settle and decays.
+
+   **Stage three closed the same day: the pick is won.** The probe, given
+   `score_of` per candidate, reads the through ball best on the board in the
+   set geometry -- 0.0536 against the safe pass's 0.0454 -- once the keeper
+   bound shortened the ball under `BEHIND_FREE` and the length bias stopped
+   taxing it. And the match chain runs end to end at last: over nine
+   ten-minute fragments, 69 runners, 48 offered (70%), **4 scored best, 3
+   played** -- zero on every link at the start of 2026-09-01. What remains is
+   *rate* -- how often the run is made (2 to 19 a fragment, `QUOTA` and the
+   stage-one items) and how often the pick goes through -- which is frequency
+   tuning against the owner's eye, not a mechanism, and belongs with §11.1.1.
 2. **The cross's offer rate**, which is what is left of its two thin links. The
    delivery half is answered: the ball was arriving below heading height short of
    its aim and the model was told it scattered twice as far as it does
@@ -1516,6 +1683,45 @@ line, which is **5**.
    which `chains` does not. At n=1 the switch has read 0% and 25% in one day.
 6. **`QUOTA` behind, decoy and second** — show and space are now measured, these
    three are not.
+   **51, measured to its terms, 2026-09-01** (`tools/_byline_probe.gd`: the
+   same winger at five depths on the flank, every candidate's score and the
+   carry's factors). The board is carries infield at every depth; the cross --
+   when the box is loaded -- beats the down-line carry; nothing approaches the
+   byline. Three causes, each with its number. **The map prices the byline cell
+   level with the infield one** (gain 0.022 v 0.022 at 24 m, flat at every
+   depth), so any tax decides infield. **The facing tax is the largest steer**:
+   `facing_control` reads 0.46-0.72 on any carry off the man's goal-facing,
+   every decision, and whether a multi-touch carry should pay first-touch
+   facing on its whole direction -- the locomotion layer already charges the
+   turn as time -- is the named open question this measurement leaves. And
+   `ctrl` at the down-line landing drops with depth (0.83 to 0.61), part
+   full-back, part the deep landing nearing the defence.
+
+   **Built: `_carry_delivery_gain`** -- `_carry_shot_gain`'s wide sibling: a
+   carry whose horizon lands in crossing ground is worth a share of the
+   delivery from there (the box point's map value times who owns the dropping
+   ball, `CARRY_DELIVERY_CONVERT` 0.55). Two shapes measured: with a length
+   gradient it dies under the map everywhere; flat, its signal is the box --
+   ~0.036 loaded against ~0.02 empty, "the wide man goes when his mates
+   arrive" -- and flat is what shipped. Scenario rows moved with it
+   (cross-loaded 15% goal + 30% saved against the stale table's 12+15;
+   cross-early crosses 0.93 a trial; byline and pullback unmoved), all n=40.
+   **The pull-back's two-point fix from the probe was already built** in the
+   working tree; the stale 79%-lost figure is 52% today.
+
+   **Two faults found on the way and not yet fixed, 2026-09-01.**
+   **`_lead_point` has the through ball's old under-lead, and the lofted ball
+   over the top pays it**: the lead is capped at the *destination* of a
+   committed run (`minf(span, ...)`), so a ball whose flight outlasts the run
+   is aimed where the runner will already be standing -- the exact fault
+   `_behind_aim` was cured of with the meeting-point loop, still live for the
+   loft that serves the 24-55 m runners the range gate refuses. Same fix
+   shape; mind the ball to feet, which the cap is right for.
+   **The scenario table in `docs/STATUS.md` is stale**: measured 2026-08-26 at
+   n=160, and the day's work moved several rows (`cross-pullback` lost reads
+   52% against the recorded 79%). Worth one fresh `./run.sh scenario
+   --trials 160` before any row is quoted again.
+
 7. **51, the approach to the byline.** The cut-back and the cross from the line
    are both built and both wait on a ball that never arrives: `_add_pullback` was
    offered 0 times in fifty minutes and `Where passes are played from` reads the
@@ -1532,6 +1738,11 @@ line, which is **5**.
 the attacking pass is allowed to run high until they land. **5** first — it is
 still the largest single thing an eye would name — then **3**, then the remaining
 defending rows above: jockeying, covering, the offside trap, the deliberate foul.
+**And the pass ends with a re-watch of the attack.** Every attacking row marked
+built was judged, by eye and by number, against a defence that cannot jockey,
+block or defend its box; a judgment made against no resistance is provisional.
+Expect rework, and treat a built row that stops reading as football then as
+scheduled work, not a regression.
 Two measurements belong to it and are recorded here so they are not lost:
 
 - **Corners run at 0.4-0.5 per team a match against a target of 3-8**, 150+

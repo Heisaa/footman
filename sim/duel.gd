@@ -60,6 +60,101 @@ static var _challenge_win := PackedFloat32Array()
 static var _challenge_foul := PackedFloat32Array()
 
 
+## How far round a man's leg reaches: a ball in front of his hips or beside
+## him is his, a ball behind him is not until he has turned. About 110 degrees
+## either side of where he faces.
+##
+## The contact rule took any ball inside `CONTROL_RANGE` whichever way the man
+## was pointing, so a back line facing its own goal cut out the ball played
+## behind it, and the lane model, pricing that ball by the turn he would need,
+## had nothing to agree with (`docs/INVARIANTS.md`, two models of one event).
+## The same arc is what `SimDecision._facing_cost` charges the turn beyond.
+const REACH_ARC := 1.92
+
+
+## Whether he can see the ball: inside the arc `SimPerception` gives his eyes.
+static func sees_ball(p: SimPlayer, ball_pos: Vector3) -> bool:
+	var to_ball := SimConsts.horizontal(ball_pos - p.pos)
+	if to_ball.length_squared() < 0.04:
+		return true
+	var face := SimConsts.horizontal(p.heading_dir())
+	if face.length_squared() < 1e-6:
+		return true
+	return face.normalized().dot(to_ball.normalized()) >= cos(SimPerception.view_half(p, 0.5))
+
+
+## A ball struck at his feet is his to play; a ball passing a leg's length off
+## them is not, until he has reacted and reached for it.
+const AT_FEET := 0.35
+
+
+## Whether he has had time to get a leg to a ball that is not at his feet.
+##
+## Reach was instant: any ball inside `CONTROL_RANGE` was played the tick it
+## got there, whichever way the man was pointing and whether or not he had seen
+## it struck. A footballer reacts and then reaches (owner, 2026-08-29), and the
+## clock starts when the ball became news to him -- the strike, if he had the
+## striker in his eyes (`SimPerception.saw_recently`, arc plus memory; his own
+## side always did, it is their ball), otherwise the tick it came into his view.
+## The lane model charges the same reaction in `SimDecision._cut_chance` and
+## `_facing_cost`, so the two say one thing about one ball.
+##
+## Not for the man whose ball it is, and not for anyone while it is at a
+## carrier's feet: that contest is `_add_challengers`' and the duel's.
+static func _ready_for(ctx: SimContext, p: SimPlayer) -> bool:
+	var ball := ctx.ball
+	if ball.last_touch_player == p.id or ball.last_touch_player < 0:
+		return true
+	if p.dist_to(ball.pos) <= AT_FEET:
+		return true
+	var striker := ctx.players[ball.last_touch_player]
+	if striker.on_pitch and striker.dist_to(ball.pos) <= SimConsts.CONTROL_RANGE:
+		return true
+	return ball_news_age(ctx, p) >= p.reaction
+
+
+## Seconds since the ball became news to this player: the strike, if he had the
+## striker in his eyes, otherwise the tick the ball came into his view --
+## negative while it still has not. His own side's ball is always news he had.
+## The clock `_ready_for` runs reach on, public so the chase can run its legs on
+## it too (`SimMovement._recompute_target`): one answer to one question.
+static func ball_news_age(ctx: SimContext, p: SimPlayer) -> float:
+	var ball := ctx.ball
+	if ball.last_touch_player < 0:
+		return INF
+	# A ball at a carrier's feet is not a strike, and the clock is for balls in
+	# flight. Without this the dribble stamped `last_touch_tick` every 0.17 to
+	# 0.27 s -- faster than a 0.16 to 0.36 s reaction -- so the clock reset
+	# before it ever elapsed and every presser behind a dribbling carrier was
+	# capped at a walk (owner's bookmark seed3-t410, 2026-08-31: pressure 0.0
+	# to 0.4 around the ball and a 32 m diagonal picked at 100%). The same
+	# exemption `_ready_for` applies before asking, made shared.
+	var striker := ctx.players[ball.last_touch_player]
+	if striker.on_pitch and striker.dist_to(ball.pos) <= SimConsts.CONTROL_RANGE:
+		return INF
+	var news := ball.last_touch_tick
+	if ball.last_touch_team != p.team \
+			and not SimPerception.saw_recently(ctx, p, ctx.players[ball.last_touch_player]):
+		if not sees_ball(p, ball.pos):
+			p.ball_seen_tick = -1
+			return -1.0
+		if p.ball_seen_tick < 0:
+			p.ball_seen_tick = ctx.tick_index
+		news = p.ball_seen_tick
+	return float(ctx.tick_index - news) * SimConsts.DT
+
+
+## Whether the ball is within the arc his leg can reach without turning.
+static func in_reach_arc(p: SimPlayer, ball_pos: Vector3) -> bool:
+	var to_ball := SimConsts.horizontal(ball_pos - p.pos)
+	if to_ball.length_squared() < 0.04:
+		return true
+	var face := SimConsts.horizontal(p.heading_dir())
+	if face.length_squared() < 1e-6:
+		return true
+	return face.normalized().dot(to_ball.normalized()) >= cos(REACH_ARC)
+
+
 static func resolve_contacts(ctx: SimContext) -> void:
 	_contenders.clear()
 	_challenge_win.clear()
@@ -90,6 +185,13 @@ static func resolve_contacts(ctx: SimContext) -> void:
 		# A ball over his head that he would rather take on his chest a moment
 		# from now. He is not a contender for it, which is the whole of the
 		# mechanic: nobody touches it, and it comes down.
+		# A ball behind him is not his to play until he has turned. His own
+		# ball is left out: a carrier's knock is in front of him by construction
+		# and the touch model owns how he gets to it.
+		if not overhead and ball.last_touch_player != p.id and not in_reach_arc(p, ball.pos):
+			continue
+		if not overhead and not _ready_for(ctx, p):
+			continue
 		if overhead and SimAerial.lets_it_drop(ctx, p):
 			continue
 		# And the same man a band lower, on his own ball, between the chest-down

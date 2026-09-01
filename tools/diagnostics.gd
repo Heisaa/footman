@@ -1848,6 +1848,19 @@ static func _why_no_ball_in_behind() -> void:
 			100.0 * SimDecision.behind_gate[i] / total])
 	print("    %s" % ",  ".join(parts))
 	print("    the first gate that refused him, in the order the gates are applied")
+	var run_total := 0.0
+	for i in SimDecision.behind_gate_run.size():
+		run_total += SimDecision.behind_gate_run[i]
+	if run_total >= 1.0:
+		var rparts := PackedStringArray()
+		for i in SimDecision.behind_gate_run.size():
+			if SimDecision.behind_gate_run[i] > 0.0:
+				rparts.append("%s %.0f%%" % [SimDecision.BEHIND_GATES[i],
+					100.0 * SimDecision.behind_gate_run[i] / run_total])
+		print("    of those on a committed run (%d):  %s" % [int(run_total), ",  ".join(rparts)])
+	if SimDecision.behind_reach_n > 0:
+		print("    the ball the range gate refused was %.0f m on average  (%d; the loft serves 24-55)" % [
+			SimDecision.behind_reach_sum / float(SimDecision.behind_reach_n), SimDecision.behind_reach_n])
 
 
 const BEHIND_BUCKETS := [12.0, 18.0, 24.0, 30.0, 1e9]
@@ -2078,6 +2091,9 @@ static func _which_idea_he_had() -> void:
 	print("    `share` is the mean over the passes the option was on the list for, so")
 	print("    a kind that is rarely listed can still read a healthy one")
 	_why_not(SimOffBall.BEHIND_WHY, SimOffBall.behind_why, "the run in behind")
+	if SimOffBall.behind_gap_n > 0:
+		print("    and the run aimed %.1f m wide of the nearest man on the line  (%d points)" % [
+			SimOffBall.behind_gap_sum / float(SimOffBall.behind_gap_n), SimOffBall.behind_gap_n])
 	_why_not(SimOffBall.BOX_WHY, SimOffBall.box_why, "the run into the box")
 	_why_not(SimOffBall.WIDE_WHY, SimOffBall.wide_why, "the outlet wide")
 	# Three authored points are three positions only if the men spread over them.
@@ -2100,6 +2116,12 @@ static func _which_idea_he_had() -> void:
 	for i in SimOffBall.box_ease.size():
 		eased.append("%s %d" % [SimOffBall.BOX_EASE_NAMES[i], SimOffBall.box_ease[i]])
 	print("    and while the ball was on the grass he was:  %s  (ticks)" % ",  ".join(eased))
+	# The same timing for the show and the drift. Zero on both is the mechanic
+	# dead rather than quiet.
+	var met := PackedStringArray()
+	for i in SimOffBall.meet_ease.size():
+		met.append("%s %d" % [SimOffBall.MEET_EASE_NAMES[i], SimOffBall.meet_ease[i]])
+	print("    and a show or drift was:  %s  (ticks)" % ",  ".join(met))
 	# And how many of the runs above were a man changing his mind. A drift is the
 	# one offer that can be abandoned (`SimOffBall._assign`), so this is the whole
 	# population of it, and a zero is the mechanic dead rather than quiet.

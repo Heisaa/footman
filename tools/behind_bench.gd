@@ -112,10 +112,14 @@ static func _one(ctx: SimContext, back: float, pace: float) -> String:
 	var covers := SimValueField.reach_in(runner, aim - runner.pos, flight)
 
 	var verdict := "he gets there with %.1f m to spare" % (covers - ahead)
-	if arrives > runner.max_speed():
-		verdict = "arrives at %.1f m/s, and he tops out at %.1f" % [arrives, runner.max_speed()]
-	elif ahead > covers:
+	if ahead > covers:
 		verdict = "short by %.1f m" % (ahead - covers)
+		if arrives > runner.max_speed():
+			verdict += ", arriving at %.1f m/s against his %.1f" % [arrives, runner.max_speed()]
+	elif arrives > runner.max_speed():
+		# Only a fault for a ball he has to chase; a man already on the spot
+		# takes a firm ball like any pass to feet.
+		verdict = "there first, met by a ball at %.1f m/s" % arrives
 	return "%-9s %7.0f m/s %9s %6.1f m %6.1f m %6.1f m/s %6.2f s %7.1f m/s %8.1f m  %s" % [
 		"%.0f m" % back, pace, "committed" if committed else "projected",
 		length, ahead, struck, flight, arrives, covers, verdict]

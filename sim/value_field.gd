@@ -59,7 +59,10 @@ const CONTROL_TAU := 0.42
 ## **All of it is measured against the defence this engine has now.** When the
 ## defensive pass lands and defenders step into lanes, the cliff moves out and
 ## these move with it. `./run.sh control` is ten seconds and is how.
-const AIMED_STEP_IN := 0.70
+## Trimmed 0.70 -> 0.55 (owner, 2026-08-31): a marked receiver 31 m away read
+## `space` 0.87 and the switch out of a challenge kept beating the safe touch
+## (bookmark seed3-t74). A little less generous, re-read against `control`.
+const AIMED_STEP_IN := 0.55
 const AIMED_TAU := 0.10
 
 ## Peak expected threat, at roughly the penalty spot.
@@ -339,8 +342,15 @@ const BROKEN_BLOCKED := 0.75
 ## Time for a player to arrive at a point, from their current position *and*
 ## velocity. Velocity matters: it is why a committed run cannot be undone.
 static func time_to_arrive(p: SimPlayer, point: Vector3, reaction: float = 0.0) -> float:
-	var dx := point.x - p.pos.x
-	var dz := point.z - p.pos.z
+	return time_to_arrive_from(p, p.pos, point, reaction)
+
+
+## The same, for a man starting somewhere other than where he stands -- his
+## legs and his momentum, another start. `SimDecision._add_opening` asks it
+## about a challenger the carrier has moved.
+static func time_to_arrive_from(p: SimPlayer, at: Vector3, point: Vector3, reaction: float = 0.0) -> float:
+	var dx := point.x - at.x
+	var dz := point.z - at.z
 	var d := sqrt(dx * dx + dz * dz)
 	if d < 0.05:
 		return reaction
@@ -366,6 +376,24 @@ static func time_to_arrive(p: SimPlayer, point: Vector3, reaction: float = 0.0) 
 		else:
 			t = t1 + (d - d1) / vmax
 	return t + reaction + turn_cost
+
+
+## `time_to_arrive` to the edge of his reach rather than to the spot.
+##
+## A man a metre off a point does not run to it, he reaches -- `_lane_survival`
+## has said so about a leg in the lane since it was written, and this side never
+## did. Measured on a bookmarked through ball (`cross-pullback` seed 12, tick
+## 28): the keeper stood 1.0 m from the point, drifting away at 2.8 m/s, and
+## was priced at 1.22 s to turn and stand on it -- level with a receiver ten
+## metres off at full pace, and then charged the step-in on top. `space` said
+## 0.79 for a ball played into the keeper's hands.
+static func time_to_reach(p: SimPlayer, point: Vector3, reaction: float = 0.0) -> float:
+	var reach: float = SimKeeper.REACH_STANDING if p.is_keeper else SimConsts.CONTROL_RANGE
+	var toward := SimConsts.horizontal(p.pos - point)
+	var gap := toward.length()
+	if gap <= reach:
+		return reaction
+	return time_to_arrive(p, point + toward / gap * reach, reaction)
 
 
 ## How far a player can travel along `dir` in `seconds`, from the pace he is
@@ -538,7 +566,7 @@ func _control(ctx: SimContext, point: Vector3, team: int, ball_time: float, igno
 		if d > (cut_own if p.team == team else cut_opp):
 			_dist[i] = INF
 			continue
-		var t := time_to_arrive(p, point, 0.0 if i == aimed_id else reaction_of(p))
+		var t := time_to_reach(p, point, 0.0 if i == aimed_id else reaction_of(p))
 		if ball_time >= 0.0:
 			if aimed_id >= 0 and p.team != team:
 				# An opponent is not floored at the ball on an aimed contest: his

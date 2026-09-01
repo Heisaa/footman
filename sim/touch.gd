@@ -384,8 +384,18 @@ static func aim_sigma(ctx: SimContext, player: SimPlayer, skill: float, distance
 	var press := ctx.pressure_on(player)
 	var speed_ratio: float = player.speed() / maxf(player.nominal_max_speed(), 1e-3)
 	var sigma := base
-	sigma *= lerpf(1.9, 0.45, clampf(skill, 0.0, 1.0))
+	# The floor came down 0.45 -> 0.38 (owner, 2026-08-31): a 1.0-quality
+	# side sprayed its passes more than its class should.
+	sigma *= lerpf(1.9, 0.38, clampf(skill, 0.0, 1.0))
 	sigma *= 1.0 + 0.16 * press
+	# The tackle arriving is not the man standing near: pressure rates a
+	# challenger at the carrier's back at nearly zero (`apply`'s own note), so a
+	# man being tackled paid ~6% on his strike while the hold and the set touch
+	# paid challenge at full rate -- and the 31 m diagonal priced within a
+	# coin-flip of the safe touch exactly when a challenger arrived (owner's
+	# bookmark seed3-t75, 2026-08-31). Charged here so the priced ball and the
+	# struck ball stay one model.
+	sigma *= 1.0 + CHALLENGE_AIM * ctx.challenge_on(player)
 	sigma *= 1.0 + 0.35 * speed_ratio * speed_ratio
 	sigma *= 1.0 + 0.012 * maxf(distance - 12.0, 0.0)
 	sigma *= lerpf(1.25, 0.9, player.attrs.composure)
@@ -944,6 +954,10 @@ const LONG_NONE := 0
 const LONG_GROUND := 1
 const LONG_AIR := 2
 const LONG_AIR_CROSS := 3
+
+
+## Multiplier per unit of `challenge_on` (0 to 2) on every strike's aim error.
+const CHALLENGE_AIM := 0.35
 
 
 ## P(|X| < r) for a zero-mean normal, via the usual logistic approximation to

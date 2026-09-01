@@ -125,6 +125,9 @@ what is there and what is still loose. `./run.sh world` prints a club.
   `SimDecision.CORRELATED` (24's own mechanic), `LENGTH_COST_DIRECT` (27's own),
   `line_broken` on the lofted ball, and `QUOTA` show 1 to 2. Two of those are the
   named answers to open proposals, so 24 and 27 now want fresh ideas.
+  `_worth_at` and `QUOTA` (and `CROSS_ON`, reverted later) went on goal cost,
+  measured against a missing serve and byline — re-try them after 33 and 51;
+  `docs/THE_FOOTBALL.md`, the order.
 - **The deferred strike behind a setting touch is an estimate** (`SET_PASS_SUCCESS`,
   a flat 0.62) rather than the scored pass, and **a first-time lofted ball is
   charged twice**, once in `off_balance` and once in strike sigma, because neither

@@ -630,6 +630,19 @@ static func _insert_ranked(pid: int, t: float) -> void:
 # --- Target selection -------------------------------------------------------
 
 
+## The pace of a chaser who has not yet reacted to the strike: legs that have
+## had no news do not sprint. See the gate below.
+const UNSEEN_PACE := 0.35
+
+## How far past the intercept the man a ball in behind was struck to carries his
+## target: he meets the ball through it, still moving, instead of arriving on
+## it, stopping, and being turned back toward the passer by `_orient_receiver`.
+const RUN_ON_THROUGH := 3.0
+## How far ahead of him, along the run, the intercept has to be before the ball
+## is one he meets through rather than a ball to his feet.
+const RUN_ON_AHEAD := 2.0
+
+
 static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 	var role: int = _chase_role[p.id]
 	var is_primary := role == CHASE_PRIMARY
@@ -638,6 +651,27 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 	if is_primary:
 		p.errand = Errand.CHASE
 		var point := _intercept_point(ctx, p)
+		# The struck ball makes its man the designated chaser, which converts a
+		# runner in behind into a man running *at* the ball: he arrives at the
+		# intercept, stops, and `_orient_receiver` turns him back toward the
+		# passer -- watched and named by the owner. Carry his target past the
+		# intercept along his own committed run instead.
+		if ctx.ball.intended_target == p.id and ctx.ball.last_touch_team == p.team \
+				and SimOffBall.is_running_in_behind(ctx, p):
+			var dest := SimOffBall.destination_for(ctx, p)
+			# Only for a ball actually rolled past him -- the intercept ahead
+			# of him along his own run. The first cut ran him through *every*
+			# ball while committed, a pass to feet included, and he overran
+			# those on purpose: the scenario read 90% lost with two touches a
+			# trial, every trial ending on the first ball.
+			if not is_inf(dest.x):
+				var run_dir := SimConsts.horizontal(dest - p.pos)
+				var to_point := SimConsts.horizontal(point - p.pos)
+				if run_dir.length() > 1.0 \
+						and to_point.dot(run_dir.normalized()) > RUN_ON_AHEAD:
+					var on := SimConsts.horizontal(dest - point)
+					if on.length() > 1.0:
+						point += on / on.length() * RUN_ON_THROUGH
 		# A chaser coming from behind a man in possession runs round him rather
 		# than into the back of him.
 		var recovery := _recovery_weight(ctx, p)
@@ -687,6 +721,22 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 		var driving := 0.0 if settling else _carry_pace(ctx, p)
 		if driving > 0.0:
 			p.move_speed_cap = maxf(p.move_speed_cap, p.max_speed() * driving)
+		# A ball struck where he could not see it is not yet his errand: he
+		# reacts, then runs. The contact rule already waits
+		# (`SimDuel._ready_for`); the legs did not, so a back line turned and
+		# sprinted the tick a ball was played over it from a striker at its
+		# back. Same clock, one answer -- and his own side's ball is exempt in
+		# the clock itself, it is their ball.
+		if ctx.ball.last_touch_team != p.team \
+				and SimDuel.ball_news_age(ctx, p) < p.reaction:
+			p.move_speed_cap = minf(p.move_speed_cap, p.max_speed() * UNSEEN_PACE)
+		# The release half of `SimOffBall.MEET_EASE`'s timing, counted here
+		# because the struck ball makes its man the designated chaser: the
+		# station errand -- and `point_for` with it -- stops running for him.
+		if ctx.ball.intended_target == p.id:
+			var meet_kind := SimOffBall.intent_of(ctx, p)
+			if meet_kind == SimOffBall.SHOW or meet_kind == SimOffBall.SPACE:
+				SimOffBall.meet_ease[1] += 1
 		p.move_deadband = 0.25
 		return
 	if is_support:

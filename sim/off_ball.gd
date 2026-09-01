@@ -246,6 +246,14 @@ const CROSS_CARRIER_REACH := 3.0
 ## held.
 const CROSS_COMING_HOLD := 1.0
 
+## Arriving as the ball does, for the other two offers: how far short of his
+## point a man showing or drifting holds until the ball is struck to him, and
+## the pace he meets it at once it is. Box runners and runs in behind already
+## timed the arrival; a show and a drift stopped on their spot and stood
+## (`docs/THE_FOOTBALL.md`, "arrive as the ball does").
+const MEET_EASE := 2.2
+const MEET_PACE := 0.9
+
 ## Live intent per player id, and where it is going. Flat arrays rather than
 ## dictionaries because the movement layer reads them for every player, every
 ## tick.
@@ -257,6 +265,8 @@ static var _since := PackedInt32Array()
 ## The check phase of a show: the point it goes to, and the tick it runs until.
 static var _check_point := PackedVector3Array()
 static var _check_until := PackedInt32Array()
+## Where a show holds, a stride short of its point, until the ball is coming.
+static var _hold_point := PackedVector3Array()
 
 ## Per-match tallies by kind: how many of each were made, how many ended with
 ## the ball at that player's feet, and how far he ran to offer.
@@ -325,7 +335,8 @@ static var chose_men := 0
 ## applied, so the rows read down like the function does.
 const BEHIND_WHY := [
 	"not his job", "under pressure", "too far from the ball", "ball too deep",
-	"behind the ball", "already offside", "no run to make", "on the list",
+	"behind the ball", "already offside", "run too short", "run too long",
+	"on the list",
 ]
 const BOX_WHY := [
 	"not his job", "too far from the ball", "not in their half", "already offside",
@@ -350,6 +361,10 @@ static var box_target := PackedInt32Array()
 ## from outside either way.
 const BOX_EASE_NAMES := ["holding", "attacking the cross"]
 static var box_ease := PackedInt32Array()
+
+## The same two halves for the show and the drift, counted for the same reason.
+const MEET_EASE_NAMES := ["holding", "meeting the ball"]
+static var meet_ease := PackedInt32Array()
 
 ## Drifts abandoned for a run, by the kind that was given up. A man mid-drift can
 ## change his mind and nothing else can, so this is the whole population of it --
@@ -509,6 +524,14 @@ static func point_for(ctx: SimContext, p: SimPlayer) -> Vector3:
 	# and only then the ball. See `_commit`.
 	if kind == SHOW and ctx.tick_index < _check_until[p.id]:
 		return _check_point[p.id]
+	# Arriving as the ball does: he holds a stride short of the show point and
+	# meets the struck ball moving, instead of standing on the spot waiting for
+	# it. Released by the strike itself -- `intended_target` is him.
+	if kind == SHOW:
+		if ctx.ball.intended_target != p.id:
+			meet_ease[0] += 1
+			return _hold_point[p.id]
+		meet_ease[1] += 1
 	# Timing the run in behind: the run itself goes at full depth -- a pass is
 	# priced off a man already moving, and holding him at the line until the
 	# ball was struck deadlocked the pair completely (measured: through balls
@@ -557,7 +580,15 @@ static func point_for(ctx: SimContext, p: SimPlayer) -> Vector3:
 static func drift_for(ctx: SimContext, p: SimPlayer) -> Vector3:
 	if intent_of(ctx, p) != SPACE:
 		return Vector3.ZERO
-	return _point[p.id]
+	var d: Vector3 = _point[p.id]
+	# The same arrival timed for the drift: the last stride is kept in hand
+	# until the ball is struck to him, so he is still moving when it comes.
+	# The passer aims at the finished drift (`destination_for` is unchanged).
+	var span := d.length()
+	if ctx.ball.intended_target != p.id and span > MEET_EASE:
+		meet_ease[0] += 1
+		return d * ((span - MEET_EASE) / span)
+	return d
 
 
 ## Where this player is going, whatever kind of offer he has made, or
@@ -609,6 +640,8 @@ static func pace_for(ctx: SimContext, p: SimPlayer) -> float:
 	# box runner eases until the ball is up, then attacks it.
 	if kind == SHOW and ctx.tick_index < _check_until[p.id]:
 		return CHECK_PACE
+	if kind == SHOW and ctx.ball.intended_target == p.id:
+		return MEET_PACE
 	if kind == BOX and ctx.ball.grounded and not _cross_coming(ctx, p.team):
 		return BOX_EASE_PACE
 	return PACE[kind]
@@ -1072,6 +1105,11 @@ static func _commit(ctx: SimContext, pid: int, kind: int, point: Vector3, in_win
 				_check_point[pid] = ctx.pitch.clamp_to_pitch(
 					mover.pos + away.normalized() * CHECK_AWAY, 1.5)
 				_check_until[pid] = ctx.tick_index + int(CHECK_SECONDS * float(SimConsts.TICK_HZ))
+		# The last stride of the show, held in hand. Latched here so the hold
+		# point does not swing with the live ball.
+		var short := SimConsts.horizontal(point - ctx.ball.ground_pos())
+		_hold_point[pid] = point if short.length() < 1.0 \
+			else ctx.pitch.clamp_to_pitch(point + short.normalized() * MEET_EASE, 1.5)
 	_born[pid] = 1 if in_window else 0
 	if in_window:
 		born[kind] += 1
@@ -1309,14 +1347,90 @@ static func _behind_point(ctx: SimContext, p: SimPlayer, team: int, ball: Vector
 	var run: float = depth - p.pos.x * dir
 	# Long enough to be a run, short enough to be finished inside the window he
 	# is committing to. A "run" he could never complete is a striker jogging
-	# hopefully at a spot the ball has long since left.
-	if run < 2.0 or run > BEHIND_MAX_RUN:
+	# hopefully at a spot the ball has long since left. Counted apart because
+	# the refusals name different men: too short is the striker already on the
+	# shoulder, too long is a midfielder forty metres back.
+	if run < 2.0:
 		behind_why[6] += 1
 		return Vector3.INF
-	# Into the channel he already occupies, drifting a little toward goal.
-	behind_why[7] += 1
-	var point := Vector3(depth * dir, 0.0, p.pos.z * 0.85)
-	return ctx.pitch.clamp_to_pitch(point, 2.0)
+	if run > BEHIND_MAX_RUN:
+		behind_why[7] += 1
+		return Vector3.INF
+	behind_why[8] += 1
+	var point := Vector3(depth * dir, 0.0, _channel_z(ctx, p, team, line, dir))
+	point = ctx.pitch.clamp_to_pitch(point, 2.0)
+	_note_channel(ctx, team, point, line, dir)
+	return point
+
+
+## The run bends into a channel: the gap between two defenders on the line
+## nearest to where he already stands. Before this the point was
+## `p.pos.z * 0.85` -- his own lane, drifting toward goal -- which aims the run
+## at whichever centre-back holds that lane; the through-ball scenario found
+## the same fault standing its forwards on fixed lanes (`SimScenarios._gap_lanes`).
+## Interior gaps only, for the reason recorded there: in any back four the two
+## widest gaps are outside the full-backs, and a ball played there is past the
+## through ball's range cap. Wide of the last full-back is the outlet's ground,
+## not this run's.
+##
+## How ragged a line still counts as the line. The scenario uses 2 m against a
+## back four it just built flat; a match's line sags a few metres around the
+## man the shape is watching.
+const BEHIND_LINE_BAND := 4.0
+## How far off his own lane a run will bend, and the narrowest gap worth
+## bending into: wider than a body with a stride either side.
+const BEHIND_CHANNEL_DRIFT := 10.0
+const BEHIND_CHANNEL_MIN := 4.0
+
+
+static func _channel_z(ctx: SimContext, p: SimPlayer, team: int, line: float, dir: float) -> float:
+	var fallback: float = p.pos.z * 0.85
+	var zs: Array[float] = []
+	for oid in ctx.opponent_ids(team):
+		var o := ctx.players[oid]
+		if not o.on_pitch or o.is_keeper:
+			continue
+		if absf(o.pos.x * dir - line) > BEHIND_LINE_BAND:
+			continue
+		zs.append(o.pos.z)
+	if zs.size() < 2:
+		return fallback
+	zs.sort()
+	var best := INF
+	var best_z := fallback
+	for i in zs.size() - 1:
+		var width: float = zs[i + 1] - zs[i]
+		if width < BEHIND_CHANNEL_MIN:
+			continue
+		var mid: float = (zs[i] + zs[i + 1]) * 0.5
+		var away: float = absf(mid - p.pos.z)
+		if away < best:
+			best = away
+			best_z = mid
+	if best > BEHIND_CHANNEL_DRIFT:
+		return fallback
+	return best_z
+
+
+## Where the generated run points land against the line's defenders: lateral
+## distance to the nearest of them, generated points only. The channel aim
+## exists to move this mean; read it before arguing about the serve gates.
+static var behind_gap_sum := 0.0
+static var behind_gap_n := 0
+
+
+static func _note_channel(ctx: SimContext, team: int, point: Vector3, line: float, dir: float) -> void:
+	var nearest := INF
+	for oid in ctx.opponent_ids(team):
+		var o := ctx.players[oid]
+		if not o.on_pitch or o.is_keeper:
+			continue
+		if absf(o.pos.x * dir - line) > BEHIND_LINE_BAND:
+			continue
+		nearest = minf(nearest, absf(o.pos.z - point.z))
+	if not is_inf(nearest):
+		behind_gap_sum += nearest
+		behind_gap_n += 1
 
 
 ## How far a man will run to attack a cross, and how far from the ball he can be
@@ -1951,6 +2065,7 @@ static func _resize(n: int) -> void:
 	_born.resize(n)
 	_check_point.resize(n)
 	_check_until.resize(n)
+	_hold_point.resize(n)
 	_clear()
 
 
@@ -1967,6 +2082,7 @@ static func _clear() -> void:
 		_born[i] = 0
 		_check_point[i] = Vector3.ZERO
 		_check_until[i] = 0
+		_hold_point[i] = Vector3.ZERO
 	regain_passes.resize(2)
 	regain_men.resize(2)
 	regain_rest_left.resize(2)
@@ -2015,12 +2131,17 @@ static func _clear() -> void:
 		box_why[i] = 0
 	for i in wide_why.size():
 		wide_why[i] = 0
+	behind_gap_sum = 0.0
+	behind_gap_n = 0
 	box_target.resize(BOX_TARGETS.size())
 	for i in box_target.size():
 		box_target[i] = 0
 	box_ease.resize(BOX_EASE_NAMES.size())
 	for i in box_ease.size():
 		box_ease[i] = 0
+	meet_ease.resize(MEET_EASE_NAMES.size())
+	for i in meet_ease.size():
+		meet_ease[i] = 0
 	switched.resize(KIND_NAMES.size())
 	for i in switched.size():
 		switched[i] = 0

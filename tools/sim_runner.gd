@@ -7,6 +7,12 @@ extends RefCounted
 
 class Options extends RefCounted:
 	var seed_value := 1
+	## A world seed, or -1 for `SimSquadGen` squads. With one, the two sides
+	## are clubs of the league `WorldGen.league` draws at that seed, and the
+	## qualities above are ignored: the clubs have their own men.
+	var world_seed := -1
+	var home_club := 0
+	var away_club := 1
 	var home_quality := 0.6
 	var away_quality := 0.6
 	var home_formation := "4-3-3"
@@ -78,8 +84,17 @@ static func build(opts: Options) -> SimMatch:
 
 	var home_shape := SimFormation.by_name("6aside" if opts.small_sided else opts.home_formation)
 	var away_shape := SimFormation.by_name("6aside" if opts.small_sided else opts.away_formation)
-	config.home = SimSquadGen.make_team(rng, SimConsts.TEAM_HOME, opts.home_quality, home_shape, 0 if opts.small_sided else 7)
-	config.away = SimSquadGen.make_team(rng, SimConsts.TEAM_AWAY, opts.away_quality, away_shape, 0 if opts.small_sided else 7)
+	if opts.world_seed >= 0 and not opts.small_sided:
+		var clubs := world_clubs(opts)
+		config.home = clubs[0].to_sim_team(SimConsts.TEAM_HOME)
+		config.away = clubs[1].to_sim_team(SimConsts.TEAM_AWAY)
+		if opts.home_formation != "4-3-3":
+			config.home.formation = home_shape
+		if opts.away_formation != "4-3-3":
+			config.away.formation = away_shape
+	else:
+		config.home = SimSquadGen.make_team(rng, SimConsts.TEAM_HOME, opts.home_quality, home_shape, 0 if opts.small_sided else 7)
+		config.away = SimSquadGen.make_team(rng, SimConsts.TEAM_AWAY, opts.away_quality, away_shape, 0 if opts.small_sided else 7)
 	if opts.home_tactics != null:
 		config.home.tactics = opts.home_tactics
 	if opts.away_tactics != null:
@@ -90,6 +105,15 @@ static func build(opts: Options) -> SimMatch:
 	if opts.scenario != null and opts.scenario.place.is_valid():
 		opts.scenario.place.call(opts.scenario, m.ctx)
 	return m
+
+
+## The two clubs a world seed puts on the pitch, home then away. The league is
+## the one `parade --world` shows, so a man seen there is the man who plays.
+static func world_clubs(opts: Options) -> Array[WorldClub]:
+	var league := WorldGen.league(SimRng.new(opts.world_seed), WorldSeason.DEFAULT_CLUBS)
+	var home := league[clampi(opts.home_club, 0, league.size() - 1)]
+	var away := league[clampi(opts.away_club, 0, league.size() - 1)]
+	return [home, away]
 
 
 static func run_one(opts: Options) -> SimMatchStats:
@@ -113,6 +137,9 @@ static func run_batch(base: Options, count: int, progress_every: int = 0) -> Arr
 static func _clone(o: Options) -> Options:
 	var c := Options.new()
 	c.seed_value = o.seed_value
+	c.world_seed = o.world_seed
+	c.home_club = o.home_club
+	c.away_club = o.away_club
 	c.home_quality = o.home_quality
 	c.away_quality = o.away_quality
 	c.home_formation = o.home_formation

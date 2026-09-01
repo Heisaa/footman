@@ -230,6 +230,12 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   problem.** Pricing the carry out of play but not the knock past a man relabelled
   the event and moved nothing.
 
+- **The contact rule and the lane model read the same body.** `SimDuel.REACH_ARC`
+  and `_ready_for` decide who can play an arriving ball; `SimDecision._cut_chance`
+  and `_facing_cost` price the same arc and the same reaction. A charge added to
+  one without the other is the drift below, and it was measured the day the
+  facing charge went in alone: 0.44 said against 82% cut out.
+
 - **Two models of the same event drift apart unless something makes them agree.**
   `expected_goals` is calibrated against real shots; `SimTouch.shot` decided where
   the ball went from an aim error nothing reconciled with it — five times the

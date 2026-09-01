@@ -104,6 +104,9 @@ func _parse_flags(args: PackedStringArray) -> Dictionary:
 func _options(flags: Dictionary) -> SimRunner.Options:
 	var o := SimRunner.Options.new()
 	o.seed_value = int(flags.get("seed", "1"))
+	o.world_seed = int(flags.get("world", "-1"))
+	o.home_club = int(flags.get("home-club", "0"))
+	o.away_club = int(flags.get("away-club", "1"))
 	o.home_quality = float(flags.get("home", "0.6"))
 	o.away_quality = float(flags.get("away", "0.6"))
 	o.minutes = float(flags.get("minutes", "90"))
