@@ -18,6 +18,8 @@ func run() -> void:
 	_the_ball_is_on_a_foot()
 	_the_curl_comes_off_the_striking_foot()
 	_momentum_reads_the_body()
+	_the_first_touch_turns_the_body()
+	_the_shield_is_the_body()
 
 
 static func _drill_context(seed_value: int = 5) -> SimContext:
@@ -265,3 +267,33 @@ func _momentum_reads_the_body() -> void:
 	p.vel = Vector3(6.0, 0.0, 0.0)
 	check_greater(SimTouch.momentum_of(p), 0.8, "a man running through his hips has most of it")
 	check_near(SimTouch.strike_scale(p, Vector3(1, 0, 0)), 1.0, 1e-6, "and a ball straight ahead costs nothing either way")
+
+
+func _the_first_touch_turns_the_body() -> void:
+	# A ball running up the pitch, taken across into +X by a man facing along
+	# its line: the hips turn with the ball, by no more than the ball turned.
+	var ctx := _drill_context()
+	var p := ctx.players[9]
+	p.pos = Vector3.ZERO
+	p.vel = Vector3.ZERO
+	p.facing = PI * 0.5
+	p.attrs.first_touch = 0.7
+	p.attrs.technique = 0.7
+	ctx.ball.reset(Vector3(0.0, SimConsts.BALL_RADIUS, -0.3))
+	ctx.ball.vel = Vector3(0.0, 0.0, 6.0)
+	SimTouch.first_touch(ctx, p, Vector3(1, 0, 0))
+	check_near(angle_difference(p.facing, 0.0), 0.0, 0.05, "the first touch turns the body onto the ball it set")
+	check_greater(p.look_target.x - p.pos.x, 1.0, "and holds the look there")
+
+
+func _the_shield_is_the_body() -> void:
+	var carrier := make_player()
+	carrier.pos = Vector3.ZERO
+	carrier.facing = 0.0
+	var man := make_player()
+	man.pos = Vector3(-2.0, 0.0, 0.0)
+	check_near(SimDuel.shielded(carrier, man), 1.0, 1e-6, "a man square at his back is fully shielded")
+	man.pos = Vector3(2.0, 0.0, 0.0)
+	check_near(SimDuel.shielded(carrier, man), 0.0, 1e-6, "a man in his face is not")
+	man.pos = Vector3(0.0, 0.0, 2.0)
+	check_near(SimDuel.shielded(carrier, man), 0.5, 1e-6, "and side-on is half")

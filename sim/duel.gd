@@ -18,6 +18,20 @@ const INVITE_CONTACT := 1.6
 const INVITE_RANGE := 30.0
 
 
+## How much of the carrier's body is between the challenger and the ball: 1 with
+## the man square at his back, 0 with the man in his face. The shield is the
+## carrier's choice (`SimPlayer.shielding`, set by `SimDecision._play_hold`) and
+## this is how well it was made -- the hips turn at `turn_rate`, so a shield
+## called with the man in front of him is not yet one.
+static func shielded(carrier: SimPlayer, challenger: SimPlayer) -> float:
+	var to := SimConsts.horizontal(challenger.pos - carrier.pos)
+	var d := to.length()
+	if d < 1e-4:
+		return 0.5
+	var frontness: float = 0.5 * (clampf((to / d).dot(carrier.heading_dir()), -1.0, 1.0) + 1.0)
+	return 1.0 - frontness
+
+
 ## Is this a moment worth inviting contact in? Their half, inside range of goal,
 ## and with the ball actually at his feet.
 static func _invites_contact(ctx: SimContext, carrier: SimPlayer) -> bool:
@@ -300,7 +314,9 @@ static func _resolve_contest(ctx: SimContext) -> void:
 		# ball, it is one man holding another off, and strength is what decides
 		# how well.
 		if holder and p.shielding and not aerial:
-			w *= lerpf(1.05, 1.5, p.attrs.strength)
+			var challenger := ctx.nearest_challenger(p)
+			var made: float = shielded(p, challenger) if challenger != null else 0.0
+			w *= lerpf(1.0, lerpf(1.05, 1.5, p.attrs.strength), made)
 		w *= p.fatigue_factor()
 		# Arriving at pace helps you win the ball and helps you foul.
 		var closing := _closing_speed(p, ball)
@@ -368,7 +384,7 @@ static func _resolve_contest(ctx: SimContext) -> void:
 		if winner.id == ball.last_touch_player:
 			p_foul *= lerpf(0.9, 1.3, winner.attrs.dribbling * 0.5 + winner.attrs.agility * 0.5)
 			if winner.shielding:
-				p_foul *= 1.35
+				p_foul *= lerpf(1.0, 1.35, shielded(winner, loser))
 			# Inviting it, which is the deliberate half of the same act
 			# (`docs/THE_FOOTBALL.md` 32). Everything above is contact that
 			# *happens* to a carrier; a footballer also puts his body across a
@@ -382,7 +398,8 @@ static func _resolve_contest(ctx: SimContext) -> void:
 			# only lever the engine has on a foul count running at 1.5 a team a
 			# match against a target of 8-16.
 			if winner.shielding and _invites_contact(ctx, winner):
-				p_foul *= lerpf(1.0, INVITE_CONTACT, winner.attrs.composure)
+				p_foul *= lerpf(1.0, lerpf(1.0, INVITE_CONTACT, winner.attrs.composure),
+					shielded(winner, loser))
 		if ctx.rng.chance(clampf(p_foul, 0.0, 0.6)):
 			SimReferee.award_foul(ctx, loser, winner, closing)
 			return

@@ -302,9 +302,12 @@ static func _orient_receiver(ctx: SimContext, p: SimPlayer) -> void:
 	# to a shuffle -- standing went from 20% to 31% of a match.
 	if ctx.ball.last_touch_player == p.id:
 		return
-	if ctx.challenge_on(p) > 0.5:
-		return
 	var to_ball := SimConsts.horizontal(ctx.ball.pos - p.pos)
+	if ctx.challenge_on(p) > 0.5:
+		# Closed: facing the ball, marker behind, the ball on the far foot.
+		if to_ball.length() > 0.5:
+			p.look_target = p.pos + to_ball.normalized() * 4.0
+		return
 	var to_goal := SimConsts.horizontal(ctx.pitch.target_goal(p.team) - p.pos)
 	if to_ball.length() < 0.5 or to_goal.length() < 0.5:
 		return
@@ -734,6 +737,18 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 		if ctx.ball.last_touch_team != p.team \
 				and SimDuel.ball_news_age(ctx, p) < p.reaction:
 			p.move_speed_cap = minf(p.move_speed_cap, p.max_speed() * UNSEEN_PACE)
+		# A shield is a body between the man and the ball. `_play_hold` chose
+		# it; this is where it is made: the hips turned away from the
+		# challenger, and the pace held under the strafe cap so they stay
+		# there. `SimDuel.shielded` reads the body it actually got.
+		if p.shielding and ctx.ball.last_touch_player == p.id:
+			var challenger := ctx.nearest_challenger(p)
+			if challenger != null:
+				var away := SimConsts.horizontal(p.pos - challenger.pos)
+				if away.length() > 0.1:
+					p.look_target = p.pos + away.normalized() * 4.0
+					p.move_speed_cap = minf(p.move_speed_cap,
+						p.max_speed() * SimPlayer.STRAFE_SHARE * SimPlayer.STRAFE_RELEASE)
 		# The release half of `SimOffBall.MEET_EASE`'s timing, counted here
 		# because the struck ball makes its man the designated chaser: the
 		# station errand -- and `point_for` with it -- stops running for him.

@@ -1136,6 +1136,8 @@ static func dribble(ctx: SimContext, player: SimPlayer, dir: Vector3, space: flo
 		d = player.heading_dir()
 	d = d.normalized()
 	var ahead := dribble_ahead(ctx, player, space, push, max_ahead)
+	# The body goes where the ball is pushed.
+	player.look_target = player.pos + d * 4.0
 	# Relative speed that puts the ball `ahead` metres in front before friction
 	# hands it back to the runner -- and, for a settling touch, the whole of the
 	# strike, because there the runner is not going anywhere with it.
@@ -1467,6 +1469,8 @@ static func _log_shot(ctx: SimContext, player: SimPlayer, from: Vector3, aim_poi
 static var _ft_dir := Vector3.ZERO
 static var _ft_wanted := Vector3.ZERO
 static var _ft_quality := 0.0
+## The angle the ball was turned through, signed; the body turns with it.
+static var _ft_swing := 0.0
 
 
 static func _resolve_first_touch(ctx: SimContext, player: SimPlayer, intent_dir: Vector3) -> void:
@@ -1517,6 +1521,7 @@ static func _resolve_first_touch(ctx: SimContext, player: SimPlayer, intent_dir:
 	var skill: float = player.attrs.first_touch * lerpf(0.75, 1.0, player.attrs.technique)
 	var quality := _touch_quality(skill, difficulty)
 	var wanted := dir
+	_ft_swing = 0.0
 	# And he does not try to reverse a firm ball in one touch, because nobody
 	# does. The decision layer hands down where he would *like* to be going --
 	# `safe_direction`, which is at the goal unless somebody is in the way -- and
@@ -1532,6 +1537,7 @@ static func _resolve_first_touch(ctx: SimContext, player: SimPlayer, intent_dir:
 			var swing := atan2(line.x * dir.z - line.z * dir.x, line.x * dir.x + line.z * dir.z)
 			var most: float = lerpf(TURN_MIN, TURN_MAX, skill)
 			var applied: float = clampf(swing, -most, most)
+			_ft_swing = applied
 			var ca := cos(applied)
 			var sa := sin(applied)
 			dir = Vector3(line.x * ca - line.z * sa, 0.0, line.x * sa + line.z * ca)
@@ -1586,6 +1592,14 @@ static func first_touch(ctx: SimContext, player: SimPlayer, intent_dir: Vector3)
 	var incoming := ctx.ball.vel
 	var incoming_speed := incoming.length()
 	var dir := _ft_dir
+	# A touch turns the body. The hips swing toward where the ball is set, by
+	# no more than the ball itself was turned -- the same limit, from the same
+	# skill -- and the look is held there so the run out of the touch does not
+	# take them back.
+	var run := atan2(dir.z, dir.x)
+	var most := absf(_ft_swing)
+	player.facing += clampf(angle_difference(player.facing, run), -most, most)
+	player.look_target = player.pos + dir * 4.0
 	var wanted := _ft_wanted
 	var quality := _ft_quality
 	var residual: float = lerpf(0.55, 0.06, quality) * (1.0 + ctx.rng.gauss_clamped(0.0, 0.28, 2.5))
