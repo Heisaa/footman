@@ -11,21 +11,22 @@ land one at a time and a half-finished library breaks nothing.
 
 ## The five bodies
 
-Five silhouettes, not a continuous range: five bodies with height scaled on top
-is a week of work and a morph target for every man is a month of it.
+Moulded silhouettes with the build scaled on top, not a morph target for every
+man: a morph target is a month of work.
 
 | Body | Who gets it | File |
 |---|---|---|
 | `standard` | most of a squad | `presentation/models/body_standard.glb` |
-| `giant` | archetype `giant`, or 1.94 m and over | `body_giant.glb` |
-| `sprite` | archetype `sprite`, or 1.66 m and under | `body_sprite.glb` |
-| `heavy` | build 0.66 and over | `body_heavy.glb` |
+| `heavy` | build 0.66 and over, strength under 0.62 | `body_heavy.glb` |
+| `buff` | build 0.66 and over, strength 0.62 and over | `body_standard.glb`, widened |
 | `lean` | build 0.34 and under | `body_lean.glb` |
+| `giant`, `sprite` | nobody new: height is not a body. The files stay for old seeds | `body_giant.glb`, `body_sprite.glb` |
 
 `WorldLook.body_type_for` is the rule and `WorldLook.type_name` is the spelling
-in the filename. Drop in `body_giant.glb` alone and the giants use it while
-everybody else stays procedural, which is also how to judge one against the
-other.
+in the filename. Height is scaled on top of whichever mould, and then
+`SimCharacterModel._shape_body` widens or narrows the limbs and the torso by
+the build, continuously, with the buff man pushed further. A mould carries the
+silhouette; the build carries the rest.
 
 ## How the body reaches the model
 
@@ -37,7 +38,16 @@ neither. So the record's body rides in the seed's low bits:
     bits  3-7   height, 32 steps across 1.56 m to 2.04 m
     bits  8-10  build, 8 steps
     bits 11-18  a fixed tag, so a seed carrying no body is known to carry none
-    bits 19-31  free entropy: hair, skin, face, nose, accessory
+    bits 19-20  complexion: fair, medium, deep
+    bits 21-22  hair family: dark, brown, fair, ginger
+    bits 23-24  age band: young, prime, thirties, veteran
+    bits 25-28  archetype
+    bits 29-31  free entropy
+
+The face still comes off the whole seed — the RNG is seeded with all thirty-two
+bits — so the packed fields are as much variety as the free ones. What they
+add is that the draw answers to the record: `SimAppearance._apply_record` turns
+the bands into a skin tone, a colour, a cut and a moustache.
 
 `WorldLook` writes it and `SimCharacterModel.appearance_for` reads it back. A
 seed from `SimSquadGen` or from any build before this carries no tag, and the

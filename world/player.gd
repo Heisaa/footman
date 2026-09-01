@@ -30,16 +30,18 @@ var epithet := ""
 var archetype := WorldNickname.NONE
 var age := 24
 ## The body the record intends, in metres, and how heavy he is built, 0..1.
-##
-## The **presentation layer still builds the figure from `appearance_seed`**, so
-## these two agree with what is drawn only when the generator was given a body
-## oracle to sample seeds against (`WorldGen.body_oracle`). Without one they are
-## the record's intent and nothing more. `sim/` reads neither; a giant is
-## currently a giant in his attributes, not in his height.
+## `sim/` reads neither. Presentation builds the figure from `appearance_seed`,
+## and `WorldLook` packs these into it so the man is drawn the size he is.
 var height := 1.78
 var build := 0.5
+## Complexion band and hair colour family, `WorldLook.FAIR..DEEP` and
+## `WorldLook.DARK..GINGER`. Drawn off his nation and country, which is why the
+## world draws them and not the figure: the seed knows no country.
+var complexion := WorldLook.FAIR
+var hair_family := WorldLook.BROWN
 ## Seed for the procedural appearance (PLAN.md §9.1). Travels to `SimPlayer` so
-## presentation rebuilds the same face every time.
+## presentation rebuilds the same face every time. Carries the body, the
+## complexion, the hair family, the age band and the archetype in its low bits.
 var appearance_seed := 0
 
 # --- Football ---------------------------------------------------------------

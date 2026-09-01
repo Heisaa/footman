@@ -63,6 +63,9 @@ var away_kit := SimPalette.SKY
 ## A line under the board, or empty for no line at all. Full time uses it to say
 ## which keys start another match; nothing else writes to it.
 var prompt := ""
+## The set situation on screen, named. Drawn in the prompt's slot on a paper
+## chip; the full-time prompt, when it comes, takes the slot over.
+var subtitle := ""
 
 var _font: Font
 var _clock := 0.0
@@ -211,17 +214,19 @@ func _draw_tab(tab: Rect2) -> void:
 ## and narrower than the board so it reads as a label on it rather than a second
 ## board.
 func _draw_prompt(tab: Rect2) -> void:
-	if prompt == "":
+	var text := prompt if prompt != "" else subtitle
+	if text == "":
 		return
+	var fill := SimPalette.LEMON if prompt != "" else SimPalette.PAPER
 	var width := _font.get_string_size(
-		prompt, HORIZONTAL_ALIGNMENT_LEFT, -1, PROMPT_SIZE
+		text, HORIZONTAL_ALIGNMENT_LEFT, -1, PROMPT_SIZE
 	).x + PROMPT_PAD * 2.0
 	var chip := Rect2(
 		Vector2(-width * 0.5, tab.end.y + PROMPT_GAP), Vector2(width, PROMPT_HEIGHT)
 	)
 	_panel(chip.grow(BORDER * 0.5).abs(), SimPalette.INK, SimPalette.INK, SHADOW)
-	_panel(chip, SimPalette.LEMON, SimPalette.INK, Vector2.ZERO)
-	_text(chip, prompt, PROMPT_SIZE, SimPalette.INK, SimPalette.LEMON)
+	_panel(chip, fill, SimPalette.INK, Vector2.ZERO)
+	_text(chip, text, PROMPT_SIZE, SimPalette.INK, fill)
 
 
 func _panel(rect: Rect2, fill: Color, border: Color, offset: Vector2) -> void:

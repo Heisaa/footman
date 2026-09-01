@@ -14,20 +14,28 @@ extends RefCounted
 ## a full cut it adds about a tenth. Measured off the owner's vinyl reference,
 ## where skull-to-chin is a third of the figure and the hair takes the silhouette
 ## past that (`DECISIONS.md`, eleventh). The eighth amendment cut this to 0.27-31
-## from a different reference; this one is the squat toy and puts it back.
-const HEAD_FRACTION_MIN := 0.31
-const HEAD_FRACTION_MAX := 0.35
+## from a different reference; the squat toy put it back to 0.31-35, and the
+## match angle took a little off again: seen from 40 degrees up the head was
+## the figure.
+const HEAD_FRACTION_MIN := 0.27
+const HEAD_FRACTION_MAX := 0.30
+## The height the fraction is drawn for, and how hard it is pushed back towards
+## one head size away from it: 1.0 would give every man the same head in metres,
+## 0.0 a head proportional to him. 0.75 is about a person: a 2.00 m man's head
+## is a twentieth bigger than a 1.56 m man's, and his body a third.
+const HEAD_HEIGHT_REF := 1.79
+const HEAD_HEIGHT_DAMP := 0.75
 ## How far the head departs from a ball: 1.0 is round, and the two axes are drawn
 ## apart so a squad has long faces and wide ones. The face quad hangs off the
 ## head, so it stretches with it -- which is the Mii trick, and free.
-## Taller than wide, always. The long axis of the head runs top to bottom, which
-## is the way round a head actually is; it was the other way and every figure was
-## broad in the face. The variation inside that is small on purpose -- the shape
-## of a head is supposed to be noticed second, after the man.
-const HEAD_WIDTH_MIN := 0.90
-const HEAD_WIDTH_MAX := 1.00
-const HEAD_HEIGHT_MIN := 1.02
-const HEAD_HEIGHT_MAX := 1.12
+## Near a ball, a touch taller than wide. A ball reads the same from every angle,
+## and the match camera looks down at 40 degrees where a tall egg under a flat
+## cut was a box. The variation inside that is small on purpose -- the shape of
+## a head is supposed to be noticed second, after the man.
+const HEAD_WIDTH_MIN := 0.87
+const HEAD_WIDTH_MAX := 0.95
+const HEAD_HEIGHT_MIN := 0.98
+const HEAD_HEIGHT_MAX := 1.06
 ## Heights. A squad wants a giant and a small one in it, so the range reaches
 ## further out than a squad list would and the draw below spends most of its mass
 ## in the middle anyway.
@@ -81,17 +89,37 @@ const LIGHT_HAIR_CHANCE := 0.08
 const ACCESSORIES := ["none", "none", "none", "none", "headband"]
 
 var height := 1.78
+## The head fraction as drawn, before height has its say. `settle_head` turns
+## it into `head_fraction`, and has to run again whenever `height` changes --
+## a packed record overrules the drawn height after the draw.
+var head_draw := 0.30
 var head_fraction := 0.37
 ## 0 is slight, 1 is heavy. Drives body width only; it has no simulation effect.
 var build := 0.5
 var skin: Color = SKIN_TONES[0]
 var hair_style := 0
 var hair_colour: Color = HAIR_COLOURS[0]
+## Brows, moustache and beard. The hair colour, except that a fair-haired man's
+## face hair is darker about half the time, which is how fair men mostly are;
+## the other half it matches, and the brows all but vanish on a pale face.
+var face_hair_colour: Color = HAIR_COLOURS[0]
+## Raw-channel luminance; the light browns start at 0.47, the dark ones end at 0.38.
+const FAIR_HAIR_LUMINANCE := 0.42
+const DARK_FACE_HAIR_CHANCE := 0.55
+const FACE_HAIR_DARKEN := 0.18
 var accessory := "none"
 var face := Face.NEUTRAL
 ## Head shape, as scales on the head sphere. Round is 1, 1.
 var head_width := 1.0
 var head_height := 1.0
+## How much chin: 0 is the skull as moulded, `CHIN_MAX` the most jaw a man gets.
+var chin := 0.0
+const CHIN_MAX := 0.3
+## How much brow ridge: 0 is the skull as moulded, 1 a shelf over the eyes.
+## Every man gets `BROW_FIXED` for now -- the owner picked it off the parade
+## (`--brow 0`, third man) and wants it on all of them before it varies.
+var brow := 0.0
+const BROW_FIXED := 0.5
 ## The face he was born with: his brows, his eyes, his mouth -- drawn -- and his
 ## nose, which is a bump on the head rather than a mark on the texture, because
 ## that is what the reference art does and a drawn nose reads as a smudge. The
@@ -130,11 +158,12 @@ static func from_seed(seed_value: int) -> SimAppearance:
 	var a := SimAppearance.new()
 	var rng := SimRng.new(seed_value)
 	a.height = _height(rng)
-	a.head_fraction = lerpf(HEAD_FRACTION_MIN, HEAD_FRACTION_MAX, rng.unit_float())
-	# A bell rather than a flat draw, then pushed by height: the giant is built
-	# like one and the small one is not a wide man who happens to be short.
+	a.head_draw = lerpf(HEAD_FRACTION_MIN, HEAD_FRACTION_MAX, rng.unit_float())
+	a.settle_head()
+	# A bell rather than a flat draw, barely pushed by height: a tall man is as
+	# likely thin as thick.
 	a.build = clampf(
-		(rng.unit_float() + rng.unit_float()) * 0.5 + (a.height - 1.78) * 0.9, 0.0, 1.0)
+		(rng.unit_float() + rng.unit_float()) * 0.5 + (a.height - 1.78) * 0.3, 0.0, 1.0)
 	# A heavy man gets a wider head, but not by much -- the draw does most of it.
 	a.head_width = clampf(
 		lerpf(HEAD_WIDTH_MIN, HEAD_WIDTH_MAX, rng.unit_float()) + (a.build - 0.5) * 0.08,
@@ -144,7 +173,8 @@ static func from_seed(seed_value: int) -> SimAppearance:
 	a.hair_style = rng.range_int(0, SimCharacterBuilder.HAIR_LIBRARY.size() - 1)
 	a.hair_colour = _hair_colour(rng, a.skin)
 	a.accessory = ACCESSORIES[rng.range_int(0, ACCESSORIES.size() - 1)]
-	a.brow_style = rng.range_int(0, SimFaceAtlas.BROW_STYLES.size() - 1)
+	# From 1: style 0 is no brows, and every man has them.
+	a.brow_style = rng.range_int(1, SimFaceAtlas.BROW_STYLES.size() - 1)
 	a.eye_style = rng.range_int(0, SimFaceAtlas.EYE_STYLES.size() - 1)
 	a.mouth_style = rng.range_int(0, SimFaceAtlas.MOUTH_STYLES.size() - 1)
 	a.nose_style = rng.range_int(0, SimCharacterBuilder.NOSE_LIBRARY.size() - 1)
@@ -158,7 +188,133 @@ static func from_seed(seed_value: int) -> SimAppearance:
 	a.sleeves_long = rng.chance(0.75)
 	a.socks_high = rng.chance(0.8)
 	a.face = Face.NEUTRAL
+	if WorldLook.is_packed(seed_value):
+		_apply_record(a, rng, seed_value)
+	# Drawn last so every man keeps the face he had before chins came in. Bell,
+	# and a heavy build leans on it: most chins are modest, a few are jaws.
+	a.chin = clampf((rng.unit_float() + rng.unit_float()) * 0.5 + (a.build - 0.5) * 0.3, 0.0, 1.0) * CHIN_MAX
+	a.brow = BROW_FIXED
+	a.face_hair_colour = a.hair_colour
+	if a.hair_colour.get_luminance() > FAIR_HAIR_LUMINANCE and rng.chance(DARK_FACE_HAIR_CHANCE):
+		a.face_hair_colour = a.hair_colour.darkened(FACE_HAIR_DARKEN)
 	return a
+
+
+# --- What the record says ------------------------------------------------------
+#
+# The draw above is the man the seed alone would make. A seed the world packed
+# carries what the record knows, and it overrules the parts of the draw that
+# would contradict him: a boy of eighteen is not bald, a man of thirty-six is
+# not a man of twenty-two with the same hair, a Ghanaian is not drawn off the
+# English skin table. The free draw is kept for everything else, so the same
+# seed still makes the same face and a record fact moves only what it names.
+
+## Skin tones by complexion band: where on the ladder each band draws from.
+const COMPLEXION_TONES := {
+	WorldLook.FAIR: [0, 1, 2, 3],
+	WorldLook.MEDIUM: [3, 4, 5],
+	WorldLook.DEEP: [5, 6, 7, 8],
+}
+## Hair colours by family: indices into `HAIR_COLOURS`.
+const FAMILY_COLOURS := {
+	WorldLook.DARK: [0, 1, 2],
+	WorldLook.BROWN: [3, 4, 5, 6],
+	WorldLook.FAIR_HAIR: [7, 8],
+	WorldLook.GINGER: [9, 10],
+}
+const GREY := 11
+const SILVER := 12
+const WHITE := 13
+
+## Cuts a man loses hair into, `SimCharacterBuilder.HAIR_LIBRARY` indices:
+## bald, receding, thin on top, thinning, horseshoe.
+const LOSING_CUTS := [0, 11, 12, 17, 19]
+## Cuts that suit tight curls: cropped, short back and sides, buzz, flat top,
+## afro, afro again because it is the one the era wore.
+const DEEP_CUTS := [1, 2, 18, 22, 23, 23, 6]
+## A neat man's cut: side parting short, slicked back, short back and sides.
+const NEAT_CUTS := [27, 15, 2]
+## The heaviest brow in the atlas, for the man the crowd calls the hammer or
+## the wall.
+const HEAVY_BROW := 6
+## The big nose, `NOSE_LIBRARY`: the one a centre-half has had broken.
+const BIG_NOSE := 3
+
+## How often a man in each age band is losing his hair, going grey, and wears
+## a moustache. Young, prime, thirties, veteran.
+const LOSING_CHANCE := [0.0, 0.05, 0.22, 0.45]
+const GREY_CHANCE := [0.0, 0.0, 0.25, 0.75]
+const MOUSTACHE_CHANCE := [0.06, 0.22, 0.38, 0.5]
+
+
+static func _apply_record(a: SimAppearance, rng: SimRng, seed_value: int) -> void:
+	var complexion := WorldLook.complexion_of(seed_value)
+	var family := WorldLook.hair_family_of(seed_value)
+	var band := WorldLook.age_band_of(seed_value)
+	var archetype := WorldLook.archetype_of(seed_value)
+
+	# Skin: the band picks the rungs, the seed picks the rung.
+	var rungs: Array = COMPLEXION_TONES[complexion]
+	a.skin = SKIN_TONES[rungs[rng.range_int(0, rungs.size() - 1)]]
+
+	# Hair colour: the family picks the shades; age turns them grey.
+	var shades: Array = FAMILY_COLOURS[family]
+	a.hair_colour = HAIR_COLOURS[shades[rng.range_int(0, shades.size() - 1)]]
+	if rng.chance(GREY_CHANCE[band]):
+		# Thirties go grey; a veteran may go silver or white.
+		a.hair_colour = HAIR_COLOURS[GREY] if band == WorldLook.THIRTIES \
+			else HAIR_COLOURS[[GREY, GREY, SILVER, WHITE][rng.range_int(0, 3)]]
+	a.hair_colour = _separate_hair(a.hair_colour, a.skin)
+
+	# The cut: nobody young is losing it; a veteran often is. A man on a losing
+	# cut the seed gave him keeps it only if his age allows.
+	var losing := LOSING_CUTS.has(a.hair_style)
+	if rng.chance(LOSING_CHANCE[band]):
+		a.hair_style = LOSING_CUTS[rng.range_int(0, LOSING_CUTS.size() - 1)]
+	elif losing:
+		a.hair_style = rng.range_int(1, SimCharacterBuilder.HAIR_LIBRARY.size() - 1)
+		while LOSING_CUTS.has(a.hair_style):
+			a.hair_style = rng.range_int(1, SimCharacterBuilder.HAIR_LIBRARY.size() - 1)
+	if complexion == WorldLook.DEEP and not LOSING_CUTS.has(a.hair_style) and rng.chance(0.8):
+		a.hair_style = DEEP_CUTS[rng.range_int(0, DEEP_CUTS.size() - 1)]
+
+	# Face hair by age: the boy is clean or stubbled; the era's moustache comes
+	# with the years.
+	if band == WorldLook.YOUNG:
+		if a.beard_style != 2:
+			a.beard_style = -1
+		a.moustache_style = -1
+	if a.moustache_style < 0 and rng.chance(MOUSTACHE_CHANCE[band]):
+		a.moustache_style = [0, 0, 1, 2][rng.range_int(0, 3)]
+	elif a.moustache_style >= 0 and band == WorldLook.YOUNG:
+		a.moustache_style = -1
+
+	# The nose again, off the skin he has now. It was derived above from the
+	# skin the seed drew, and a nose tinted for a deep tone on a fair face was
+	# a dark ball in the middle of it.
+	a.nose_colour = _nose_colour(a.skin, rng)
+	var nose_row: Array = SimCharacterBuilder.NOSE_LIBRARY[a.nose_style]
+	if float(nose_row[1]) <= 0.0 or complexion == WorldLook.DEEP:
+		a.nose_colour = a.skin
+
+	# The archetype: what the crowd noticed, on the face too.
+	match archetype:
+		WorldNickname.HAMMER, WorldNickname.WALL:
+			a.brow_style = HEAVY_BROW
+			if archetype == WorldNickname.WALL and rng.chance(0.6):
+				a.nose_style = BIG_NOSE
+		WorldNickname.FIREBRAND:
+			a.brow_style = HEAVY_BROW
+			if a.beard_style < 0 and rng.chance(0.5):
+				a.beard_style = 2
+		WorldNickname.BRAIN:
+			if not LOSING_CUTS.has(a.hair_style):
+				a.hair_style = NEAT_CUTS[rng.range_int(0, NEAT_CUTS.size() - 1)]
+		WorldNickname.VETERAN:
+			if not LOSING_CUTS.has(a.hair_style) and rng.chance(0.5):
+				a.hair_style = LOSING_CUTS[rng.range_int(0, LOSING_CUTS.size() - 1)]
+			if a.hair_colour.get_luminance() < HAIR_COLOURS[GREY].get_luminance():
+				a.hair_colour = _separate_hair(HAIR_COLOURS[GREY], a.skin)
 
 
 ## Moustache and beard together, because the era paired them: a moustache on
@@ -246,7 +402,7 @@ static func _separate_hair(hair: Color, skin: Color) -> Color:
 ## The nose, from the man's own skin to a shade darker and warmer than it. The
 ## owner's toy reference has plain skin-coloured noses, so most are just that;
 ## the rest lean towards a warm red, never far enough to read as a clown's, and
-## the further they lean the darker they go.
+## only a shade darker at the furthest: the same as the skin or just off it.
 static func _nose_colour(skin: Color, rng: SimRng) -> Color:
 	# How far off the skin this nose is. Squared so plain noses are the common
 	# case and the warmest is the tail.
@@ -259,8 +415,8 @@ static func _nose_colour(skin: Color, rng: SimRng) -> Color:
 	var target := Color.from_hsv(
 		hue,
 		clampf(skin.s * 1.1 + 0.08, 0.2, 0.5),
-		clampf(skin.v * lerpf(1.0, 0.88, t), 0.0, 1.0))
-	return skin.lerp(target, t * 0.3)
+		clampf(skin.v * lerpf(1.0, 0.95, t), 0.0, 1.0))
+	return skin.lerp(target, t * 0.25)
 
 
 ## Height: mostly the middle of a squad list, sometimes a tail. The middle is the
@@ -273,6 +429,14 @@ static func _height(rng: SimRng) -> float:
 		return lerpf(HEIGHT_TYPICAL_MAX, HEIGHT_MAX, rng.unit_float())
 	var bell := (rng.unit_float() + rng.unit_float()) * 0.5
 	return lerpf(HEIGHT_TYPICAL_MIN, HEIGHT_TYPICAL_MAX, bell)
+
+
+## The head is a fraction of height, so a giant got a giant's head. Real heads
+## hardly grow with the man: damped against height, a head in metres goes as
+## height to the power `1 - HEAD_HEIGHT_DAMP`, and nobody goes above MAX.
+func settle_head() -> void:
+	head_fraction = minf(
+		head_draw * pow(HEAD_HEIGHT_REF / height, HEAD_HEIGHT_DAMP), HEAD_FRACTION_MAX)
 
 
 ## Head radius in metres, from the height and the head fraction.

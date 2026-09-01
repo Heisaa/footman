@@ -53,9 +53,11 @@ const CAMERA_SIDE_X := 40.0
 ## Frame width decides how big a player is on screen, and a player who is forty
 ## pixels tall has no body language: the expressions, the arm swing and the
 ## squash of a kick are all below the resolution of the shot, and the whole
-## character system may as well not exist. Fifty metres across the frame puts a
+## character system may as well not exist. Fifty metres across the frame put a
 ## player at roughly sixty pixels in 720p, which is enough to read a face, while
-## still holding the ball carrier and the players around him.
+## still holding the ball carrier and the players around him. Fifty-eight is the
+## owner's call after the world clubs went on: a bit more of the shape of play
+## around the carrier, and a face still reads.
 ##
 ## Holding it fixed is what makes the lens a zoom. A camera bolted to one spot is
 ## three times further from the far touchline than from the near one, so at a
@@ -63,7 +65,7 @@ const CAMERA_SIDE_X := 40.0
 ## play crossed the pitch. `_apply_camera` solves the field of view for this
 ## width at whatever the range to the ball currently is, which is what a camera
 ## operator does with the zoom rocker and for the same reason.
-const CAMERA_FRAME_WIDTH := 50.0
+const CAMERA_FRAME_WIDTH := 58.0
 const CAMERA_FOV_MIN := 8.0
 const CAMERA_FOV_MAX := 50.0
 
@@ -137,6 +139,12 @@ const TURF_MESH_STEP := 1.0
 ## so the view and the instruments describe one match. `--clock-rate 1
 ## --pitch-scale 1` puts this back to real time.
 @export var match_seed := 1
+## A world seed puts two generated clubs on the pitch instead of `SimSquadGen`
+## squads: `world_match.tscn` sets it, `--world N` on the command line does too.
+## `home_club` and `away_club` are their places in the league at that seed.
+@export var world_seed := -1
+@export var home_club := 0
+@export var away_club := 1
 @export var minutes := 90.0
 ## Match-clock seconds per simulated second. At 10 a full ninety is played out
 ## in nine minutes of football, with the scoreboard still reading 0-90.
@@ -184,6 +192,11 @@ var _accumulator := 0.0
 ## point of watching one is seeing the same moment many times, and five seconds
 ## of football followed by eighty-nine minutes of something else is not that.
 var _scenario: SimScenario = null
+## The tour: `--scenario all` starts at the first scenario and repeats it on a
+## new seed each play-out, like the single-scenario watch; N steps to the next
+## scenario in table order, wrapping, and R replays the same seed.
+var _scenario_cycle := false
+var _scenario_index := 0
 var _scenario_end_tick := -1
 ## The tick the hold after the situation resolved runs to, once it has. Held
 ## separately so the resolution is only noticed once: `live` goes false the
@@ -353,6 +366,12 @@ func _ready() -> void:
 			_shot_path = args[i + 1]
 		elif args[i] == "--seed" and i + 1 < args.size():
 			match_seed = int(args[i + 1])
+		elif args[i] == "--world" and i + 1 < args.size():
+			world_seed = int(args[i + 1])
+		elif args[i] == "--home-club" and i + 1 < args.size():
+			home_club = int(args[i + 1])
+		elif args[i] == "--away-club" and i + 1 < args.size():
+			away_club = int(args[i + 1])
 		elif args[i] == "--speed" and i + 1 < args.size():
 			_speed = float(args[i + 1])
 			_speed_given = true
@@ -397,10 +416,14 @@ func _ready() -> void:
 		# row are the identical starting position -- which is the only reason
 		# the eye and the numbers can usefully disagree.
 		elif args[i] == "--scenario" and i + 1 < args.size():
-			_scenario = SimScenarios.by_name(args[i + 1])
-			if _scenario == null:
-				push_error("no scenario named '%s'; known: %s" % [
-					args[i + 1], ", ".join(SimScenarios.names())])
+			if args[i + 1] == "all":
+				_scenario_cycle = true
+				_scenario = SimScenarios.all()[0]
+			else:
+				_scenario = SimScenarios.by_name(args[i + 1])
+				if _scenario == null:
+					push_error("no scenario named '%s'; known: all, %s" % [
+						args[i + 1], ", ".join(SimScenarios.names())])
 		elif args[i] == "--small":
 			small_sided = true
 		elif args[i] == "--pitch-scale" and i + 1 < args.size():
@@ -504,6 +527,9 @@ static func _requested_size(flag: String) -> Vector2i:
 func _match_options(seed_value: int) -> SimRunner.Options:
 	var opts := SimRunner.Options.new()
 	opts.seed_value = seed_value
+	opts.world_seed = world_seed
+	opts.home_club = home_club
+	opts.away_club = away_club
 	opts.minutes = minutes
 	opts.clock_rate = clock_rate
 	opts.small_sided = small_sided
@@ -545,6 +571,13 @@ func _next_quality_text() -> String:
 	return "%.2f v %.2f" % [next.x, next.y]
 
 
+## The tour's step: the next scenario in table order, wrapping.
+func _advance_scenario() -> void:
+	var list := SimScenarios.all()
+	_scenario_index = (_scenario_index + 1) % list.size()
+	_scenario = list[_scenario_index]
+
+
 ## Kicks off a match, and clears everything the last one left behind.
 ##
 ## Everything below the match itself is state carried on this node or on a tool
@@ -574,7 +607,13 @@ func _start_match(seed_value: int) -> void:
 	_scenario_started = false
 	if _scenario != null:
 		_scenario_end_tick = int((_scenario.seconds + SCENARIO_HOLD) / SimConsts.DT)
-		print("scenario %s, seed %d: %s" % [_scenario.name, seed_value, _scenario.title])
+		var tour := (" (%d/%d, N next, R again)" % [_scenario_index + 1,
+			SimScenarios.all().size()]) if _scenario_cycle else ""
+		print("scenario %s%s, seed %d: %s" % [_scenario.name, tour, seed_value, _scenario.title])
+		if _scoreboard != null:
+			_scoreboard.subtitle = _scenario.name.to_upper() + (
+				"  %d/%d" % [_scenario_index + 1, SimScenarios.all().size()]
+				if _scenario_cycle else "")
 	_build_ground()
 	_build_players()
 	if _scoreboard != null:
@@ -1563,6 +1602,8 @@ func _process(delta: float) -> void:
 		_scenario_hold_end = _curr.tick + int(SCENARIO_HOLD / SimConsts.DT)
 		_scenario_end_tick = mini(_scenario_end_tick, _scenario_hold_end)
 	if _scenario_end_tick >= 0 and _curr.tick >= _scenario_end_tick and not _paused:
+		# On the tour the repeat stays on this scenario, a new seed each time,
+		# like the single-scenario watch; only N steps to the next one.
 		_go_to_match(match_seed + 1)
 		return
 	_check_full_time()
@@ -2008,18 +2049,26 @@ func _run_seek() -> void:
 ## The command that re-simulates this moment. The flags matter: the compressed
 ## clock and a scaled pitch are different matches from the same seed.
 func _replay_command(tick: int) -> String:
-	var extra := ""
-	if clock_rate != 1.0:
-		extra += " --clock-rate %g" % clock_rate
+	# Always, because the replay's own default is the compressed clock and the
+	# debug overlay's is real time: leaving it off is a different match.
+	var extra := " --clock-rate %s" % clock_rate
+	if _scenario != null:
+		extra += " --scenario %s" % _scenario.name
 	if pitch_scale != 1.0:
-		extra += " --pitch-scale %g" % pitch_scale
+		extra += " --pitch-scale %s" % pitch_scale
 	if small_sided:
 		extra += " --small"
 	# The squads are part of the match too: the same seed at another quality is
 	# eleven other men, and the tick lands somewhere unrelated.
 	var quality := _quality()
 	if quality.x != 0.6 or quality.y != 0.6:
-		extra += " --home %g --away %g" % [quality.x, quality.y]
+		extra += " --home %s --away %s" % [quality.x, quality.y]
+	# And the world's clubs, when the match is one of the world's: the seed
+	# alone gives a generated squad with other men in it.
+	if world_seed >= 0:
+		extra += " --world %d --home-club %d --away-club %d" % [world_seed, home_club, away_club]
+	if minutes != 90.0:
+		extra += " --minutes %s" % minutes
 	return "./run.sh replay --seed %d --tick %d --around 6%s" % [match_seed, tick, extra]
 
 
@@ -3134,7 +3183,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		# The next match and this one again. Both work at any point, but full time
 		# is where they are wanted: the board asks for them there.
 		KEY_N:
-			_go_to_match(match_seed + 1, _quality_step + 1)
+			if _scenario_cycle:
+				_advance_scenario()
+				_go_to_match(match_seed + 1)
+			else:
+				_go_to_match(match_seed + 1, _quality_step + 1)
 		KEY_R:
 			_go_to_match(match_seed)
 		KEY_F11, KEY_F:

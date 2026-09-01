@@ -100,7 +100,10 @@ static func player(
 	var spread := 0.20 if tail_kind != WorldNickname.NONE else 0.12
 	p.attrs = SimAttributes.generate(rng, role, quality, spread, side)
 	p.height = _draw_height(rng, role, tail_kind)
-	p.build = clampf(rng.gauss_clamped(0.5, 0.16, 2.0) + (p.height - HEIGHT_MEAN) * 0.9, 0.05, 0.95)
+	# Barely pushed by height: a tall man is as likely thin as thick, which is
+	# how the beanpole and the ox both get drawn. It was 0.9 and every tall man
+	# was heavy.
+	p.build = clampf(rng.gauss_clamped(0.5, 0.16, 2.0) + (p.height - HEIGHT_MEAN) * 0.3, 0.05, 0.95)
 	# Age first, then the tail. The other way round the curve quietly undoes the
 	# thing the man was built to be -- a thirty-three-year-old whippet had his
 	# forced 0.93 of pace multiplied back down to 0.85 and stopped being a
@@ -111,6 +114,8 @@ static func player(
 		_force_tail(rng, p, tail_kind)
 
 	p.appearance_seed = rng.next_u32()
+	p.complexion = WorldLook.draw_complexion(rng, nation, p.nation_code)
+	p.hair_family = WorldLook.draw_hair_family(rng, nation, p.nation_code, p.complexion)
 	p.traits = WorldTraits.draw(rng, p.attrs, p.age, WorldTraits.draw_count(rng), traits_already)
 	# A firebrand is a temperament as much as a number, and the archetype asks
 	# for both. Give him the trait if the draw did not.
@@ -127,8 +132,9 @@ static func player(
 
 	p.archetype = WorldNickname.archetype(p.attrs, p.height, p.age, p.traits, role == SimRole.GK)
 	p.epithet = WorldNickname.epithet(rng, p.archetype)
-	# The body goes into the seed's low bits, because the seed is the only thing
-	# about his looks that reaches the figure on screen. `WorldLook` says why.
+	# The body, complexion, hair, age and archetype go into the seed's low bits,
+	# because the seed is the only thing about his looks that reaches the figure
+	# on screen. `WorldLook` says why.
 	# It happens here rather than with the draw above because the body type reads
 	# the archetype, and the archetype is not known until the traits are.
 	p.appearance_seed = WorldLook.pack_for(p.appearance_seed, p)

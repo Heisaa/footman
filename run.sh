@@ -84,6 +84,9 @@ usage: ./run.sh <command> [args]
   determinism [--seed N]    run one seed twice and compare the event logs
   view                      open the 2D debug view (needs a display)
   view3d [--seed N]         open the 3D match view (needs a display).
+      [--world N]           two generated clubs of the league at world seed N
+      [--home-club K]       instead of SimSquadGen squads: the clubs parade
+      [--away-club J]       --world shows. match and diagnose take the same.
       [--render WxH]        draw the frame at that many pixels, stretched to
       [--windowed WxH]      the screen; or a window of that size, where the
                             compositor allows one (not under sway)
@@ -132,7 +135,9 @@ usage: ./run.sh <command> [args]
                             repeats on the next seed so the same thing can be
                             watched many times. The names are the rows of
                             `./run.sh scenario`, which counts the identical
-                            situations
+                            situations. --scenario all is the tour: each
+                            scenario repeats until N steps to the next one
+                            in table order; R replays
   demo                      the six-a-side comparison, compressed the same way
   shot                      render one match frame to a PNG, from a virtual
                             display (SHOT_AT, SHOT_SPEED, SHOT_PATH, SHOT_RES)
@@ -142,6 +147,13 @@ usage: ./run.sh <command> [args]
       [--page N] [--still]  each captioned with number, name, height and
       [--turn DEG]          appearance seed. The squad is the match squad, so a
       [--face 0-4]          note taken here holds in view3d at the same seed.
+      [--elevation DEG]     camera height above level (7); 40 is the match angle.
+      [--zoom N]            camera distance divisor (1); 2 is the heads.
+      [--chin 0-1]          chin on the first man, +0.25 per man along the rank.
+      [--brow 0-1]          brow ridge, the same way.
+      [--world N]           a generated club's squad instead, captioned with the
+      [--club K] [--rep R]  record: age, country, complexion, archetype. --club
+                            K is the Kth club of the league at that seed.
       [--render WxH]        draw the frame at that many pixels, stretched to
       [--windowed WxH]      the screen; or a window of that size, where the
                             compositor allows one (not under sway)

@@ -13,6 +13,11 @@ extends Node3D
 ## same call `view3d` makes, so `parade --seed 7` and `view3d --seed 7` are the
 ## same twenty-two men and a note taken here holds there.
 ##
+## `--world N` stands a generated club's squad instead: `WorldGen.club` at that
+## seed, the men the game will actually field, with the record on the caption --
+## age, country, archetype -- next to the face it was packed into. That is the
+## view for judging whether a thirty-six-year-old looks thirty-six.
+##
 ## **It moves.** A figure judged standing still is half judged: a shoulder that
 ## reads at rest can tear open the moment an arm lifts, and a gait is the thing
 ## a man spends a match doing. `[` and `]` step through the animation states,
@@ -67,10 +72,31 @@ const BREATH_DEPTH := 0.006
 const ARM_OUT := 0.10
 const ELBOW_BEND := -0.22
 
+## Set on the scene so it runs from the editor without arguments:
+## `world_parade.tscn` sets `world_seed`. A `--world` on the command line wins.
+@export var world_seed := -1
+@export var club_index := 0
+@export var reputation := 0.45
+
 var _seed := 7
+## A world seed, or -1 for the match squad. `_club` is which club of the
+## league at that seed, and `_rep` the reputation a lone club is built at.
+var _world := -1
+var _club := 0
+var _rep := 0.45
+## The record behind each man in `_pool`, when the pool came from the world.
+var _records: Array = []
 var _page := 0
 var _spin := true
 var _turn := 0.0
+## Degrees the camera sits above level. `ELEVATION_DEG` by default; `--elevation
+## 40 --turn 60` is the man seen as the match sees him.
+var _elevation := ELEVATION_DEG
+## The stops `E` walks: level, the match camera, the steepest it gets.
+const ELEVATION_STOPS := [7.0, 40.0, 60.0]
+## Camera distance multiplier. 1 holds the rank; 0.5 is the head and shoulders
+## of the middle two. `+` and `-` step it.
+var _zoom := 1.0
 var _face := SimAppearance.Face.NEUTRAL
 ## Which of `REEL` is playing, or -1 for the stand pose the parade opened with.
 var _reel := -1
@@ -87,6 +113,12 @@ var _nose := -1
 ## none on every man; -1 leaves each man his own.
 var _tache := -1
 var _beard := -1
+## Chin on the first man, 0-1, with the next three stepping up by a quarter
+## each: `--chin 0` walks none, a quarter, a half, three quarters. Negative
+## leaves each man his own.
+var _chin := -1.0
+## The same for the brow ridge.
+var _brow := -1.0
 ## One man for every column, by his place in the squad (1-based), so a sheet
 ## of cuts is a sheet of cuts and not of men. Zero is the squad as it comes.
 var _man := 0
@@ -101,13 +133,24 @@ var _nodes: Array[Node3D] = []
 var _labels: Array[Label3D] = []
 var _camera: Camera3D = null
 var _caption: Label = null
+## The record lines, along the bottom of the frame where they cover nobody's hair.
+var _record_label: Label = null
 
 
 func _ready() -> void:
+	_world = world_seed
+	_club = club_index
+	_rep = reputation
 	var args := OS.get_cmdline_user_args()
 	for i in args.size():
 		if args[i] == "--seed" and i + 1 < args.size():
 			_seed = int(args[i + 1])
+		elif args[i] == "--world" and i + 1 < args.size():
+			_world = int(args[i + 1])
+		elif args[i] == "--club" and i + 1 < args.size():
+			_club = int(args[i + 1])
+		elif args[i] == "--rep" and i + 1 < args.size():
+			_rep = float(args[i + 1])
 		elif args[i] == "--page" and i + 1 < args.size():
 			_page = int(args[i + 1])
 		elif args[i] == "--still":
@@ -116,6 +159,10 @@ func _ready() -> void:
 			# Which way the rank faces at the start. `--turn 180 --still` is the
 			# shot of the backs of the shirts.
 			_turn = float(args[i + 1])
+		elif args[i] == "--elevation" and i + 1 < args.size():
+			_elevation = float(args[i + 1])
+		elif args[i] == "--zoom" and i + 1 < args.size():
+			_zoom = float(args[i + 1])
 		elif args[i] == "--face" and i + 1 < args.size():
 			_face = int(args[i + 1])
 		elif args[i] == "--anim" and i + 1 < args.size():
@@ -134,6 +181,10 @@ func _ready() -> void:
 			_tache = int(args[i + 1])
 		elif args[i] == "--beard" and i + 1 < args.size():
 			_beard = int(args[i + 1])
+		elif args[i] == "--chin" and i + 1 < args.size():
+			_chin = float(args[i + 1])
+		elif args[i] == "--brow" and i + 1 < args.size():
+			_brow = float(args[i + 1])
 		elif args[i] == "--man" and i + 1 < args.size():
 			_man = int(args[i + 1])
 		elif args[i] == "--plain":
@@ -214,11 +265,25 @@ func _build_world() -> void:
 	_caption.add_theme_color_override("font_outline_color", SimPalette.CHALK)
 	_caption.add_theme_constant_override("outline_size", 6)
 	made[1].add_child(_caption)
+	_record_label = Label.new()
+	_record_label.anchor_top = 1.0
+	_record_label.anchor_bottom = 1.0
+	_record_label.offset_left = 24.0
+	_record_label.offset_bottom = -18.0
+	_record_label.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_record_label.add_theme_font_size_override("font_size", 20)
+	_record_label.add_theme_color_override("font_color", SimPalette.INK)
+	_record_label.add_theme_color_override("font_outline_color", SimPalette.CHALK)
+	_record_label.add_theme_constant_override("outline_size", 6)
+	made[1].add_child(_record_label)
 
 
 ## The squad a seed produces, read off a match rather than invented here, so the
 ## rank is the eleven the view and the batch runner would show for that seed.
 func _load_squad() -> void:
+	if _world >= 0:
+		_load_world_squad()
+		return
 	var opts := SimRunner.Options.new()
 	opts.seed_value = _seed
 	opts.events = false
@@ -231,6 +296,27 @@ func _load_squad() -> void:
 		SimAppearance.kit_for(home_colour),
 		SimAppearance.away_kit(home_colour, _seed),
 	]
+	_page = clampi(_page, 0, maxi(_pages() - 1, 0))
+
+
+## A generated club's squad. `--club N` takes the Nth club of a league at that
+## seed so every club in a division can be looked at; without it one club is
+## drawn on its own at `--rep`.
+func _load_world_squad() -> void:
+	var rng := SimRng.new(_world)
+	var club: WorldClub
+	if _club > 0:
+		var league := WorldGen.league(rng, maxi(_club + 1, WorldSeason.DEFAULT_CLUBS), _rep)
+		club = league[mini(_club, league.size() - 1)]
+	else:
+		club = WorldGen.club(rng, 0, _rep)
+	_pool = []
+	_records = []
+	for i in club.squad.size():
+		var record: WorldPlayer = club.squad[i]
+		_pool.append(record.to_sim_player(i, 0))
+		_records.append(record)
+	_kits = [SimAppearance.kit_for(club.kit[0]), club.away_kit]
 	_page = clampi(_page, 0, maxi(_pages() - 1, 0))
 
 
@@ -267,6 +353,10 @@ func _build_row() -> void:
 			appearance.beard_style = (_beard + i) % 3
 		elif _beard == -2:
 			appearance.beard_style = -1
+		if _chin >= 0.0:
+			appearance.chin = clampf(_chin + 0.25 * float(i), 0.0, 1.0)
+		if _brow >= 0.0:
+			appearance.brow = clampf(_brow + 0.25 * float(i), 0.0, 1.0)
 		if _plain:
 			appearance.accessory = "none"
 		var at := Vector3((float(i) - float(count - 1) * 0.5) * SPACING, 0.0, 0.0)
@@ -284,12 +374,20 @@ func _build_row() -> void:
 		label.text = "#%d  %s\n%.2f m\nseed %d" % [
 			p.shirt, p.player_name, appearance.height, p.appearance_seed,
 		]
+		# A world man is captioned along the bottom of the overlay instead: a
+		# rank framed for a tall man clips a label under his feet.
+		label.visible = _world < 0
 		if _hair >= 0:
-			label.text += "\nhair %d of %d" % [appearance.hair_style, styles]
+			var cut: Dictionary = SimCharacterBuilder.HAIR_LIBRARY[appearance.hair_style]
+			label.text += "\nhair %d: %s" % [appearance.hair_style, cut.get("name", "")]
 		if _nose >= 0:
 			label.text += "\nnose %d of %d" % [appearance.nose_style, noses]
 		if _tache >= 0 or _beard >= 0:
 			label.text += "\ntache %d  beard %d" % [appearance.moustache_style, appearance.beard_style]
+		if _chin >= 0.0:
+			label.text += "\nchin %.2f" % appearance.chin
+		if _brow >= 0.0:
+			label.text += "\nbrow %.2f" % appearance.brow
 		label.font_size = 64
 		label.pixel_size = 0.0011
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -332,27 +430,64 @@ func _frame_row(count: int) -> void:
 	# width leaves a tall frame mostly grass.
 	var half_tan := tan(deg_to_rad(FOV) * 0.5)
 	var d: float = maxf((span / aspect * 0.5) / half_tan, (FRAME_HEIGHT_MIN * 0.5) / half_tan)
-	var centre := Vector3(0.0, 1.05, 0.0)
-	var elevation := deg_to_rad(ELEVATION_DEG)
+	d /= clampf(_zoom, 0.2, 4.0)
+	# Zooming in looks at the heads, not the boots: the aim climbs as the frame
+	# shrinks, up to the eye line.
+	var aim_y: float = lerpf(1.05, 1.55, clampf(1.0 - 1.0 / maxf(_zoom, 0.01), 0.0, 1.0))
+	var centre := Vector3(0.0, aim_y, 0.0)
+	var elevation := deg_to_rad(_elevation)
 	_camera.position = centre + Vector3(0.0, d * sin(elevation), d * cos(elevation))
 	_camera.look_at(centre, Vector3.UP)
+
+
+## One line per man on screen: the facts the seed carries, so a face that
+## contradicts its record is caught against the line under the header.
+func _record_lines() -> PackedStringArray:
+	var lines := PackedStringArray()
+	var first := _page * PER_PAGE
+	for i in mini(PER_PAGE, _pool.size() - first):
+		var index := first + i
+		if _man > 0 and _man <= _pool.size():
+			index = _man - 1
+		var r: WorldPlayer = _records[index]
+		var seed_value := r.appearance_seed
+		var line := "#%-2d %-22s %-4s %2d  %s   %.2f m %-8s %-8s %s hair   %s   seed %d" % [
+			r.shirt, r.full_name(), SimRole.name_of(r.role), r.age, r.nation_code, r.height,
+			WorldLook.type_name(WorldLook.body_type_of(seed_value)),
+			WorldLook.COMPLEXION_NAMES[WorldLook.complexion_of(seed_value)],
+			WorldLook.HAIR_NAMES[WorldLook.hair_family_of(seed_value)],
+			WorldLook.AGE_NAMES[WorldLook.age_band_of(seed_value)], seed_value,
+		]
+		if r.archetype != WorldNickname.NONE:
+			line += "   %s \"%s\"" % [r.archetype, r.epithet]
+		if _hair >= 0:
+			var style: int = (_hair + i) % SimCharacterBuilder.HAIR_LIBRARY.size()
+			line += "   HAIR %d: %s" % [style, SimCharacterBuilder.HAIR_LIBRARY[style].get("name", "")]
+		lines.append(line)
+	return lines
 
 
 func _write_caption() -> void:
 	var first := _page * PER_PAGE + 1
 	var last: int = mini(_page * PER_PAGE + PER_PAGE, _pool.size())
+	var head := "PARADE   match seed %d" % _seed
+	if _world >= 0:
+		head = "PARADE   world seed %d   club %d" % [_world, _club]
 	_caption.text = "\n".join([
-		"PARADE   match seed %d   men %d-%d of %d   page %d/%d" % [
-			_seed, first, last, _pool.size(), _page + 1, _pages(),
+		"%s   men %d-%d of %d   page %d/%d" % [
+			head, first, last, _pool.size(), _page + 1, _pages(),
 		],
-		"%s   %s" % [
-			"turning" if _spin else "still",
+		"%s   elevation %.0f   zoom %.2f   %s" % [
+			"turning" if _spin else "still", _elevation, _zoom,
 			"standing" if _reel < 0 else "%s%s" % [
 				SimConsts.Anim.keys()[REEL[_reel]], "  (rolling)" if _rolling else "",
 			],
 		],
-		"< >  page    N / P  seed    SPACE  turn    1-5  face    [ ]  anim    A  roll    Q  quit",
+		"< >  page    N / P  seed    SPACE  turn    E  elevation    + -  zoom    1-5  face    [ ]  anim    A  roll    Q  quit",
 	])
+	if _world >= 0:
+		_record_label.text = "\n".join(_record_lines())
+		_record_label.offset_top = -18.0 - _record_label.get_minimum_size().y
 
 
 # --- Frame ------------------------------------------------------------------
@@ -432,17 +567,42 @@ func _unhandled_input(event: InputEvent) -> void:
 			_page = (_page - 1 + maxi(_pages(), 1)) % maxi(_pages(), 1)
 			_build_row()
 		KEY_N:
-			_seed += 1
+			# N and P walk whichever seed the rank came from.
+			if _world >= 0:
+				_world += 1
+			else:
+				_seed += 1
 			_page = 0
 			_load_squad()
 			_build_row()
 		KEY_P:
-			_seed = maxi(_seed - 1, 1)
+			if _world >= 0:
+				_world = maxi(_world - 1, 0)
+			else:
+				_seed = maxi(_seed - 1, 1)
 			_page = 0
 			_load_squad()
 			_build_row()
 		KEY_SPACE:
 			_spin = not _spin
+			_write_caption()
+		KEY_E:
+			# The next stop above the current elevation, wrapping to level.
+			var next: float = ELEVATION_STOPS[0]
+			for stop in ELEVATION_STOPS:
+				if float(stop) > _elevation + 0.5:
+					next = float(stop)
+					break
+			_elevation = next
+			_frame_row(_nodes.size())
+			_write_caption()
+		KEY_PLUS, KEY_EQUAL, KEY_KP_ADD:
+			_zoom = minf(_zoom * 1.25, 4.0)
+			_frame_row(_nodes.size())
+			_write_caption()
+		KEY_MINUS, KEY_KP_SUBTRACT:
+			_zoom = maxf(_zoom / 1.25, 0.2)
+			_frame_row(_nodes.size())
 			_write_caption()
 		KEY_BRACKETLEFT, KEY_BRACKETRIGHT:
 			# Stepping off the stand pose starts at the top of the reel rather

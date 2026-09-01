@@ -87,7 +87,10 @@ static var _model_cache := {}
 
 
 static func model_path(body_type: int) -> String:
-	return "%s/body_%s.glb" % [MODEL_DIR, WorldLook.type_name(body_type)]
+	# The buff man is the standard mould with the torso and the limbs widened
+	# in `_shape_body`; there is no file for him.
+	var name := WorldLook.type_name(WorldLook.STANDARD if body_type == WorldLook.BUFF else body_type)
+	return "%s/body_%s.glb" % [MODEL_DIR, name]
 
 
 ## Is there a model for this body? Cached, because it is asked 22 times a match
@@ -121,6 +124,10 @@ static func appearance_for(seed_value: int) -> SimAppearance:
 		return appearance
 	appearance.height = WorldLook.height_of(seed_value)
 	appearance.build = WorldLook.build_of(seed_value)
+	# The head was damped against the drawn height; the record's is the one
+	# that counts. Without this a packed giant's head was sized for a random
+	# man's body.
+	appearance.settle_head()
 	return appearance
 
 
@@ -149,6 +156,7 @@ static func build(seed_value: int, appearance: SimAppearance, kit: PackedColorAr
 	_choose_variant(root, "Moustache", appearance.moustache_style)
 	_choose_variant(root, "Beard", appearance.beard_style)
 	_dress_stubble(root, appearance)
+	_dress_face_hair(root, appearance)
 	# The face and the brows are the whole of a man's identity at this size, and
 	# they are the same code for a model as for the primitives: the metas below
 	# are what `SimCharacterBuilder.set_expression` and `_pose_brows` read.
@@ -156,7 +164,9 @@ static func build(seed_value: int, appearance: SimAppearance, kit: PackedColorAr
 	root.set_meta("eye_style", appearance.eye_style)
 	root.set_meta("mouth_style", appearance.mouth_style)
 	root.set_meta("head_r", MODEL_HEAD_R)
-	_shape_head(root, appearance)
+	_shape_head(root, appearance, body_type)
+	_shape_body(root, appearance, body_type)
+	_chin(root, appearance)
 	_dress_face(root, appearance)
 	_dress_eyes(root)
 	set_expression(root, appearance.face)
@@ -209,18 +219,106 @@ static func _number(root: Node3D, kit: PackedColorArray, shirt_number: int) -> v
 ## the atlas patch and the brows -- stretches with it, which is the point: a long
 ## face wants long features, and features that keep their own proportions on a
 ## stretched skull are a mask.
-static func _shape_head(root: Node3D, appearance: SimAppearance) -> void:
+static func _shape_head(root: Node3D, appearance: SimAppearance, body_type := WorldLook.STANDARD) -> void:
 	var head := root.find_child("Head", true, false) as Node3D
 	if head == null:
 		return
 	# Clamped, and the clamp is not cosmetic: the model's own head is 0.32 of
 	# its height and `head_fraction` is drawn round 0.37, so an unclamped ratio
 	# would grow every head by a sixth before it varied any of them.
-	var size := clampf(appearance.head_fraction / MODEL_HEAD_FRACTION, 0.90, 1.14)
+	var size := clampf(appearance.head_fraction / MODEL_HEAD_FRACTION, 0.80, 1.14)
 	head.scale = Vector3(
 		appearance.head_width * size,
 		appearance.head_height * size,
 		appearance.head_width * size)
+
+
+## The chin and the brow: the skull pushed out at the jaw and the forehead, and
+## with it everything that sits on that skin -- the face patch and the beards.
+## The `Head` pivot is the chin (`art/toy/figure.py:CHIN`), so the chin is at 0
+## in its space. Meshes are copied per man; the file's own are shared and must
+## not move.
+static func _chin(root: Node3D, appearance: SimAppearance) -> void:
+	root.set_meta("brow", appearance.brow)
+	var head := root.find_child("Head", true, false) as Node3D
+	if head == null:
+		return
+	for child in head.get_children():
+		var mesh := child as MeshInstance3D
+		if mesh == null:
+			continue
+		var n := String(mesh.name)
+		if n == "skull" or n == "Face" or n.begins_with("Beard"):
+			SimCharacterBuilder.deform_head(mesh, MODEL_HEAD_R, 0.0, appearance.chin, appearance.brow)
+
+
+## The body he was drawn with, on a mould that only has one: the limbs and the
+## torso widened or narrowed by the build, continuously, so a skinny man has
+## thin arms and a narrow chest and a chubby one the opposite -- the moulds
+## alone left every man the same width. The buff man is the standard mould
+## pushed further: a wide chest, shoulders out to match, thick limbs.
+##
+## Limb meshes hang down from their joint, so scaling them across (x, z) about
+## the joint keeps them on it; the joints themselves are left alone, or the
+## children would scale twice.
+const GIRTH_MIN := 0.86
+const GIRTH_MAX := 1.14
+## The buff man: the torso a little wider all over, the limbs thicker, and the
+## shirt tapered -- `BUFF_SHOULDER` wide at the top, the plain torso width at
+## the hem -- so it is a chest and shoulders, not a barrel. The shoulder joints
+## go out with the top of the shirt.
+const BUFF_TORSO := 1.04
+const BUFF_LIMB := 1.10
+const BUFF_SHOULDER := 1.28
+const LIMB_MESHES := ["thigh", "shorts_leg", "sock", "upper", "sleeve", "fore", "hand", "thumb"]
+const TORSO_MESHES := ["shirt", "seat", "neck"]
+static func _shape_body(root: Node3D, appearance: SimAppearance, body_type: int) -> void:
+	var girth := lerpf(GIRTH_MIN, GIRTH_MAX, appearance.build)
+	var torso := girth
+	var limb := girth
+	var buff := body_type == WorldLook.BUFF
+	if buff:
+		torso *= BUFF_TORSO
+		limb *= BUFF_LIMB
+	for node in root.find_children("*", "MeshInstance3D", true, false):
+		var stem := String(node.name).split("_")[0]
+		var mesh := node as MeshInstance3D
+		if stem in TORSO_MESHES:
+			mesh.scale = Vector3(torso, 1.0, torso)
+			if buff and stem == "shirt":
+				_taper(mesh, BUFF_SHOULDER)
+		elif stem in LIMB_MESHES:
+			mesh.scale = Vector3(limb, 1.0, limb)
+	# The shoulders sit on the chest and the hips under the seat: out with them.
+	for node in root.find_children("*", "Node3D", true, false):
+		var joint := node as Node3D
+		var n := String(joint.name)
+		if n.begins_with("Shoulder"):
+			joint.position.x *= torso * (BUFF_SHOULDER if buff else 1.0)
+		elif n.begins_with("Hip"):
+			joint.position.x *= torso
+
+
+## Widens a mesh across (x, and half as much in z) by `top` at the top of its
+## box, fading to nothing at the bottom. A copy: the file's mesh is shared.
+static func _taper(node: MeshInstance3D, top: float) -> void:
+	var source: Mesh = node.mesh
+	if source == null:
+		return
+	var box := source.get_aabb()
+	var out := ArrayMesh.new()
+	for i in source.get_surface_count():
+		var arrays: Array = source.surface_get_arrays(i)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		for k in verts.size():
+			var v := verts[k]
+			var t: float = clampf((v.y - box.position.y) / maxf(box.size.y, 0.001), 0.0, 1.0)
+			var wide: float = lerpf(1.0, top, t * t)
+			verts[k] = Vector3(v.x * wide, v.y, v.z * lerpf(1.0, wide, 0.5))
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		out.add_surface_from_arrays(source.surface_get_primitive_type(i), arrays)
+		out.surface_set_material(i, source.surface_get_material(i))
+	node.mesh = out
 
 
 ## Gives the model's face surface a material the atlas can be swapped into.
@@ -246,17 +344,39 @@ static func _dress_face(root: Node3D, appearance: SimAppearance) -> void:
 ## gets it, not just the shown one: cheaper than telling them apart.
 static func _dress_nose(root: Node3D, appearance: SimAppearance) -> void:
 	var mat := SimCharacterBuilder.toy_material(appearance.nose_colour)
+	var factor := SimCharacterBuilder.nose_scale(appearance.nose_style)
 	for node in root.find_children("Nose*", "MeshInstance3D", true, false):
 		var mesh := node as MeshInstance3D
 		for slot in mesh.get_surface_override_material_count():
 			mesh.set_surface_override_material(slot, mat)
+		# Scaled about its own middle, not the head's pivot at the chin: about
+		# the pivot a smaller nose is also a lower one, sunk into the face.
+		if mesh.visible and factor != 1.0 and mesh.mesh != null:
+			var centre: Vector3 = mesh.transform * mesh.mesh.get_aabb().get_center()
+			mesh.scale *= factor
+			mesh.position += (centre - mesh.position) * (1.0 - factor)
+
+
+## Brows, moustaches and beards are painted as hair by `_paint` and repainted here in the man's face-hair colour, which is his hair colour or a
+## darker one (`SimAppearance.face_hair_colour`).
+static func _dress_face_hair(root: Node3D, appearance: SimAppearance) -> void:
+	if appearance.face_hair_colour == appearance.hair_colour:
+		return
+	var mat := SimCharacterBuilder.toy_material(appearance.face_hair_colour)
+	for prefix in ["Brow", "Moustache", "Beard"]:
+		for node in root.find_children("%s*" % prefix, "MeshInstance3D", true, false):
+			var mesh := node as MeshInstance3D
+			# Every slot: these meshes are hair and nothing else, and their
+			# material names do not survive the import.
+			for slot in mesh.get_surface_override_material_count():
+				mesh.set_surface_override_material(slot, mat)
 
 
 ## Stubble is neither skin nor hair: the file names its material `stubble`,
 ## outside `SLOT_NAMES`, and it is painted here a third of the way from the
 ## man's skin to his hair.
 static func _dress_stubble(root: Node3D, appearance: SimAppearance) -> void:
-	var mat := SimCharacterBuilder.toy_material(appearance.skin.lerp(appearance.hair_colour, 0.35))
+	var mat := SimCharacterBuilder.toy_material(appearance.skin.lerp(appearance.face_hair_colour, 0.35))
 	for node in _meshes(root):
 		for slot in node.get_surface_override_material_count():
 			if _material_name(node, slot) == "stubble":

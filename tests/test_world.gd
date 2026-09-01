@@ -249,27 +249,72 @@ func _test_the_body_rides_in_the_seed() -> void:
 		check_equal(packed & ~WorldLook.BODY_MASK, seed_value & ~WorldLook.BODY_MASK,
 			"packing leaves the free bits alone")
 
-	# The five bodies, and which man gets which.
-	check_equal(WorldLook.body_type_for(WorldNickname.GIANT, 1.80, 0.5), WorldLook.GIANT,
-		"a giant is a giant whatever he measures")
-	check_equal(WorldLook.body_type_for("", 1.99, 0.5), WorldLook.GIANT, "and so is a very tall man")
-	check_equal(WorldLook.body_type_for(WorldNickname.SPRITE, 1.80, 0.5), WorldLook.SPRITE, "a sprite is a sprite")
-	check_equal(WorldLook.body_type_for("", 1.79, 0.9), WorldLook.HEAVY, "a heavy build is heavy")
+	# The bodies, and which man gets which: the build alone. Height and the
+	# archetype are taken and ignored -- a giant is a nickname, not a shape.
+	check_equal(WorldLook.body_type_for(WorldNickname.GIANT, 1.99, 0.5), WorldLook.STANDARD,
+		"a very tall ordinary build is an ordinary body")
+	check_equal(WorldLook.body_type_for("", 1.99, 0.1), WorldLook.LEAN, "a tall light one is lean")
+	check_equal(WorldLook.body_type_for("", 1.79, 0.9, 0.3), WorldLook.HEAVY, "a heavy weak build is heavy")
+	check_equal(WorldLook.body_type_for("", 1.79, 0.9, 0.8), WorldLook.BUFF, "a heavy strong one is buff")
 	check_equal(WorldLook.body_type_for("", 1.79, 0.1), WorldLook.LEAN, "a light one is lean")
 	check_equal(WorldLook.body_type_for("", 1.79, 0.5), WorldLook.STANDARD, "and most men are neither")
 
-	# Every generated player carries his own body, and the tails carry theirs.
+	# Every generated player carries his own body, drawn from his build, and
+	# the tails still carry their height.
 	var giants := 0
 	for seed_value in 6:
 		for p in WorldGen.squad(SimRng.new(seed_value), 0.45, WorldNames.ENG, 0):
 			check(WorldLook.is_packed(p.appearance_seed), "%s carries no body" % p.full_name())
 			check_near(WorldLook.height_of(p.appearance_seed), p.height, 0.009,
 				"%s is drawn the height the record gives him" % p.full_name())
+			check_equal(WorldLook.body_type_of(p.appearance_seed),
+				WorldLook.body_type_for("", p.height, p.build, p.attrs.strength),
+				"%s is the body his build says" % p.full_name())
 			if p.archetype == WorldNickname.GIANT:
 				giants += 1
-				check_equal(WorldLook.body_type_of(p.appearance_seed), WorldLook.GIANT,
-					"%s is a giant on the record and not in the seed" % p.full_name())
+				check(p.height >= 1.94, "%s is a giant and not tall" % p.full_name())
 	check(giants > 0, "six squads and not one giant to check")
+
+
+func _test_the_record_rides_in_the_seed() -> void:
+	# Age band, complexion, hair family and archetype travel the same way the
+	# body does. Round trip first, then that a generated man's seed says what
+	# his record says.
+	var rng := SimRng.new(19)
+	for _i in 40:
+		var seed_value := rng.next_u32()
+		var packed := WorldLook.pack(seed_value, WorldLook.STANDARD, 1.80, 0.5)
+		var complexion := rng.range_int(0, WorldLook.DEEP)
+		var family := rng.range_int(0, WorldLook.GINGER)
+		var age := rng.range_int(17, 38)
+		var archetype: String = WorldLook.ARCHETYPES[rng.range_int(0, WorldLook.ARCHETYPES.size() - 1)]
+		packed = WorldLook.pack_look(packed, complexion, family, age, archetype)
+		check(WorldLook.is_packed(packed), "packing the look keeps the tag")
+		check_near(WorldLook.height_of(packed), 1.80, 0.008, "and keeps the body")
+		check_equal(WorldLook.complexion_of(packed), complexion, "the complexion comes back")
+		check_equal(WorldLook.hair_family_of(packed), family, "the hair family comes back")
+		check_equal(WorldLook.age_band_of(packed), WorldLook.age_band(age), "the age band comes back")
+		check_equal(WorldLook.archetype_of(packed), archetype, "the archetype comes back")
+	check_equal(WorldLook.complexion_of(rng.next_u32() & ~WorldLook.BODY_MASK), -1,
+		"an unpacked seed has no complexion")
+	check_equal(WorldLook.archetype_of(rng.next_u32() & ~WorldLook.BODY_MASK), "",
+		"and no archetype")
+
+	var deep := 0
+	for seed_value in 6:
+		for p in WorldGen.squad(SimRng.new(seed_value), 0.45, WorldNames.ENG, 0):
+			check_equal(WorldLook.age_band_of(p.appearance_seed), WorldLook.age_band(p.age),
+				"%s is %d and his seed says otherwise" % [p.full_name(), p.age])
+			check_equal(WorldLook.complexion_of(p.appearance_seed), p.complexion,
+				"%s's complexion is not in his seed" % p.full_name())
+			check_equal(WorldLook.archetype_of(p.appearance_seed), p.archetype,
+				"%s's archetype is not in his seed" % p.full_name())
+			if p.complexion == WorldLook.DEEP:
+				deep += 1
+				check_equal(p.hair_family, WorldLook.DARK, "%s: deep complexion, dark hair" % p.full_name())
+			if p.nation_code == "GHA" or p.nation_code == "NGA":
+				check(p.complexion != WorldLook.FAIR, "%s is from %s and drawn fair" % [p.full_name(), p.country])
+	check(deep > 0, "six English squads and nobody of deep complexion: the table is off")
 
 
 func _test_a_seed_that_carries_no_body() -> void:

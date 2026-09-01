@@ -102,13 +102,34 @@ much of it the club would stand behind. Flat voice, no winking.
 
 `appearance_seed` is the only thing about a man's looks that travels into a
 match — `SimPlayer` carries no height and no build because the simulation reads
-neither — so the record's body is packed into the seed's low bits by
-`WorldLook`: body type, height to about a centimetre and a half, and build.
-Presentation reads it back and the man is drawn the size the record says he is.
+neither — so the record is packed into the seed's low bits by `WorldLook`: body
+type, height to about a centimetre and a half, build, complexion band, hair
+family, age band and archetype. Presentation reads it back and the man is drawn
+the size, the age and the colouring the record says he is.
 
-One of five bodies, picked by his archetype first and his build second: giant,
-sprite, heavy, lean, standard. `docs/THE_MODELS.md` is what a model has to do to
-be one of them, and until a model exists the procedural figure draws them all.
+**The world draws what only it can know.** Complexion and hair family come off
+the nation and the country — a Scot carries the ginger, a Ghanaian is not drawn
+off the English table — and the seed knows no country, so `WorldGen` draws the
+band and packs it. Presentation then does the rest: a boy of eighteen is never
+bald, a veteran is usually grey and often losing it, the moustache comes with
+the years, a hammer or a wall gets the heavy brow, a wall the broken nose.
+
+`parade --world N` stands a generated club in the rank with the record on the
+caption, which is where a face that contradicts its record gets caught.
+`view3d --world N [--home-club K --away-club J]` plays two clubs of that
+league against each other, and `match` and `diagnose` take the same flags.
+From the editor: `presentation/world_parade.tscn` and
+`presentation/world_match.tscn`, with the seed and the clubs exported on the
+root node.
+
+One of four bodies, picked by his build alone: lean, standard, heavy, or buff
+when the heavy build comes with strength. Height is drawn on its own, barely
+tied to build, and scaled on top, so a tall man can be a beanpole or an ox; the
+giant and the sprite are nicknames the record finds afterwards, not shapes. The
+figure's limbs and torso are then widened or narrowed by the build continuously
+(`SimCharacterModel._shape_body`), so the moulds carry the silhouette and the
+build carries the rest. `docs/THE_MODELS.md` is what a model has to do to be one
+of them, and until a model exists the procedural figure draws them all.
 
 ## The season
 

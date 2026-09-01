@@ -611,6 +611,9 @@ static func build(appearance: SimAppearance, kit: PackedColorArray, shirt_number
 	root.set_meta("head_r", head_r)
 
 	_jaw(head, head_r, skin)
+	deform_head(head, head_r, -head_r, appearance.chin, appearance.brow)
+	deform_head(head.find_child("Jaw", false, false) as MeshInstance3D, head_r, -head_r, appearance.chin, 0.0)
+	root.set_meta("brow", appearance.brow)
 	_crown(head, head_r, skin)
 	head.add_child(_nose(appearance, head_r))
 	_ears(head, head_r, skin)
@@ -864,6 +867,12 @@ const NOSE_LIBRARY := [
 	[0.118, 0.000, 0.00, -0.14, 1.00, 1.05, 0.0],  # a smaller ball
 	[0.105, 0.000, 0.00, -0.15, 1.01, 1.00, 0.0],  # a small ball
 ]
+## A scale on the whole nose per style, applied to the moulded figure's nose
+## too: the biggest bridged ones came out bigger than the owner wanted, and the
+## buttons are left alone.
+const NOSE_SCALE := [1.0, 0.95, 1.0, 0.86, 1.0, 0.88, 0.88, 1.0, 0.92, 1.0, 1.0, 1.0]
+static func nose_scale(style: int) -> float:
+	return float(NOSE_SCALE[posmod(style, NOSE_SCALE.size())])
 
 
 static func _nose(appearance: SimAppearance, head_r: float) -> Node3D:
@@ -876,6 +885,7 @@ static func _nose(appearance: SimAppearance, head_r: float) -> Node3D:
 	var nose := Node3D.new()
 	nose.name = "Nose"
 	nose.position = Vector3(0.0, head_r * float(row[3]), head_r * float(row[4]))
+	nose.scale = Vector3.ONE * nose_scale(appearance.nose_style)
 	var tip := _sphere(tip_r, mat, true)
 	tip.name = "Tip"
 	tip.scale = Vector3(1.0, 1.0, float(row[5]))
@@ -972,8 +982,8 @@ static func _pose_eyes(root: Node3D, face: int) -> void:
 			/ SimFaceAtlas.GRID * size / radius
 		bead.position = Vector3(
 			sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)) \
-			* (radius + EYE_PROUD)
-		bead.rotation = Vector3(-pitch, yaw, 0.0)
+			* (radius + EYE_PROUD - size / SimFaceAtlas.GRID * EYE_DEPTH * EYE_SWELL * BROW_EYE_SINK * float(root.get_meta("brow", 0.0)))
+		bead.rotation = Vector3(-pitch + BROW_EYE_TILT * float(root.get_meta("brow", 0.0)), yaw, 0.0)
 		# Flattened front to back: a ball on a cheek is a googly eye, and the
 		# reference eye is a shallow dome with most of it inside the head.
 		var rx := EYE_FLOOR_RX + (float(pose["rx"]) - EYE_FLOOR_RX) * EYE_VARY
@@ -988,7 +998,7 @@ static func _brows(head: Node3D, head_r: float, appearance: SimAppearance) -> vo
 	head.add_child(node)
 	# A unit sphere in grid units, scaled to length and thickness when posed.
 	var unit := head_r * FACE_QUAD / SimFaceAtlas.GRID
-	var mat := matte_material(appearance.hair_colour)
+	var mat := matte_material(appearance.face_hair_colour)
 	for side in [-1.0, 1.0]:
 		# **A strip, not a bead.** An ellipsoid has no straight run in it, so a
 		# brow made of one is a lozenge that tapers away at both ends and reads
@@ -1014,7 +1024,9 @@ static func _pose_brows(root: Node3D, face: int) -> void:
 		int(root.get_meta("eye_style", 0)), SimFaceAtlas.EYE_STYLES.size())]
 	var half: float = pose["half"]
 	var thick: float = pose["thick"]
-	var radius := head_r * FACE_SHELL
+	# A brow ridge (`deform_head`) pushes the skull out under the bars, so the
+	# bars stand off by the same amount or they sink into the forehead.
+	var radius: float = head_r * (FACE_SHELL + BROW_PUSH * BROW_BAR_RIDE * float(root.get_meta("brow", 0.0)))
 	# Grid y counts downward from the top of the face and the eye row is the
 	# datum the whole face hangs off, so this is the same arithmetic the face
 	# quad gets, one feature at a time.
@@ -1067,6 +1079,72 @@ static func _jaw(head: Node3D, head_r: float, skin: Material) -> void:
 	head.add_child(jaw)
 
 
+## The head's own mesh reshaped for the man: the jaw pushed out by
+## `appearance.chin`, the brow pushed out by `appearance.brow`. Not shapes added
+## to the head -- the vertices move, so whatever sits on that skin (the face
+## patch, a beard) is pushed with it. At 0 nothing moves: the skull as moulded
+## is the smallest chin and the smallest brow.
+##
+## The chin: every vertex in the front of the band from the chin up to the mouth
+## moves forward and a little down, most at the chin and nothing by the mouth.
+## The brow: a ridge across the front at brow height, fading above and below.
+##
+## `chin_y` is where the chin is in the mesh's own space and `head_r` sets the
+## reach of both; the moulded figure and the primitives call it with their own
+## numbers. Sizes are in head radii.
+const CHIN_PUSH := 0.60
+const CHIN_DROP := 0.18
+const CHIN_BAND := 0.55
+## Where the brow bars sit, measured: 0.337 up a 0.287 head.
+const BROW_Y := 1.17
+## The ridge falls away fast below, so it stops short of the eye, and slowly
+## above, into the forehead.
+const BROW_BELOW := 0.25
+const BROW_ABOVE := 0.35
+const BROW_PUSH := 0.20
+## How far the brow bars stand off with the ridge, as a share of the push.
+const BROW_BAR_RIDE := 0.6
+## How far the eye beads sink under a full ridge, as a share of the bead's own
+## half-depth -- a heavy brow is a deep-set eye. The bead is sixteen millimetres
+## deep, so a sink written in head radii buried it whole.
+const BROW_EYE_SINK := 0.35
+## Radians the eye bead tips its front down under a full ridge: the socket
+## under a brow faces down and forward, and a bead kept radial stood out of the
+## cheek at its bottom edge.
+const BROW_EYE_TILT := 0.12
+static func deform_head(node: MeshInstance3D, head_r: float, chin_y: float, chin: float, brow: float) -> void:
+	if (chin <= 0.01 and brow <= 0.01) or node == null or node.mesh == null:
+		return
+	var chin_push := Vector3(0.0, -CHIN_DROP, CHIN_PUSH) * head_r * chin
+	var brow_push := Vector3(0.0, 0.0, BROW_PUSH) * head_r * brow
+	var band := head_r * CHIN_BAND
+	var brow_y := chin_y + head_r * BROW_Y
+	var brow_below := head_r * BROW_BELOW
+	var brow_above := head_r * BROW_ABOVE
+	var reach := head_r * 0.6
+	var source: Mesh = node.mesh
+	var out := ArrayMesh.new()
+	for i in source.get_surface_count():
+		var arrays: Array = source.surface_get_arrays(i)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		for k in verts.size():
+			var v: Vector3 = node.transform * verts[k]
+			# Only the front, fading in over the reach so the sides and back
+			# are untouched.
+			var w_z := smoothstep(0.0, reach, v.z)
+			if w_z <= 0.0:
+				continue
+			var w_chin := 1.0 - smoothstep(chin_y, chin_y + band, v.y)
+			var w_brow := 1.0 - smoothstep(0.0, brow_above if v.y > brow_y else brow_below, absf(v.y - brow_y))
+			var d := (chin_push * w_chin + brow_push * w_brow) * w_z
+			if d != Vector3.ZERO:
+				verts[k] = node.transform.affine_inverse() * (v + d)
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		out.add_surface_from_arrays(source.surface_get_primitive_type(i), arrays)
+		out.surface_set_material(i, source.surface_get_material(i))
+	node.mesh = out
+
+
 ## The same trick as the jaw, mirrored: the stretch that makes a head taller than
 ## wide also draws the crown to a point, and a skull is domed. This fills the top
 ## back out without making the head any taller.
@@ -1096,7 +1174,7 @@ static func _ears(head: Node3D, head_r: float, skin: Material) -> void:
 ## Under the nose and clear of the mouth, in hair colour. Two of the six figures
 ## in the reference wear one.
 static func _moustache(head: Node3D, head_r: float, appearance: SimAppearance) -> void:
-	var mat := matte_material(appearance.hair_colour)
+	var mat := matte_material(appearance.face_hair_colour)
 	# Two lobes rather than one bar, so it has a shape rather than a moustache
 	# sticker.
 	for side in [-1.0, 1.0]:
@@ -1159,52 +1237,145 @@ const HAIR_LIFT := 0.24
 ## radius too high.
 const HAIR_BACK_EXTRA := 0.0
 
+## The nape: hair down the back of the neck, and **every cut has one**.
+##
+## The shell's underside was doing this job and it cannot. Flattened and lifted
+## it clears the skull somewhere around a fifth of a radius below the eye line,
+## which is *above the mouth* -- so a buzz cut, a bowl cut and a mullet all
+## stopped at the same high chop across the back of the skull and read as a swim
+## cap pulled on. Hair does not end there on anybody. It ends low on the neck,
+## and the shortest cut in a barber's window still has a hairline down there.
+##
+## So the nape is its own piece, and it is **absolute rather than derived**: the
+## same ellipsoid on every row, so the hairline lands in the same place whatever
+## the cut on top is. The cut's own volume (`r` over 1) is added to its width and
+## its depth only, which thickens the neck hair without moving the line -- across
+## the whole library the hairline sits between -0.76 and -0.79 head radii, and
+## the owner's band is the mouth (-0.39) to the chin (-1.06).
+##
+## It is pushed back far enough that it is inside the skull everywhere forward of
+## the ear, which is what keeps it off the cheeks: a nape that reaches round the
+## jaw is the curtain that made `long` read as a hood.
+##
+## Two numbers set the shape and they are solved, not guessed. `NAPE_CENTRE.z`
+## and `NAPE_SEMI.z` are the pair that puts the back surface a fourteenth of a
+## radius proud of the skull at the top of the neck and crossing back inside it
+## at the hairline; move either and the line moves with it.
+const NAPE_CENTRE := Vector3(0.0, -0.10, -0.487)
+const NAPE_SEMI := Vector3(1.02, 0.72, 0.579)
+## Where that puts the hairline. Not a knob -- it is read back off the two above
+## and is here so `mass` can hang a length from it rather than from the head.
+const NAPE_Y := -0.77
+## How much of a cut's own volume goes into the neck hair, in width and depth. An
+## afro's nape is thicker than a buzz cut's; neither one is longer.
+##
+## The width is nearly the whole of the cut's volume, and it has to be: a nape
+## narrower than the shell above it leaves a ledge round the back of the head
+## where the two meet, and a ledge reads as two pieces rather than one head of
+## hair. At 1.02 plus 0.9 of the volume the widest row in the library is a
+## hundredth of a radius inside the skull at the ear, which is the limit.
+const NAPE_WIDE := 0.9
+const NAPE_DEEP := 0.6
+
+## How far below the nape a `mass` of 1 hangs, in head radii.
+##
+## The mass used to be measured from the head and reached about a quarter of a
+## radius below the jaw, which was barely past where the *short* cuts now end.
+## With a hairline on every man, a long style only reads as long by clearing it,
+## so the mass is measured **from the nape line down** and this is the rate.
+const MASS_DROP := 0.80
+## Where the top of the mass sits, high enough to be buried in the nape so no
+## seam opens between the two.
+const MASS_TOP := 0.10
+## Half-width and half-depth of the mass, and how much of each a longer style
+## adds. Narrow on purpose: the old mass was two thirds of a head across and
+## bulged past the jaw on both sides, which is why `collar length` and `long`
+## came out as beanies with a chin strap. Hair hanging down a neck is narrower
+## than the head it grew on.
+const MASS_WIDE := 0.52
+const MASS_DEEP := 0.50
+const MASS_WIDE_PER_MASS := 0.08
+## How far the mass leans back, in radians per unit of length.
+##
+## Below the chin there is a shirt, and a mass hung straight down from the nape
+## goes *into* it: at collar length the whole hem and every lock on it was
+## buried in the back of the jersey and the style ended at the collar like a
+## short one. Hair lies on a back, so the piece is tilted about its own middle
+## -- the top stays inside the nape, the hem swings clear of the shoulders.
+const MASS_TILT := 0.20
+
 const HAIR_LIBRARY := [
-	{"r": 0.0},  # bald
-	{"r": 1.12, "up": 0.08, "back": 0.20},  # cropped
-	{"r": 1.14, "up": 0.07, "back": 0.21, "burns": true},  # short back and sides
-	{"r": 1.16, "up": 0.06, "back": 0.22, "peak": true},  # a bowl cut with a point
-	{"r": 1.18, "up": 0.05, "back": 0.22, "burns": true},  # heavier, with sideburns
-	{"r": 1.14, "up": 0.12, "back": 0.20, "quiff": true},  # a quiff
-	{"r": 1.10, "up": 0.08, "back": 0.18, "curls": 12},  # curly
+	{"r": 0.0, "name": "bald"},
+	{"r": 1.12, "up": 0.08, "back": 0.20, "name": "cropped"},
+	{"r": 1.14, "up": 0.07, "back": 0.21, "burns": true, "name": "short back and sides"},
+	{"r": 1.16, "up": 0.06, "back": 0.22, "peak": true, "name": "a bowl cut with a point"},
+	{"r": 1.18, "up": 0.05, "back": 0.22, "burns": true, "name": "heavier, with sideburns"},
+	{"r": 1.14, "up": 0.12, "back": 0.20, "quiff": true, "name": "a quiff"},
+	{"r": 1.10, "up": 0.08, "back": 0.18, "curls": 12, "name": "curly"},
 	# The reference perm: a heavy ring of fat lobes carried down past the ears.
 	{"r": 1.10, "up": 0.10, "back": 0.18, "curls": 16, "curl_r": 0.40,
-		"curl_skirt": true},  # a big curly head
-	{"r": 1.14, "up": 0.06, "back": 0.21, "quiff": true, "burns": true},  # swept over
-	{"r": 1.14, "up": 0.06, "back": 0.20, "mass": 1.0},  # collar length
-	{"r": 1.16, "up": 0.05, "back": 0.22, "mass": 1.0, "burns": true},  # long
-	{"r": 1.10, "up": 0.11, "back": 0.25, "burns": true},  # receding
-	{"r": 1.11, "up": 0.10, "back": 0.22, "sy": 0.94, "peak": true},  # thin on top
-	{"r": 1.14, "up": 0.08, "back": 0.21, "tufts": 4},  # tousled
+		"curl_skirt": true, "name": "a big curly head"},
+	{"r": 1.14, "up": 0.06, "back": 0.21, "quiff": true, "burns": true, "name": "swept over"},
+	# Thinned on top and shorter in the shell. As one smooth wide shell over one
+	# smooth mass the pair read as beanies, and the shell was most of it: at 1.14
+	# and 1.16 the widest ring hung past the temple to below the mouth on both
+	# sides, which is a chin strap. The length is `mass` now.
+	#
+	# `art/toy/hair.py` gives these two a parting as well. This builder has no
+	# way to cut one -- two lobes stood on the crown to make a valley came out as
+	# a pair of buns -- so the rows part in the model and do not here. The index
+	# is the contract; the parameters are not.
+	# `r` is down from 1.14 and 1.16. On a shell this wide the widest ring is out
+	# past the skull at the temple and hangs to below the mouth on both sides, so
+	# head on the cut was two flaps framing the face -- the chin strap that, with
+	# the smooth crown above it, made the pair read as knitwear. The length these
+	# rows want is `mass`, and it is a piece hanging behind the neck, not more
+	# shell.
+	{"r": 1.09, "up": 0.06, "back": 0.20, "sy": 0.86, "mass": 1.0, "name": "collar length"},
+	{"r": 1.11, "up": 0.05, "back": 0.22, "sy": 0.86, "mass": 1.35, "burns": true, "name": "long"},
+	{"r": 1.10, "up": 0.11, "back": 0.25, "burns": true, "name": "receding"},
+	{"r": 1.11, "up": 0.10, "back": 0.22, "sy": 0.94, "peak": true, "name": "thin on top"},
+	{"r": 1.14, "up": 0.08, "back": 0.21, "tufts": 4, "name": "tousled"},
 	# Short on top, long at the back, and sideburns to finish it.
-	{"r": 1.10, "up": 0.07, "back": 0.22, "mass": 1.45, "burns": true},  # a mullet
+	{"r": 1.10, "up": 0.07, "back": 0.22, "mass": 1.45, "burns": true, "name": "a mullet"},
 	# Combed back off a slightly high forehead, with the dome on top carrying the
 	# sweep. Two things this row cannot do: shrink the shell, which sinks its top
 	# to the skull and leaves a bald man with a rim, or push it much further back,
 	# which takes the hairline up to the crown and leaves the same man.
-	{"r": 1.12, "up": 0.06, "back": 0.21, "slick": true},  # slicked back
-	{"r": 1.13, "up": 0.05, "back": 0.22, "slick": true, "burns": true},  # slicked, with burns
+	{"r": 1.12, "up": 0.06, "back": 0.21, "slick": true, "name": "slicked back"},
+	{"r": 1.13, "up": 0.05, "back": 0.22, "slick": true, "burns": true, "name": "slicked, with burns"},
 	# Going. Dropping the shell below its usual lift takes it off the front and the
 	# top and leaves the hair round the sides and the back.
 	#
 	# One row of this, not two. A squad already has a bald man, a receding one and
 	# a thin-on-top one, and a squad with many more men losing their hair is a
 	# squad of veterans.
-	{"r": 1.13, "up": -0.05, "back": 0.22, "burns": true},  # thinning
+	{"r": 1.13, "up": -0.05, "back": 0.22, "burns": true, "name": "thinning"},
 	# The rows below are `art/toy/hair.py`'s and this builder only approximates
 	# them: the index is what has to agree, so a man keeps his cut whichever
 	# builder drew him.
-	{"r": 1.08, "up": 0.08, "back": 0.20},  # buzz cut
-	{"r": 1.12, "up": -0.05, "back": 0.22, "burns": true},  # horseshoe: bald on top
-	{"r": 1.12, "up": 0.06, "back": 0.21, "slick": true, "mass": 1.2},  # ponytail
-	{"r": 1.18, "up": 0.10, "back": 0.20},  # undercut
-	{"r": 1.16, "up": 0.10, "back": 0.20, "sy": 0.80},  # flat top
-	{"r": 1.24, "up": 0.10, "back": 0.16},  # afro
-	{"r": 1.18, "up": 0.05, "back": 0.20, "mass": 0.8},  # shaggy
-	{"r": 1.14, "up": 0.07, "back": 0.20},  # centre parting, short
-	{"r": 1.16, "up": 0.05, "back": 0.20, "mass": 0.8},  # centre parting, curtains
-	{"r": 1.14, "up": 0.07, "back": 0.20},  # side parting, short
-	{"r": 1.16, "up": 0.05, "back": 0.20, "mass": 0.8},  # side parting, long
+	{"r": 1.08, "up": 0.08, "back": 0.20, "name": "buzz cut"},
+	{"r": 1.12, "up": -0.05, "back": 0.22, "burns": true, "name": "horseshoe: bald on top"},
+	{"r": 1.12, "up": 0.06, "back": 0.21, "slick": true, "mass": 1.2, "name": "ponytail"},
+	{"r": 1.18, "up": 0.10, "back": 0.20, "name": "undercut"},
+	{"r": 1.16, "up": 0.10, "back": 0.20, "sy": 0.80, "name": "flat top"},
+	# A ball of hair the head is pushed into, which is what the owner asked for
+	# and what an afro is. Every other row is the flattened, lifted shell, and
+	# flattening is the one thing this shape must not have: squashed to 0.72 it
+	# came out as a wide low cap and the volume that makes an afro was gone. It
+	# also broke the row's own hairline rule -- `back` 0.16 against `r` 1.24 put
+	# the fringe on the brows. `ball` keeps the sphere round and the push back
+	# pays for the whole radius instead of part of it.
+	{"r": 1.30, "up": -0.12, "back": 0.46, "ball": true, "name": "afro"},
+	{"r": 1.18, "up": 0.05, "back": 0.20, "mass": 0.8, "name": "shaggy"},
+	# The four parting rows. **They have no parting in this builder**, and two of
+	# them are still identical to the other two: a groove along the crown is not
+	# a thing a stack of spheres can cut. `art/toy/hair.py` parts them, which is
+	# what ships. Recorded rather than hidden.
+	{"r": 1.14, "up": 0.07, "back": 0.20, "sy": 0.86, "name": "centre parting, short"},
+	{"r": 1.16, "up": 0.05, "back": 0.20, "sy": 0.86, "mass": 0.85, "name": "centre parting, curtains"},
+	{"r": 1.14, "up": 0.07, "back": 0.20, "sy": 0.86, "name": "side parting, short"},
+	{"r": 1.16, "up": 0.05, "back": 0.20, "sy": 0.86, "mass": 1.0, "name": "side parting, long"},
 ]
 
 
@@ -1219,11 +1390,24 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 
 	var up: float = style.get("up", 0.08)
 	var back: float = style.get("back", 0.18)
+	# A `ball` row keeps its sphere round: the flattening is what the shape is
+	# specifically not. Everything else is the flattened, lifted shell.
+	var ball: bool = style.get("ball", false)
 	var shell := _sphere(head_r * shell_r, mat, true)
 	shell.position = Vector3(
 		0.0, head_r * (up + HAIR_LIFT), -head_r * (back + HAIR_BACK_EXTRA))
-	shell.scale = Vector3(1.0, float(style.get("sy", 1.0)) * HAIR_SQUASH, 1.0)
+	shell.scale = Vector3(1.0, float(style.get("sy", 1.0)) * (1.0 if ball else HAIR_SQUASH), 1.0)
 	root.add_child(shell)
+
+	# The neck, on every cut. See `NAPE_CENTRE`.
+	var thick: float = maxf(shell_r - 1.0, 0.0)
+	var nape := _sphere(head_r, mat, true)
+	nape.position = NAPE_CENTRE * head_r
+	nape.scale = Vector3(
+		NAPE_SEMI.x + thick * NAPE_WIDE,
+		NAPE_SEMI.y,
+		NAPE_SEMI.z + thick * NAPE_DEEP)
+	root.add_child(nape)
 
 	# Curls: a ring of them round the crown and a couple on top. Nine spheres and
 	# the head is unmistakable, which no amount of shaping one sphere achieves.
@@ -1348,14 +1532,30 @@ static func _hair(appearance: SimAppearance, head_r: float) -> Node3D:
 		root.add_child(peak)
 
 	# The mass down the back of the neck, which is most of what the match camera
-	# sees of a long style. The number is how long: 1 is collar length, and much
-	# past 1.4 it is a cape.
+	# sees of a long style. The number is how long, measured **down from the nape
+	# line** rather than from the head: 1 is collar length, and much past 1.5 it
+	# is a cape.
 	var mass: float = style.get("mass", 0.0)
 	if mass > 0.0:
-		var back_hair := _sphere(head_r * 0.78 * sqrt(mass), mat, true)
-		back_hair.position = Vector3(0.0, -head_r * 0.34 * mass, -head_r * 0.48)
-		back_hair.scale = Vector3(0.85, 1.15, 0.72)
-		root.add_child(back_hair)
+		var bottom: float = NAPE_Y - MASS_DROP * mass
+		var mid: float = (MASS_TOP + bottom) * 0.5
+		var reach: float = (MASS_TOP - bottom) * 0.5
+		var wide: float = MASS_WIDE + MASS_WIDE_PER_MASS * mass
+		# One node carries the piece and everything hung on it, so the tilt is
+		# applied once and the locks cannot come adrift from the hem they are on.
+		# Hung from its top edge, not swung about its middle. About the middle the
+		# tilt takes the top of the piece forward by as much as it takes the hem
+		# back, and on a long row that put the upper half of the mass out over the
+		# ear -- the curtain down the cheek that this pass is here to remove.
+		var tail := Node3D.new()
+		tail.name = "Tail"
+		tail.position = Vector3(0.0, head_r * MASS_TOP, NAPE_CENTRE.z * head_r)
+		tail.rotation = Vector3(MASS_TILT * mass, 0.0, 0.0)
+		root.add_child(tail)
+		var back_hair := _sphere(head_r, mat, true)
+		back_hair.position = Vector3(0.0, head_r * (mid - MASS_TOP), 0.0)
+		back_hair.scale = Vector3(wide, reach, MASS_DEEP)
+		tail.add_child(back_hair)
 
 	return root
 

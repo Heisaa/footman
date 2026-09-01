@@ -42,6 +42,11 @@ ROLL_SCALE = 62.0
 ## `M.roughen` moves the rim by rather more than that on its own.
 BURN_DROP = 0.22
 
+## How fast a `nape` fades out up the shell. See the note where it is used: the
+## rim is what the number is for, and dragging the rings above it down with the
+## rim is what put bare scalp through the back of four cuts.
+NAPE_FADE = 4.0
+
 # The cuts. Row for row with `presentation/character_builder.gd:HAIR_LIBRARY` --
 # the **index** is the cut and has to agree, because a man keeps his hair across
 # the two builders. The parameters do not have to agree and no longer do.
@@ -68,10 +73,32 @@ BURN_DROP = 0.22
 #           both made every cut the same shape at a different size; an undercut
 #           is tight at the sides and tall on top, a bowl the reverse.
 #   nape    how far down the back the hairline runs, in head heights, on top
-#           of `slope`. A crop stops at the occiput; long hair runs to the
-#           collar. **The back has its own rim**: the shell's back half thins
-#           to the skull over the lowest `fade` of its height, so the nape is
-#           an edge that tapers, not the front's step carried round.
+#           of `slope`. **The back has its own rim**: the shell's back half
+#           thins to the skull over the lowest `fade` of its height, so the
+#           nape is an edge that tapers, not the front's step carried round.
+#
+#           **Every cut reaches the neck, and the band is the owner's.** The
+#           hairline lands between the chin (0.625 of figure height) and the
+#           mouth (0.721) on every row, buzz cut included. Hair does not stop
+#           at the occiput on anybody: the whole library used to end between
+#           0.70 and 0.74 -- at the mouth or above it -- and twenty-one of the
+#           twenty-eight cuts read as a swim cap pulled on over a shaved neck.
+#           The short rows sit at 0.665, the middle of the band.
+#
+#           **`nape` is not that height**, and the arithmetic is not worth
+#           doing by hand: the rim is tilted by `slope`, shaped by `point` and
+#           dropped by `sides`, and `_shell` bends it again. The values here
+#           were solved against the built mesh -- lowest vertex on the
+#           mid-plane, back half -- which is also how to move one. A row whose
+#           shape changes has to be re-solved; changing `square` or `sides_r`
+#           alone moved a hairline by three hundredths.
+#
+#           Length past the band is what makes a long cut long. Collar length
+#           is 0.590, the mullet 0.560, `long` 0.545 -- below the chin, on the
+#           shirt, which is the only place the eye reads them as long now that
+#           the short rows come down the neck too. Further than that and the
+#           cut stops being hair: at 0.490 `long` came out a plank hanging off
+#           the back of the head, full width to a blunt hem.
 #   back_r  the occiput: how much fuller the back half is than the rest, at
 #           mid height. A crop is flat behind, a mop swells out.
 #   fade    the fraction of the shell's height over which the back tapers in.
@@ -103,78 +130,90 @@ HAIRLINE = 0.786
 LIBRARY = [
     dict(r=0.0),                                                      # bald
     dict(r=1.11, sides_r=1.09, up=0.06, back=0.20, crown=0.010,
-         square=2.38, nape=0.50, rough=0.03),                         # cropped
+         square=2.38, nape=1.51, rough=0.03),                         # cropped
     dict(r=1.12, sides_r=1.07, up=0.06, back=0.21, crown=0.030,
-         square=2.38, nape=0.45, burns=True),                         # back and sides
+         square=2.38, nape=1.47, burns=True),                         # back and sides
     dict(r=1.16, sides_r=1.20, up=0.05, back=0.22, crown=0.050, flare=-0.05,
-         square=2.80, nape=0.45, back_r=0.04, fade=0.30,
+         square=2.80, nape=1.32, back_r=0.04, fade=0.30,
          peak=True, fringe=0.55, slope=0.16, sides=0.30),             # bowl, with a point
     dict(r=1.20, sides_r=1.16, up=0.05, back=0.22, crown=0.070, flare=-0.04,
-         square=2.56, nape=0.50, back_r=0.06, burns=True),            # heavier
+         square=2.56, nape=1.48, back_r=0.06, burns=True),            # heavier
     dict(r=1.14, sides_r=1.06, up=0.09, back=0.20, crown=0.100,
-         square=2.32, nape=0.45, back_r=0.02, lean=0.06,
+         square=2.32, nape=1.30, back_r=0.02, lean=0.06,
          quiff=True, slope=0.44),                                     # a quiff
     dict(r=1.08, sides_r=1.08, up=0.07, back=0.18, crown=0.030, flare=0.01,
-         square=2.26, nape=0.45, back_r=0.04, curls=26, curl_r=0.26,
+         square=2.26, nape=1.49, back_r=0.04, curls=26, curl_r=0.26,
          curl_set=0.025),                                             # curly
     dict(r=1.11, sides_r=1.12, up=0.08, back=0.18, crown=0.060, flare=0.02,
-         square=2.20, nape=0.45, back_r=0.08, fade=0.20,
+         square=2.20, nape=1.07, back_r=0.08, fade=0.20,
          curls=30, curl_r=0.34, curl_skirt=True, sides=0.34,
          curl_set=0.025),                                             # a big curly head
     dict(r=1.15, sides_r=1.06, up=0.06, back=0.21, crown=0.060,
-         square=2.44, nape=0.45, back_r=0.03, lean=0.14,
+         square=2.44, nape=1.42, back_r=0.03, lean=0.14,
          quiff=True, burns=True),                                     # swept over
-    dict(r=1.14, sides_r=1.16, up=0.05, back=0.20, crown=0.040, flare=0.03,
-         square=2.50, nape=0.90, back_r=0.08, fade=0.35, point=0.0,
-         sides=0.28),                                                 # collar length
-    dict(r=1.18, sides_r=1.22, up=0.05, back=0.22, crown=0.050, flare=0.05,
-         square=2.56, nape=1.30, back_r=0.10, fade=0.35, point=0.3, burns=True,
-         sides=0.30),                                                 # long
+    # **The two that read as beanies**, and all three of the things that made
+    # them read that way are here. They were the widest shells in the library
+    # low down (`sides_r` over `r`, plus `flare`), which is a knitted brim; they
+    # were boxy (`square` 2.5 and 2.56) where hair falling under its own weight
+    # is round; and they had no parting, so the crown was one blank dome. Length
+    # is what these rows are for and the length is in `nape`, not in girth.
+    dict(r=1.09, sides_r=1.08, up=0.05, back=0.20, crown=0.020,
+         square=2.28, nape=1.62, back_r=0.08, fade=0.35, point=0.55,
+         part=0.0, sides=0.28),                                       # collar length
+    dict(r=1.11, sides_r=1.11, up=0.05, back=0.22, crown=0.030, flare=0.01,
+         square=2.30, nape=2.34, back_r=0.10, fade=0.35, point=0.70, burns=True,
+         part=0.0, sides=0.30),                                       # long
     dict(r=1.11, sides_r=1.09, up=0.08, back=0.27, crown=0.005,
-         square=2.32, nape=0.45, burns=True, recede=0.050, slope=0.42,
+         square=2.32, nape=1.95, burns=True, recede=0.050, slope=0.42,
          rough=0.03, temples=True),                                   # receding
     dict(r=1.11, sides_r=1.10, up=0.07, back=0.23, crown=0.000,
-         square=2.26, nape=0.45, sy=0.92, peak=True, recede=0.018,
+         square=2.26, nape=1.82, sy=0.92, peak=True, recede=0.018,
          rough=0.03),                                                 # thin on top
     dict(r=1.18, sides_r=1.10, up=0.07, back=0.21, crown=0.100, flare=0.02,
-         square=2.32, nape=0.45, back_r=0.05, lean=-0.08, tufts=4),   # tousled
+         square=2.32, nape=1.54, back_r=0.05, lean=-0.08, tufts=4),   # tousled
     dict(r=1.09, sides_r=1.07, up=0.06, back=0.22, crown=0.020,
-         square=2.38, nape=0.95, back_r=0.12, fade=0.35,
+         square=2.38, nape=2.19, back_r=0.12, fade=0.35,
          sides=0.10),                                                 # a mullet
     dict(r=1.09, sides_r=1.07, up=0.05, back=0.24, crown=0.020,
-         square=2.68, nape=0.50, back_r=0.04, slick=True, slope=0.42,
+         square=2.68, nape=1.23, back_r=0.04, slick=True, slope=0.42,
          sides=0.12),                                                 # slicked back
     dict(r=1.10, sides_r=1.07, up=0.04, back=0.25, crown=0.020,
-         square=2.68, nape=0.50, back_r=0.04, slick=True, burns=True,
+         square=2.68, nape=1.21, back_r=0.04, slick=True, burns=True,
          slope=0.42, sides=0.12),                                     # slicked, with burns
     dict(r=1.11, sides_r=1.11, up=-0.05, back=0.23, crown=0.000,
-         square=2.32, nape=0.45, burns=True, recede=0.040, slope=0.40,
+         square=2.32, nape=1.66, burns=True, recede=0.040, slope=0.40,
          rough=0.03, temples=True),                                   # thinning
     dict(r=1.045, sides_r=1.045, up=0.06, back=0.20, crown=0.000,
-         square=2.30, nape=0.55, rough=0.02),                          # buzz cut
+         square=2.30, nape=1.41, rough=0.02),                          # buzz cut
     dict(r=1.12, sides_r=1.12, up=0.16, back=0.21, crown=0.020,
-         square=2.38, nape=0.30, bald=True, burns=True, rough=0.03), # horseshoe: bald on top
+         square=2.38, nape=1.74, bald=True, burns=True, rough=0.03), # horseshoe: bald on top
     dict(r=1.08, sides_r=1.07, up=0.05, back=0.24, crown=0.020,
-         square=2.68, nape=0.45, slick=True, slope=0.42, sides=0.12,
+         square=2.68, nape=1.27, slick=True, slope=0.42, sides=0.12,
          pony=True),                                                  # ponytail
     dict(r=1.24, sides_r=1.045, up=0.08, back=0.20, crown=0.100,
-         square=2.40, nape=0.35, lean=0.10, rough=0.05),              # undercut
+         square=2.40, nape=1.47, lean=0.10, rough=0.05),              # undercut
     dict(r=1.12, sides_r=1.08, up=0.07, back=0.20, crown=0.120, sy=0.70,
-         square=3.40, nape=0.40, rough=0.04),                         # flat top
-    dict(r=1.34, sides_r=1.30, up=0.10, back=0.18, crown=0.260,
-         square=2.00, nape=0.35, back_r=0.10, fade=0.30, rough=0.10), # afro
+         square=3.40, nape=1.54, rough=0.04),                         # flat top
+    # **A ball the head is pushed into**, which is the owner's description and
+    # the shape itself. Every other row is a shell that follows the skull and
+    # tapers; this one must not. `sides_r` equal to `r` is what makes it a
+    # sphere rather than a cap -- it was three hundredths narrower low down,
+    # which on a shape this big is the difference between a ball and a bonnet --
+    # and `fade` 0 leaves the back full instead of drawing it in to the neck.
+    dict(r=1.36, sides_r=1.34, up=0.10, back=0.18, crown=0.300,
+         square=2.00, nape=1.51, back_r=0.10, fade=0.30, rough=0.07), # afro
     dict(r=1.20, sides_r=1.17, up=0.05, back=0.20, crown=0.060, flare=0.03,
-         square=2.40, nape=0.65, back_r=0.08, fade=0.25, slope=0.16,
+         square=2.40, nape=1.57, back_r=0.08, fade=0.25, slope=0.16,
          sides=0.36),                                                 # shaggy, over the ears
     dict(r=1.14, sides_r=1.10, up=0.06, back=0.20, crown=0.060,
-         square=2.40, nape=0.45, part=0.0),                           # centre parting, short
+         square=2.40, nape=1.50, part=0.0),                           # centre parting, short
     dict(r=1.18, sides_r=1.18, up=0.05, back=0.20, crown=0.060, flare=0.03,
-         square=2.40, nape=0.70, back_r=0.06, fade=0.20, point=0.3,
+         square=2.40, nape=1.31, back_r=0.06, fade=0.20, point=0.3,
          slope=0.12, sides=0.38, part=0.0),                           # centre parting, curtains
     dict(r=1.14, sides_r=1.08, up=0.06, back=0.20, crown=0.050,
-         square=2.40, nape=0.45, part=0.35, lean=0.10),               # side parting, short
+         square=2.40, nape=1.50, part=0.35, lean=0.10),               # side parting, short
     dict(r=1.18, sides_r=1.16, up=0.05, back=0.20, crown=0.060, flare=0.03,
-         square=2.40, nape=0.70, back_r=0.06, fade=0.20, point=0.3,
+         square=2.40, nape=1.29, back_r=0.06, fade=0.20, point=0.3,
          slope=0.14, sides=0.34, part=0.35, lean=0.12),               # side parting, long
 ]
 
@@ -354,7 +393,15 @@ def _shell(look, h, style, r, lift, back, squash):
         fade = (1.0 - t) ** 2.0
         ring.tilt = -slope * fade
         ring.drop = side_drop * fade
-        ring.nape = nape * fade
+        # **The nape dies off faster than the tilt does**, and it has to now
+        # that a nape is more than twice what it was. At the square fade a nape
+        # of 2.15 still carried a full head-height of drop a third of the way up
+        # the shell: the whole back half came down with the rim, dipped inside
+        # the skull near the crown, and four cuts came out with a patch of bare
+        # scalp showing through the back of the head. The rim is what the number
+        # is for; the rings above it only have to follow far enough that the
+        # edge is not a lip.
+        ring.nape = nape * (1.0 - t) ** NAPE_FADE
         ring.point = point
         ring.drop_front = True
         if i == 0:
