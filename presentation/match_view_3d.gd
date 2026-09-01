@@ -1443,6 +1443,7 @@ const POSE_SHEET_SPEEDS := {
 	SimConsts.Anim.RUN: 5.5,
 	SimConsts.Anim.SPRINT: 7.5,
 	SimConsts.Anim.TURN: 4.0,
+	SimConsts.Anim.SHUFFLE: 3.0,
 }
 
 
@@ -1494,6 +1495,9 @@ func _build_pose_sheet() -> void:
 		_curr.player_pos[i] = at
 		_curr.player_facing[i] = 0.0
 		_curr.player_vel[i] = Vector3(POSE_SHEET_SPEEDS.get(anim, 0.0), 0.0, 0.0)
+		if anim == SimConsts.Anim.SHUFFLE:
+			# Across the hips, which is what a shuffle is.
+			_curr.player_vel[i] = Vector3(0.0, 0.0, POSE_SHEET_SPEEDS[anim])
 		_curr.player_stamina[i] = 1.0
 		_curr.player_anim[i] = anim
 		_curr.player_on_pitch[i] = 1
@@ -2421,8 +2425,17 @@ const GAIT_BOB := 0.075
 const GAIT_DIP := 0.035
 
 
+## A backpedal shortens the stride by this share, and pitches the lean back by
+## `GAIT_BACKPEDAL_LEAN`: a man running backwards is upright and short-stepping.
+const GAIT_BACKPEDAL_SHORTEN := 0.4
+const GAIT_BACKPEDAL_LEAN := 0.15
+
+
 ## One leg, `tag` being "L" or "R" and `phase` already offset for the side.
-static func _pose_leg(node: Node3D, tag: String, phase: float, amplitude: float) -> void:
+## `along` and `across` are the shares of the travel in the body frame: the
+## sagittal swing is scaled by the first and the hip is abducted by the second,
+## so a side-step scissors the legs out and in instead of swinging them forward.
+static func _pose_leg(node: Node3D, tag: String, phase: float, amplitude: float, along := 1.0, across := 0.0) -> void:
 	var lift: float = maxf(-cos(phase + GAIT_KNEE_LEAD), 0.0)
 	var planted: float = maxf(cos(phase), 0.0)
 	var knee: float = amplitude * (
@@ -2433,16 +2446,27 @@ static func _pose_leg(node: Node3D, tag: String, phase: float, amplitude: float)
 		GAIT_ANKLE_PUSH * pow(maxf(sin(phase), 0.0), 2.0)
 		- GAIT_ANKLE_LIFT * maxf(-sin(phase), 0.0)
 	)
-	_rotate(node, "Hip" + tag, sin(phase) * amplitude)
+	_rotate(node, "Hip" + tag, sin(phase) * amplitude * along, sin(phase) * amplitude * across)
 	_rotate(node, "Knee" + tag, knee)
 	_rotate(node, "Ankle" + tag, ankle)
 
 
 func _pose_run(node: Node3D, index: int, clock: float) -> void:
-	var speed: float = _velocity(index).length()
+	var v := _velocity(index)
+	var speed: float = v.length()
 	var amplitude: float = gait_amplitude(speed)
 	var phase := _gait_phase(node, index, clock, speed, amplitude)
-	pose_gait(node, speed, phase, clampf(_turn_rate(node, index, clock), -1.0, 1.0))
+	# The travel in the body frame. The hips may be held off the run
+	# (`SimPlayer.look_target`), and the legs go where the body goes, not
+	# where the hips point: sideways is a shuffle, backwards a backpedal.
+	var across := 0.0
+	var back := 0.0
+	if speed > 0.4:
+		var f := _facing(index)
+		var along: float = (v.x * cos(f) + v.z * sin(f)) / speed
+		across = (-v.x * sin(f) + v.z * cos(f)) / speed
+		back = maxf(-along, 0.0)
+	pose_gait(node, speed, phase, clampf(_turn_rate(node, index, clock), -1.0, 1.0), across, back)
 
 
 ## How far the hips swing at this speed, and therefore how long a step is. Grows
@@ -2459,14 +2483,18 @@ static func gait_amplitude(speed: float) -> float:
 ## written to look like it. What the match keeps is where the phase comes from
 ## -- a real speed over a real leg length, quantised to the sim's step -- and
 ## that is a clock, not a pose.
-static func pose_gait(node: Node3D, speed: float, phase: float, turn: float) -> void:
+## `across` is the share of the travel across the hips, signed, and `back` the
+## share against them; both zero is the plain run, which is what the parade
+## asks for.
+static func pose_gait(node: Node3D, speed: float, phase: float, turn: float, across := 0.0, back := 0.0) -> void:
 	var effort: float = clampf(speed / GAIT_SATURATION_SPEED, 0.0, 1.0)
-	var amplitude: float = gait_amplitude(speed)
-	var swing := sin(phase) * amplitude
+	var along: float = sqrt(maxf(1.0 - across * across, 0.0))
+	var amplitude: float = gait_amplitude(speed) * (1.0 - back * GAIT_BACKPEDAL_SHORTEN)
+	var swing := sin(phase) * amplitude * along
 	var opposite := -swing
 
-	_pose_leg(node, "L", phase, amplitude)
-	_pose_leg(node, "R", phase + PI, amplitude)
+	_pose_leg(node, "L", phase, amplitude, along, across)
+	_pose_leg(node, "R", phase + PI, amplitude, along, across)
 	# Arms swing against the legs — left arm forward with the right leg — and
 	# drive harder the faster the player runs. The elbow closes up with effort:
 	# a sprinter carries his hands high and his arms folded, a jogger does not.
@@ -2480,7 +2508,7 @@ static func pose_gait(node: Node3D, speed: float, phase: float, turn: float) -> 
 
 	# Lean into the run, and bank into a turn. Positive x pitches the torso
 	# forward: this was negative, so runners leaned back as they accelerated.
-	_lean(node, effort * 0.22, turn * 0.25)
+	_lean(node, effort * 0.22 * along - back * GAIT_BACKPEDAL_LEAN, turn * 0.25)
 	var spine := _joint(node, "Spine")
 	if spine != null:
 		spine.position.y = _spine_base(node) + absf(swing) * 0.02

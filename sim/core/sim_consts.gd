@@ -284,7 +284,10 @@ enum Phase { KICKOFF, BUILD_UP, ATTACK, TRANSITION_TO_DEFEND, TRANSITION_TO_ATTA
 ## reads these back.
 ## Appended to, never reordered: the snapshot carries the anim as its integer,
 ## and the pose sheet indexes the same list.
-enum Anim { IDLE, JOG, RUN, SPRINT, TURN, KICK_LIGHT, KICK_HARD, HEADER, SLIDE, FALL, GET_UP, CELEBRATE, DEJECTED, EXHAUSTED, DIVE_LEFT, DIVE_RIGHT, KEEPER_CATCH, THROW, KEEPER_HOLD, HOLD, CHEST }
+## `SHUFFLE` is the gait of a body held off its run: a side-step or a
+## backpedal, picked by `SimPlayer._update_anim` off the angle between the
+## velocity and the hips. Appended, so the states before it keep their numbers.
+enum Anim { IDLE, JOG, RUN, SPRINT, TURN, KICK_LIGHT, KICK_HARD, HEADER, SLIDE, FALL, GET_UP, CELEBRATE, DEJECTED, EXHAUSTED, DIVE_LEFT, DIVE_RIGHT, KEEPER_CATCH, THROW, KEEPER_HOLD, HOLD, CHEST, SHUFFLE }
 
 
 static func other_team(team: int) -> int:

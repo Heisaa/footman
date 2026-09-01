@@ -65,6 +65,9 @@ const STRAFE_RELEASE := 0.8
 ## and the body. Floored so a standing man can always start: the `TURN_COMMIT`
 ## deadlock, INVARIANTS.
 const OFF_AXIS_ACCEL := 0.5
+## Past this angle between the run and the hips, the gait is a shuffle rather
+## than a stride: forty-five degrees, where a step across becomes a side-step.
+const SHUFFLE_ANGLE := 0.79
 
 var id := -1
 var team := SimConsts.TEAM_HOME
@@ -512,6 +515,8 @@ func _update_anim(cur_speed: float, turning: bool) -> void:
 		anim = SimConsts.Anim.TURN
 	elif cur_speed < 0.4:
 		anim = SimConsts.Anim.IDLE
+	elif absf(angle_difference(facing, atan2(vel.z, vel.x))) > SHUFFLE_ANGLE:
+		anim = SimConsts.Anim.SHUFFLE
 	elif cur_speed < nominal * 0.45:
 		anim = SimConsts.Anim.JOG
 	elif cur_speed < nominal * 0.8:
