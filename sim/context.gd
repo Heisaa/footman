@@ -341,6 +341,8 @@ func update_pressure() -> void:
 				continue
 			var d := sqrt(d2)
 			# An opponent closing from in front presses harder than one behind.
+			# The body, not the run: a receiver opened on the half-turn rates
+			# the marker at his back lower than he did square to the ball.
 			var to_opp := (o.pos - p.pos)
 			var facing_factor := 1.0
 			if d > 0.1:

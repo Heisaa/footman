@@ -251,6 +251,8 @@ static func _add_challengers(ctx: SimContext) -> void:
 	if carrier == null:
 		return
 
+	# The carrier's body, which is his own state and not his run: a man held
+	# on a look is challenged from where the look leaves his back.
 	var heading := carrier.heading_dir()
 	for p in ctx.players:
 		if p.team == carrier.team or not p.on_pitch or p.recovery_ticks > 0 or p.is_keeper:

@@ -475,11 +475,20 @@ static func deftness_of(player: SimPlayer) -> float:
 	return clampf(player.attrs.technique * 0.6 + player.attrs.agility * 0.4, 0.0, 1.0)
 
 
+## The pace a player carries *along his body*, as a share of his top speed:
+## the run-up behind the strike. The body is its own state
+## (`SimPlayer.look_target`), so a man shuffling across his hips at four metres
+## a second has none of it and a man sprinting has all of it. One helper for
+## `momentum_of` and `strike_scale`, so the two cannot drift apart.
+static func drive_of(player: SimPlayer) -> float:
+	var along: float = player.vel.x * cos(player.facing) + player.vel.z * sin(player.facing)
+	return clampf(along / maxf(player.nominal_max_speed(), 1e-3), 0.0, 1.0)
+
+
 ## The share of the facing cost a running player pays over a standing one. See
 ## `FACING_STATIC_SHARE`.
 static func momentum_of(player: SimPlayer) -> float:
-	var speed_ratio: float = clampf(player.speed() / maxf(player.nominal_max_speed(), 1e-3), 0.0, 1.0)
-	return lerpf(FACING_STATIC_SHARE, 1.0, speed_ratio)
+	return lerpf(FACING_STATIC_SHARE, 1.0, drive_of(player))
 
 
 ## Which side of the body the ball is being played to: -1 hard to his left, 0
@@ -657,8 +666,7 @@ const STRIKE_STATIC_SHARE := 0.75
 ## turning to hit one off his weaker foot is charged both, and should be.
 static func strike_scale(player: SimPlayer, dir: Vector3) -> float:
 	var off := off_axis(player, dir)
-	var speed_ratio: float = clampf(player.speed() / maxf(player.nominal_max_speed(), 1e-3), 0.0, 1.0)
-	var momentum: float = lerpf(STRIKE_STATIC_SHARE, 1.0, speed_ratio)
+	var momentum: float = lerpf(STRIKE_STATIC_SHARE, 1.0, drive_of(player))
 	var cost: float = clampf(off * off * lerpf(1.0, 0.75, deftness_of(player)) * momentum, 0.0, 1.0)
 	return lerpf(1.0, STRIKE_BEHIND, cost) * lerpf(1.0, FOOT_STRIKE, foot_cost(player, dir))
 

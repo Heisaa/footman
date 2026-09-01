@@ -2540,6 +2540,8 @@ static func _arrival_gain(ctx: SimContext, team: int, point: Vector3, believed: 
 	if run.length() > 0.5:
 		onto = clampf(run.normalized().dot(to_goal), 0.0, 1.0)
 	else:
+		# The body he has opened while the ball travelled (`_orient_receiver`),
+		# not the way his last run left him.
 		onto = clampf(receiver.heading_dir().dot(to_goal), 0.0, 1.0)
 	if onto <= 0.01:
 		return 0.0
@@ -3909,7 +3911,8 @@ static func _try_beat(ctx: SimContext, player: SimPlayer, dir: Vector3) -> bool:
 	if d.length() < 1e-4:
 		return false
 	# A standing man has no line to change, so the turn test is about where he is
-	# facing rather than where he is going.
+	# facing rather than where he is going -- and the body is its own state
+	# now, so a man who has turned his hips has turned the defender's read.
 	var from_dir := travel.normalized() if not standing \
 		else SimConsts.horizontal(player.heading_dir()).normalized()
 	if from_dir.length() < 1e-4:

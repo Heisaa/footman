@@ -17,6 +17,7 @@ func run() -> void:
 	_execution_accuracy_falls_off_with_distance()
 	_the_ball_is_on_a_foot()
 	_the_curl_comes_off_the_striking_foot()
+	_momentum_reads_the_body()
 
 
 static func _drill_context(seed_value: int = 5) -> SimContext:
@@ -250,3 +251,17 @@ func _the_curl_comes_off_the_striking_foot() -> void:
 	var bend := Vector3.UP.cross(SimConsts.horizontal(aim - flag).normalized()) * curl
 	check_greater(bend.dot(SimConsts.horizontal(goal - aim).normalized()), 0.0,
 		"a right-footed corner from the left flag swings toward the goal")
+
+
+func _momentum_reads_the_body() -> void:
+	# The run-up behind a strike is the pace along the hips, not the pace: the
+	# body is its own state, and a shuffle across it carries no swing.
+	var p := make_player(0.6, 0.6)
+	p.facing = 0.0
+	p.vel = Vector3(0.0, 0.0, 6.0)
+	check_near(SimTouch.momentum_of(p), SimTouch.FACING_STATIC_SHARE, 1e-6, "a man shuffling across his hips has a standing man's run-up")
+	p.vel = Vector3(-6.0, 0.0, 0.0)
+	check_near(SimTouch.momentum_of(p), SimTouch.FACING_STATIC_SHARE, 1e-6, "and so has a backpedal")
+	p.vel = Vector3(6.0, 0.0, 0.0)
+	check_greater(SimTouch.momentum_of(p), 0.8, "a man running through his hips has most of it")
+	check_near(SimTouch.strike_scale(p, Vector3(1, 0, 0)), 1.0, 1e-6, "and a ball straight ahead costs nothing either way")

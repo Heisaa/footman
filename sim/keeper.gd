@@ -140,6 +140,9 @@ static func _hold_and_distribute(ctx: SimContext, k: SimPlayer) -> void:
 	var edge := goal_line + dir * (ctx.pitch.penalty_depth - 1.5)
 	var ahead := k.pos.x + dir * 6.0
 	var carry := Vector3(ahead if (ahead - edge) * dir < 0.0 else edge, 0.0, k.pos.z * 0.5)
+	# Looking up the pitch, so the hands (`heading_dir() * HOLD_REACH`) sit in
+	# front of him whichever way the walk drifts.
+	k.look_target = carry
 	k.steer_to(carry, k.max_speed() * 0.45)
 	if to_release > 0:
 		return
@@ -265,6 +268,10 @@ static func _claim_target(ctx: SimContext, k: SimPlayer) -> Vector3:
 
 
 static func _position(ctx: SimContext, k: SimPlayer) -> void:
+	# The movement layer's ladder does not run for him, so his look is cleared
+	# here: a claim, a sweep and a one-on-one are sprints, and the body goes
+	# with them; the arc is held facing the ball.
+	k.look_target = Vector3.INF
 	var hold_at := station(ctx, k, ctx.ball.ground_pos())
 
 	# A cross, a lofted ball or a clearance dropping into his own area. Ahead of
@@ -291,6 +298,7 @@ static func _position(ctx: SimContext, k: SimPlayer) -> void:
 		k.steer_to(ctx.pitch.clamp_to_pitch(meet, 0.3), INF)
 		return
 
+	k.look_target = ctx.ball.ground_pos()
 	k.steer_to(ctx.pitch.clamp_to_pitch(hold_at, 0.3), k.max_speed() * 0.7)
 
 
