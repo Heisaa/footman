@@ -51,11 +51,17 @@ const SPIN_RATE := 24.0
 ## `SimMatchView3D` owns both the poses and the speeds -- a figure judged here
 ## has to be posed by the code the match plays, or this view is judging a
 ## different man.
+##
+## Every state in `SimConsts.Anim` is here, and `_ready` checks it: a state the
+## parade cannot show is a state nobody judges up close.
 const REEL := [
 	SimConsts.Anim.IDLE, SimConsts.Anim.JOG, SimConsts.Anim.RUN,
-	SimConsts.Anim.SPRINT, SimConsts.Anim.KICK_LIGHT, SimConsts.Anim.KICK_HARD,
+	SimConsts.Anim.SPRINT, SimConsts.Anim.TURN, SimConsts.Anim.SHUFFLE,
+	SimConsts.Anim.KICK_LIGHT, SimConsts.Anim.KICK_HARD,
 	SimConsts.Anim.HEADER, SimConsts.Anim.CHEST, SimConsts.Anim.THROW,
+	SimConsts.Anim.SLIDE, SimConsts.Anim.FALL, SimConsts.Anim.GET_UP,
 	SimConsts.Anim.CELEBRATE, SimConsts.Anim.DEJECTED, SimConsts.Anim.EXHAUSTED,
+	SimConsts.Anim.DIVE_LEFT, SimConsts.Anim.DIVE_RIGHT,
 	SimConsts.Anim.KEEPER_CATCH, SimConsts.Anim.KEEPER_HOLD, SimConsts.Anim.HOLD,
 ]
 ## Seconds a one-shot state is held before the reel moves on. Long enough to
@@ -138,6 +144,8 @@ var _record_label: Label = null
 
 
 func _ready() -> void:
+	for anim in SimConsts.Anim.values():
+		assert(anim in REEL, "parade reel is missing %s" % SimConsts.Anim.keys()[anim])
 	_world = world_seed
 	_club = club_index
 	_rep = reputation
@@ -533,12 +541,20 @@ func _play(node: Node3D, index: int, delta: float) -> void:
 		phase = fposmod(phase + TAU * hz * delta, TAU)
 	node.set_meta("reel_phase", phase)
 
+	# The turntable owns the yaw; a fall or a dive owns the rest, so the rest
+	# is put back every frame the way the match does.
+	var yaw: float = node.rotation.y
+	node.rotation = Vector3(0.0, yaw, 0.0)
 	node.scale = Vector3.ONE
 	node.position.y = 0.0
-	SimMatchView3D.pose_gait(node, speed, phase, 0.0)
+	# A turn is the gait banked into it; a shuffle is the gait across the hips.
+	var turn: float = 1.0 if anim == SimConsts.Anim.TURN else 0.0
+	var across: float = 1.0 if anim == SimConsts.Anim.SHUFFLE else 0.0
+	SimMatchView3D.pose_gait(node, speed, phase, turn, across)
 	var span: float = float(SimMatchView3D.ANIM_SECONDS.get(anim, REEL_DWELL))
 	var t: float = fposmod(_anim_clock + float(index) * 0.21, maxf(span, 0.001))
-	SimMatchView3D.pose_anim(node, anim, t / maxf(span, 0.001), _anim_clock)
+	# A dive rolls to the man's own right, whichever way the turntable has him.
+	SimMatchView3D.pose_state(node, anim, t / maxf(span, 0.001), _anim_clock, yaw, 1.0)
 
 
 func _maybe_shoot() -> void:

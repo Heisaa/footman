@@ -2247,28 +2247,41 @@ func _pose(node: Node3D, index: int, clock: float) -> void:
 	var span: float = ANIM_SECONDS.get(anim, 1.0)
 	var u: float = clampf(t / span, 0.0, 1.0)
 
-	_root(node, index, 0.0, 0.0)
+	var yaw: float = -_facing(index) + PI * 0.5
+	_orient(node, yaw, 0.0, 0.0)
 	node.scale = Vector3.ONE
 	_pose_run(node, index, clock)
-
-	if not pose_anim(node, anim, u, t):
-		match anim:
-			SimConsts.Anim.SLIDE:
-				_pose_slide(node, index, u)
-			SimConsts.Anim.FALL:
-				_pose_fall(node, index, u)
-			SimConsts.Anim.GET_UP:
-				_pose_fall(node, index, 1.0 - u)
-			SimConsts.Anim.DIVE_LEFT:
-				_pose_dive(node, index, u, -1.0)
-			SimConsts.Anim.DIVE_RIGHT:
-				_pose_dive(node, index, u, 1.0)
-			_:
-				pass
+	# A dive is along the pitch's z, so its roll in the body frame depends on
+	# which way the keeper faces.
+	pose_state(node, anim, u, t, yaw, cos(_facing(index)))
 
 	SimCharacterModel.set_expression(
 		node, SimAppearance.face_for_anim(anim, _curr.player_stamina[index])
 	)
+
+
+## Every named state on top of the gait: the ones that are a function of the
+## figure and the phase alone (`pose_anim`), then the ones that turn the whole
+## figure over -- a slide, a fall, a dive -- which need its yaw to do it about.
+## `dive_roll` is the sign a rightward dive rolls the body, in the body frame.
+## Returns whether the state was a named pose at all.
+static func pose_state(node: Node3D, anim: int, u: float, t: float, yaw: float, dive_roll: float) -> bool:
+	if pose_anim(node, anim, u, t):
+		return true
+	match anim:
+		SimConsts.Anim.SLIDE:
+			_pose_slide(node, yaw, u)
+		SimConsts.Anim.FALL:
+			_pose_fall(node, yaw, u)
+		SimConsts.Anim.GET_UP:
+			_pose_fall(node, yaw, 1.0 - u)
+		SimConsts.Anim.DIVE_LEFT:
+			_pose_dive(node, yaw, u, -dive_roll)
+		SimConsts.Anim.DIVE_RIGHT:
+			_pose_dive(node, yaw, u, dive_roll)
+		_:
+			return false
+	return true
 
 
 ## The half of the anim table whose shape is a function of the figure and the
@@ -2643,9 +2656,9 @@ static func _pose_chest(node: Node3D, u: float) -> void:
 
 ## Feet first, body reclined behind them. The root pivot is at the feet, so a
 ## backward rotation drops the whole figure to the turf with the legs leading.
-func _pose_slide(node: Node3D, index: int, u: float) -> void:
+static func _pose_slide(node: Node3D, yaw: float, u: float) -> void:
 	var down: float = minf(u * 3.0, 1.0)
-	_root(node, index, -0.95 * down, 0.0)
+	_orient(node, yaw, -0.95 * down, 0.0)
 	_rotate(node, "HipL", -0.85 * down)
 	_rotate(node, "HipR", -0.35 * down)
 	_rotate(node, "KneeL", 0.1)
@@ -2659,8 +2672,8 @@ func _pose_slide(node: Node3D, index: int, u: float) -> void:
 
 ## Topples forward about the feet, accelerating the way a falling body does. A
 ## linear ramp reads as lying down on purpose.
-func _pose_fall(node: Node3D, index: int, u: float) -> void:
-	_root(node, index, 1.5 * u * u, 0.0)
+static func _pose_fall(node: Node3D, yaw: float, u: float) -> void:
+	_orient(node, yaw, 1.5 * u * u, 0.0)
 	# Arms go out to break the fall, then flail.
 	_rotate(node, "ShoulderL", -1.3 * u, -0.7 * u)
 	_rotate(node, "ShoulderR", -1.1 * u, 0.7 * u)
@@ -2783,10 +2796,9 @@ static func _pose_exhausted(node: Node3D, t: float) -> void:
 ## ball's z against his own — so which way the body rolls depends on which way he
 ## is facing. Resolving it against the facing is what stops the away keeper
 ## diving over the wrong shoulder.
-func _pose_dive(node: Node3D, index: int, u: float, dir_z: float) -> void:
-	var roll: float = dir_z * cos(_facing(index))
+static func _pose_dive(node: Node3D, yaw: float, u: float, roll: float) -> void:
 	var angle: float = minf(u * 3.5, 1.0) * 1.35
-	_root(node, index, 0.0, roll * angle)
+	_orient(node, yaw, 0.0, roll * angle)
 	node.position.y += sin(u * PI) * 0.5
 	# Both arms reach past the head, along the line of the dive, fanned enough to
 	# clear its silhouette.
@@ -2962,8 +2974,8 @@ static func _lean(node: Node3D, angle: float, bank := 0.0) -> void:
 
 
 ## The whole figure's orientation, yaw included, for the same reason.
-func _root(node: Node3D, index: int, pitch: float, roll: float) -> void:
-	node.rotation = Vector3(pitch, -_facing(index) + PI * 0.5, roll)
+static func _orient(node: Node3D, yaw: float, pitch: float, roll: float) -> void:
+	node.rotation = Vector3(pitch, yaw, roll)
 
 
 ## Positive squashes, negative stretches, volume roughly held.
