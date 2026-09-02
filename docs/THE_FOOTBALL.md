@@ -135,7 +135,8 @@ with a ball in the air. The fourth act is not touching it at all.
 | Added time from stoppages | built | `SimReferee.add_stoppage` |
 | Opponents out of the area at a goal kick | built | `SimSetPiece._out_of_penalty_area` |
 | A restart the side reorganises around | partial — positions and a delay, and one corner routine (2026-09-02): a named post, two runners sent to the posts a second before the kick, the ball aimed at the man; the delivery lands 5-13 m off the post at that range (**29**), so the rows did not improve | `SimSetPiece._corner_choose` |
-| A wall at a free kick | built 2026-09-02 — two to five of the nearest defenders on the 9.15 m across the line to the near post, facing the ball; a standing body that jumps in the block model; the taker goes round it | `SimSetPiece._wall_spots`, `SimDuel.WALL_STOPS` |
+| A wall at a free kick | built 2026-09-02 — two to five of the nearest defenders on the 9.15 m across the line to the near post, facing the ball; a standing body that jumps in the block model; the taker goes round it, and the 21 m shot converts as it does everywhere here | `SimSetPiece._wall_spots`, `SimDuel.WALL_STOPS` |
+| Wait for the referee's signal | built 2026-09-02 — a corner or free kick is taken when everyone is at his spot and two seconds after, capped at ten | `SimSetPiece.SIGNAL_DELAY` |
 | Advantage | absent — `SimReferee`'s header comment claims it; it is not in the file | |
 | Substitutions, injuries | absent | |
 
@@ -1907,17 +1908,27 @@ five defenders shoulder to shoulder on the law's 9.15 m across the line to
 the near post (`_wall_spots`), looking at the ball; `SimDuel.block_chance`
 reads `in_wall` as a standing body that jumps -- `WALL_BODY` either side,
 `WALL_JUMP` high, `WALL_STOPS` of what comes through -- with no read and no
-lunge; the taker aims round it to the keeper's side. `fk-shot` at n=160:
-goals **21% to 5%**, blocked 0% to 24%, saved 24% to 12%; `fk-wide`
-unmoved. The corner routine (`_corner_choose`, `_corner_plant`): a post is
+lunge; the taker aims round it to the keeper's side. `fk-shot` at n=160 read
+goals 21% to 5% and blocked 0% to 24% on the first cut, **and that was men
+still walking into the line when the kick came**: with the referee's signal
+below, the wall set and the taker going round it, the row reads goals 22%,
+blocked 7%, saved 24% -- a 21 m shot converting as every 21 m shot does here
+(`long-range` 19-25%), which is the range shot's fit and not the wall's. The corner routine (`_corner_choose`, `_corner_plant`): a post is
 named at the restart, the two attackers the spots put deepest are sent to
 the posts a `CORNER_HOLD` before the kick and steered there over the dead
 ball, and the delivery is aimed at the named post and the man going to it.
 Watched with a probe, the ball came down 5-13 m from the post -- the
 delivery's range error at 31-39 m, which is **29**'s recorded bound and a
-tuning-freeze decision -- so the runners had nothing to attack: `corner-right`
-7% to 4% goals, `corner-left` 11% to 2%, `none` up, at n=160 (four points of
-error). Authored, and not yet paying: the routine waits on the delivery.
+tuning-freeze decision. **And the referee's signal, the owner's (2026-09-02):**
+a corner or a free kick is not taken until everyone is within
+`SET_TOLERANCE` of his spot and `SIGNAL_DELAY` more has passed, capped at
+`SET_PIECE_WAIT`; the two-second timeout had taken every corner before a man
+had crossed the box, and the routine's runners were still walking to their
+spots when they were sent. Struck at 9.3 s on the corner row and 7.6 s on the
+free kick. With it, the corner comes down **4.7-4.9 m** from the nearest of
+ours against 6.7 before and 5.4 before the routine, `none` 39% to 26%; goals
+6% and 2% at n=160, inside the error of where they were. The runs are made
+and arrive; the ball still lands off the post.
 
 **Built 2026-09-02, item 7: the link players (30).** The pocket between the
 opponents' lines was only an *offer* (`_pocket_point`, a lift on a space

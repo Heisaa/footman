@@ -1256,7 +1256,9 @@ static func goal_kick() -> SimScenario:
 ## rows that have no such line, which is all of them but `goal-kick`.
 static func _restart(name: String, title: String, about: Callable, begin: Callable,
 		escape_frac := 0.0) -> SimScenario:
-	return _make(name, title, 12.0, func(sc: SimScenario, ctx: SimContext) -> void:
+	# Sixteen seconds: a corner or a free kick waits for everyone to be set
+	# and two more for the signal, which is most of twelve.
+	return _make(name, title, 16.0, func(sc: SimScenario, ctx: SimContext) -> void:
 		var team := sc.attacking_team
 		sc.settle(ctx, about.call(ctx, team), _furthest_forward(ctx, team))
 		begin.call(ctx, team)

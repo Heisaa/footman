@@ -428,6 +428,7 @@ static func _begin(ctx: SimContext, kind: int, team: int, spot: Vector3) -> void
 	_clear_wall(ctx)
 	_corner_target = Vector3.INF
 	_corner_planted = false
+	_set_since = -1
 	ctx.ball.reset(spot)
 	ctx.ball.last_touch_team = team
 	ctx.ball.last_touch_player = -1
@@ -701,35 +702,36 @@ static func update(ctx: SimContext) -> void:
 	# rather than off `ready`: a corner taker stops a stride short and is taken
 	# by the timeout, so `ready` never came. The movement ladder does not run
 	# over a dead ball, so the runners are steered from here until it does.
-	if ctx.restart_kind == Kind.CORNER:
-		# Or off the clock, a hold before the wait runs out, for a taker who
-		# never came within the lead.
-		var timeout := _compress(ctx, MAX_WAIT, MAX_WAIT_FLOOR)
-		var hold := _compress(ctx, CORNER_HOLD, CORNER_HOLD_FLOOR)
-		if not _corner_planted and (taker.dist_to(ctx.restart_pos) <= CORNER_RUN_LEAD \
-				or ctx.restart_ticks >= timeout - hold):
-			_corner_plant(ctx)
-			_corner_hold_from = ctx.restart_ticks
-		if _corner_planted:
-			for pid in _corner_runners:
-				if pid >= 0 and pid < ctx.players.size():
-					var runner := ctx.players[pid]
-					var point := SimOffBall.destination_for(ctx, runner)
-					if not is_inf(point.x):
-						runner.steer_to(point, runner.max_speed() * 0.9, 0.6)
-			if ctx.restart_ticks - _corner_hold_from < _compress(ctx, CORNER_HOLD, CORNER_HOLD_FLOOR):
-				return
-		if ctx.restart_kind == Kind.THROW_IN:
-			# He has the ball in his hands from the moment he reaches it, and the
-			# wind-up is what makes the throw read as a throw rather than as a
-			# pass that happens to start at the touchline. Set here rather than at
-			# the release, because at the release it is already over.
-			taker.play_anim(SimConsts.Anim.THROW, float(THROW_WINDUP + 12) / float(SimConsts.TICK_HZ))
-			if ctx.restart_hold < THROW_WINDUP:
-				return
-	if ctx.restart_ticks < _min_delay(ctx):
-		return
-	var waited := ctx.restart_ticks >= _compress(ctx, MAX_WAIT, MAX_WAIT_FLOOR)
+	# A corner or a free kick waits for the referee: everyone at his spot,
+	# then `SIGNAL_DELAY` of standing there, then the kick. The two-second
+	# timeout used to take every corner before a man had crossed the box
+	# (owner, 2026-09-02); the cap is `SET_PIECE_WAIT` now.
+	var waited: bool
+	if _waits_for_the_signal(ctx.restart_kind):
+		if _set_since < 0 and _everyone_set(ctx):
+			_set_since = ctx.restart_ticks
+		var cap := _compress(ctx, SET_PIECE_WAIT, SET_PIECE_WAIT)
+		var kick_at: int = cap if _set_since < 0 else mini(_set_since + _compress(ctx, SIGNAL_DELAY, SIGNAL_DELAY), cap)
+		if ctx.restart_kind == Kind.CORNER:
+			# The routine's runs go a hold before the kick, and the runners
+			# are steered from here: the movement ladder does not run over a
+			# dead ball.
+			if not _corner_planted and ctx.restart_ticks >= kick_at - _compress(ctx, CORNER_HOLD, CORNER_HOLD_FLOOR):
+				_corner_plant(ctx)
+			if _corner_planted:
+				for pid in _corner_runners:
+					if pid >= 0 and pid < ctx.players.size():
+						var runner := ctx.players[pid]
+						var point := SimOffBall.destination_for(ctx, runner)
+						if not is_inf(point.x):
+							runner.steer_to(point, runner.max_speed() * 0.9, 0.6)
+		if ctx.restart_ticks < kick_at:
+			return
+		waited = ctx.restart_ticks >= cap
+	else:
+		if ctx.restart_ticks < _min_delay(ctx):
+			return
+		waited = ctx.restart_ticks >= _compress(ctx, MAX_WAIT, MAX_WAIT_FLOOR)
 	if not ready and not waited:
 		return
 	# A goal kick is not taken while an opponent is still in the area. He is
@@ -896,10 +898,30 @@ const CORNER_RUN_SECONDS := 3.0
 ## flight had come down (the ball 6.5 m from the nearest of ours).
 const CORNER_HOLD := SimConsts.TICK_HZ
 const CORNER_HOLD_FLOOR := 45
-## And how near the flag the taker is when they go.
-const CORNER_RUN_LEAD := 2.0
 
-static var _corner_hold_from := 0
+## The referee's signal. A corner or a free kick is not taken until everyone
+## is within `SET_TOLERANCE` of his spot, and then not for `SIGNAL_DELAY`
+## more; `SET_PIECE_WAIT` is the cap for a side that never gets there. Not
+## compressed: dead time is priced in real seconds (INVARIANTS), and two
+## seconds of a referee's arm is two seconds.
+const SIGNAL_DELAY := SimConsts.TICK_HZ * 2
+const SET_TOLERANCE := 1.5
+const SET_PIECE_WAIT := SimConsts.TICK_HZ * 10
+
+static var _set_since := -1
+
+
+static func _waits_for_the_signal(kind: int) -> bool:
+	return kind == Kind.CORNER or kind == Kind.FREE_KICK or kind == Kind.INDIRECT_FREE_KICK
+
+
+static func _everyone_set(ctx: SimContext) -> bool:
+	for p in ctx.players:
+		if not p.on_pitch or not ctx.restart_spots.has(p.id):
+			continue
+		if p.dist_to(ctx.restart_spots[p.id]) > SET_TOLERANCE:
+			return false
+	return true
 
 static var _corner_target := Vector3.INF
 static var _corner_other := Vector3.INF
