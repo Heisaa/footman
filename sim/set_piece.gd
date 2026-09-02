@@ -429,6 +429,7 @@ static func _begin(ctx: SimContext, kind: int, team: int, spot: Vector3) -> void
 	_corner_target = Vector3.INF
 	_corner_planted = false
 	_set_since = -1
+	_run_up = false
 	ctx.ball.reset(spot)
 	ctx.ball.last_touch_team = team
 	ctx.ball.last_touch_player = -1
@@ -496,7 +497,7 @@ static func _default_spots(ctx: SimContext, spot: Vector3, team: int, clearance_
 	var taker := _nearest_of(ctx, team, spot, true)
 	if taker != null:
 		ctx.restart_taker = taker.id
-		ctx.restart_spots[taker.id] = spot - (spot - ctx.pitch.own_goal(team)).normalized() * TAKER_STANCE
+		ctx.restart_spots[taker.id] = _taker_stance(ctx, spot, team)
 
 
 ## Where the two sides stand for a corner.
@@ -543,8 +544,7 @@ static func _corner_spots(ctx: SimContext, team: int, spot: Vector3) -> void:
 	var taker := _nearest_of(ctx, team, spot, true)
 	if taker != null:
 		ctx.restart_taker = taker.id
-		var stand := Vector3(-dir, 0.0, -signf(spot.z) * 0.8).normalized() * TAKER_STANCE
-		ctx.restart_spots[taker.id] = spot + stand
+		ctx.restart_spots[taker.id] = _taker_stance(ctx, spot, team)
 	# The keeper of the defending side stands on the line.
 	_snap_nobody(ctx)
 
@@ -711,22 +711,31 @@ static func update(ctx: SimContext) -> void:
 		if _set_since < 0 and _everyone_set(ctx):
 			_set_since = ctx.restart_ticks
 		var cap := _compress(ctx, SET_PIECE_WAIT, SET_PIECE_WAIT)
-		var kick_at: int = cap if _set_since < 0 else mini(_set_since + _compress(ctx, SIGNAL_DELAY, SIGNAL_DELAY), cap)
-		if ctx.restart_kind == Kind.CORNER:
-			# The routine's runs go a hold before the kick, and the runners
-			# are steered from here: the movement ladder does not run over a
-			# dead ball.
-			if not _corner_planted and ctx.restart_ticks >= kick_at - _compress(ctx, CORNER_HOLD, CORNER_HOLD_FLOOR):
+		var signal_at: int = cap if _set_since < 0 else mini(_set_since + _compress(ctx, SIGNAL_DELAY, SIGNAL_DELAY), cap)
+		if not _run_up:
+			# Waiting at his run-up, facing the ball.
+			taker.look_target = ctx.restart_pos
+			if ctx.restart_ticks < signal_at:
+				return
+			# The signal: he goes to the ball, and the corner routine's runs go
+			# with him -- his run-up is their head start.
+			_run_up = true
+			var back := SimConsts.horizontal(ctx.restart_pos - _taker_target(ctx, ctx.restart_pos, taker.team)).normalized()
+			ctx.restart_spots[taker.id] = ctx.restart_pos + back * TAKER_STANCE
+			if ctx.restart_kind == Kind.CORNER:
 				_corner_plant(ctx)
-			if _corner_planted:
-				for pid in _corner_runners:
-					if pid >= 0 and pid < ctx.players.size():
-						var runner := ctx.players[pid]
-						var point := SimOffBall.destination_for(ctx, runner)
-						if not is_inf(point.x):
-							runner.steer_to(point, runner.max_speed() * 0.9, 0.6)
-		if ctx.restart_ticks < kick_at:
-			return
+		taker.look_target = Vector3.INF
+		taker.steer_to(ctx.restart_spots[taker.id], taker.max_speed(), 0.15)
+		if ctx.restart_kind == Kind.CORNER and _corner_planted:
+			# The runners are steered from here: the movement ladder does not
+			# run over a dead ball.
+			for pid in _corner_runners:
+				if pid >= 0 and pid < ctx.players.size():
+					var runner := ctx.players[pid]
+					var point := SimOffBall.destination_for(ctx, runner)
+					if not is_inf(point.x):
+						runner.steer_to(point, runner.max_speed() * 0.9, 0.6)
+		ready = taker.dist_to(ctx.restart_pos) <= SimConsts.CONTROL_RANGE
 		waited = ctx.restart_ticks >= cap
 	else:
 		if ctx.restart_ticks < _min_delay(ctx):
@@ -883,22 +892,6 @@ static func _take_goal_kick(ctx: SimContext, taker: SimPlayer) -> void:
 			SimTouch.ground_pass(ctx, taker, mate.pos, 4.0, mate.id)
 
 
-## One corner routine, so a corner is not whatever the box happens to do. The
-## delivery names a post; the two men the spots put deepest for it are sent
-## to that post and the other as the ball is struck (`SimOffBall.plant`, a
-## `BOX` run), so the ball and the runs are aimed at the same point and the
-## man arrives rather than stands. Near post `CORNER_NEAR_SHARE` of the time,
-## far post the rest.
-const CORNER_NEAR_SHARE := 0.6
-const CORNER_NEAR := Vector3(-5.5, 0.0, 3.2)
-const CORNER_FAR := Vector3(-6.5, 0.0, -4.0)
-const CORNER_RUN_SECONDS := 3.0
-## How long the taker stands over the ball once he has it, in ticks, while the
-## runs go: a run started at the strike arrived a second after a 1.35 s
-## flight had come down (the ball 6.5 m from the nearest of ours).
-const CORNER_HOLD := SimConsts.TICK_HZ
-const CORNER_HOLD_FLOOR := 45
-
 ## The referee's signal. A corner or a free kick is not taken until everyone
 ## is within `SET_TOLERANCE` of his spot, and then not for `SIGNAL_DELAY`
 ## more; `SET_PIECE_WAIT` is the cap for a side that never gets there. Not
@@ -909,6 +902,32 @@ const SET_TOLERANCE := 1.5
 const SET_PIECE_WAIT := SimConsts.TICK_HZ * 10
 
 static var _set_since := -1
+## Whether the taker has been sent from his run-up to the ball.
+static var _run_up := false
+## How far behind the ball the taker of a corner or free kick waits, on the
+## line from where he is going to send it: a run-up, facing the ball, rather
+## than a man standing over it with his back to the goal.
+const RUN_UP := 3.5
+
+
+## Where the taker stands over a dead ball: at his run-up for a corner or a
+## free kick, a stride behind it otherwise.
+static func _taker_stance(ctx: SimContext, spot: Vector3, team: int) -> Vector3:
+	var back := SimConsts.horizontal(spot - _taker_target(ctx, spot, team))
+	if back.length() < 1e-3:
+		back = SimConsts.horizontal(spot - ctx.pitch.target_goal(team))
+	back = back.normalized()
+	if _waits_for_the_signal(ctx.restart_kind):
+		return spot + back * RUN_UP
+	return spot + back * TAKER_STANCE
+
+
+## Where the taker is sending it, as far as his stance is concerned.
+static func _taker_target(ctx: SimContext, spot: Vector3, team: int) -> Vector3:
+	var goal := ctx.pitch.target_goal(team)
+	if ctx.restart_kind == Kind.CORNER:
+		return goal - Vector3(ctx.pitch.attack_dir(team) * 6.0, 0.0, 0.0)
+	return goal
 
 
 static func _waits_for_the_signal(kind: int) -> bool:
@@ -922,6 +941,17 @@ static func _everyone_set(ctx: SimContext) -> bool:
 		if p.dist_to(ctx.restart_spots[p.id]) > SET_TOLERANCE:
 			return false
 	return true
+
+## One corner routine, so a corner is not whatever the box happens to do. The
+## delivery names a post; the two men the spots put deepest for it are sent
+## to that post and the other on the signal (`SimOffBall.plant`, a `BOX`
+## run), so the ball and the runs are aimed at the same point and the man
+## arrives rather than stands. Near post `CORNER_NEAR_SHARE` of the time,
+## far post the rest.
+const CORNER_NEAR_SHARE := 0.6
+const CORNER_NEAR := Vector3(-5.5, 0.0, 3.2)
+const CORNER_FAR := Vector3(-6.5, 0.0, -4.0)
+const CORNER_RUN_SECONDS := 3.0
 
 static var _corner_target := Vector3.INF
 static var _corner_other := Vector3.INF

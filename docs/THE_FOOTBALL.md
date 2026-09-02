@@ -136,7 +136,7 @@ with a ball in the air. The fourth act is not touching it at all.
 | Opponents out of the area at a goal kick | built | `SimSetPiece._out_of_penalty_area` |
 | A restart the side reorganises around | partial — positions and a delay, and one corner routine (2026-09-02): a named post, two runners sent to the posts a second before the kick, the ball aimed at the man; the delivery lands 5-13 m off the post at that range (**29**), so the rows did not improve | `SimSetPiece._corner_choose` |
 | A wall at a free kick | built 2026-09-02 — two to five of the nearest defenders on the 9.15 m across the line to the near post, facing the ball; a standing body that jumps in the block model; the taker goes round it, and the 21 m shot converts as it does everywhere here | `SimSetPiece._wall_spots`, `SimDuel.WALL_STOPS` |
-| Wait for the referee's signal | built 2026-09-02 — a corner or free kick is taken when everyone is at his spot and two seconds after, capped at ten | `SimSetPiece.SIGNAL_DELAY` |
+| Wait for the referee's signal, and the run-up | built 2026-09-02 — a corner or free kick is taken when everyone is at his spot and two seconds after, capped at ten; the taker waits 3.5 m behind the ball facing it and runs up on the signal | `SimSetPiece.SIGNAL_DELAY`, `RUN_UP` |
 | Advantage | absent — `SimReferee`'s header comment claims it; it is not in the file | |
 | Substitutions, injuries | absent | |
 
@@ -1928,7 +1928,15 @@ spots when they were sent. Struck at 9.3 s on the corner row and 7.6 s on the
 free kick. With it, the corner comes down **4.7-4.9 m** from the nearest of
 ours against 6.7 before and 5.4 before the routine, `none` 39% to 26%; goals
 6% and 2% at n=160, inside the error of where they were. The runs are made
-and arrive; the ball still lands off the post.
+and arrive; the ball still lands off the post. **And the run-up, the owner's
+(2026-09-02):** the taker stood 0.63 m over the ball facing wherever his walk
+had left him. He waits `RUN_UP` behind it now, on the line from where he is
+sending it, looking at the ball, and on the signal runs up and strikes; the
+corner's runners go as he does, so his run-up is their head start
+(`_taker_stance`). Struck at 10.0 s and 8.5 s on the rows. With everyone
+set and the box loaded before the ball, `fk-wide` reads 19% goals against
+8%, corners 7-8% with the ball 4.7 m from the nearest of ours, `fk-shot`
+18%.
 
 **Built 2026-09-02, item 7: the link players (30).** The pocket between the
 opponents' lines was only an *offer* (`_pocket_point`, a lift on a space
