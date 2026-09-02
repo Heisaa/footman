@@ -236,11 +236,12 @@ enum Errand {
 	BLOCK,     ## thrown at a shot (`SimDuel.commit_blocks`)
 	COVER,     ## filling the space a beaten teammate lost (`_pick_cover`)
 	JOCKEY,    ## arrived at the carrier: standing off him, side-on, showing him wide
+	ESCORT,    ## walking a dying ball over the line, body between it and the man
 }
 
 const ERRAND_NAMES := [
 	"station", "chase", "press", "pattern", "shoulder", "offer", "support",
-	"drift", "ascent", "mark", "block", "cover", "jockey",
+	"drift", "ascent", "mark", "block", "cover", "jockey", "escort",
 ]
 
 
@@ -254,6 +255,7 @@ static func reset() -> void:
 	_contest_latch = PackedInt32Array()
 	_cover = PackedInt32Array([-1, -1])
 	covers_taken = 0
+	escorts = 0
 
 
 static func update(ctx: SimContext) -> void:
@@ -665,6 +667,7 @@ const READ_RANGE := 4.5
 static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 	# An arm that wants the body held sets a look; every other arm faces the run.
 	p.look_target = Vector3.INF
+	p.escorting = false
 	var role: int = _chase_role[p.id]
 	var is_primary := role == CHASE_PRIMARY
 	var is_support := role == CHASE_SUPPORT
@@ -734,6 +737,14 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 					p.errand = Errand.JOCKEY
 					point = point.lerp(_jockey_point(ctx, p, holder.pos), jockey)
 					p.look_target = at
+		# A ball dying over the line for our restart is walked out, not played:
+		# shielding's cheapest special case.
+		if _escort_wanted(ctx, p):
+			p.errand = Errand.ESCORT
+			p.escorting = true
+			point = _escort_point(ctx, p)
+			p.look_target = ctx.ball.ground_pos()
+			escorts += 1
 		# A chaser coming from behind a man in possession runs round him rather
 		# than into the back of him.
 		var recovery := _recovery_weight(ctx, p)
@@ -1279,6 +1290,53 @@ static func _contest_pace(ctx: SimContext, p: SimPlayer) -> float:
 
 ## Support pressers close the passing lane behind the ball rather than piling in
 ## on it. Convergence on the ball is exactly the failure mode to avoid.
+## The escort. A ball the forecast has going out of play, last touched by
+## them -- so the restart is ours -- is not played, it is walked out: the
+## nearest of ours puts his body between it and whoever wants it and lets it
+## run. Any touch of his would be a clearance from the byline or a throw
+## given away. Only while it is still going out inside `ESCORT_HORIZON`, and
+## only if he can be there before it is; a ball that stops short of the line
+## is a loose ball again and he plays it like anyone.
+const ESCORT_HORIZON := 2.5
+const ESCORT_GAP := 0.7
+## How many times an escort was taken up, whole match. Read by `diagnose`.
+static var escorts := 0
+
+
+static func _escort_wanted(ctx: SimContext, p: SimPlayer) -> bool:
+	var ball := ctx.ball
+	if ball.last_touch_team < 0 or ball.last_touch_team == p.team:
+		return false
+	if not _ball_is_loose(ctx) or ball.pos.y > 1.0:
+		return false
+	var traj := ctx.trajectory_now()
+	if traj.out_index < 0:
+		return false
+	var out_t := traj.time_of_index(traj.out_index)
+	if out_t > ESCORT_HORIZON:
+		return false
+	# Going into our own goal is not a ball to escort.
+	var out := traj.points[traj.out_index]
+	var own_goal := ctx.pitch.own_goal(p.team)
+	if absf(out.x - own_goal.x) < 1.0 and absf(out.z) <= ctx.pitch.goal_half_width + 1.0:
+		return false
+	# He has to be there before it is.
+	return intercept_time(ctx, p) <= out_t
+
+
+static func _escort_point(ctx: SimContext, p: SimPlayer) -> Vector3:
+	var at := ctx.ball.ground_pos()
+	var threat := ctx.nearest_to(at, SimConsts.other_team(p.team))
+	var toward: Vector3
+	if threat != null and threat.dist_to(at) < 12.0:
+		toward = SimConsts.horizontal(threat.pos - at)
+	else:
+		toward = SimConsts.horizontal(-at)
+	if toward.length() < 0.1:
+		toward = SimConsts.horizontal(ctx.pitch.target_goal(p.team) - at)
+	return ctx.pitch.clamp_to_pitch(at + toward.normalized() * ESCORT_GAP, 0.2)
+
+
 ## The jockey. A defender who has reached the carrier used to keep running at
 ## the ball -- the intercept point, read half a touch ahead of the hips -- and
 ## soft separation held him off; so he either went for it or, at his station,

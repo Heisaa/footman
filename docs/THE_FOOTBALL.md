@@ -87,7 +87,7 @@ re-watch of the attack (the order, below), expecting rework.
 | Block a shot | built — a body in front of the strike throws itself on the backlift, one roll at the strike, taken when the ball arrives; the price and the act are one function | `SimDuel.commit_blocks`, `block_chance` |
 | Cover a beaten teammate | built — one man a side, latched for the carry, fills the space goal-side of the carrier who has just gone past one of ours; about a dozen a match | `SimMovement._pick_cover`, `Errand.COVER` |
 | Jockey, delay, show him wide | built — the chaser who has arrived goal-side stands off a stride and a half, holds his hips on the carrier, shuffles under the strafe cap, and stands a little inside the line to goal so the easy way is the touchline; the challenge is still the duel's commit roll | `SimMovement._jockey_point`, `Errand.JOCKEY` |
-| Escort a dying ball over the line | absent — shielding's cheapest special case | |
+| Escort a dying ball over the line | built — a ball the forecast has going out off their touch is walked out: body between it and the man, no touch of his own; rare, a few seconds a match | `SimMovement._escort_wanted`, `Errand.ESCORT` |
 | Spring an offside trap | absent — the line exists; stepping up as an act does not | |
 | The deliberate foul | absent | |
 | Defend the penalty area | partial — inside the area the presser closes from goal-side and the second man drops onto the line of the shot, which is what the block is thrown from; the keeper narrowing the angle and the cover for a beaten man are the rest of **5** | `SimMovement.LANE_STANDOFF`, `PRESS_FAN_NEAR` |
@@ -1891,6 +1891,15 @@ fragments: the keeper stood **3.4 m off his line at the strike against 4.1**.
 (n=40, eight points of error): nothing the eye should read as a change yet,
 and the one-on-one answers gated on a keeper who never left his line are now
 gated on one who does.
+
+**Built 2026-09-02: the escort.** A ball the forecast has going out
+(`SimTrajectory.out_index`) inside `ESCORT_HORIZON`, last touched by them, that
+our chaser can reach before it is out: he puts himself `ESCORT_GAP` on the far
+side of it from whoever wants it, holds his look on the ball, and
+`resolve_contacts` leaves him out, so it runs over the line for our restart
+instead of being hooked clear from the byline. Twenty fragments: 39 cadences
+of it, about four seconds of escorting; the ball went out of play 44 times
+before and 49 after on the same seeds. Rare and cheap, as its row said.
 
 **Built 2026-09-02: where a parry goes (3).** Every parry was pushed
 forty-five degrees back into play at a fifth to two fifths of the pace, with

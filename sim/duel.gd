@@ -360,6 +360,8 @@ static func resolve_contacts(ctx: SimContext) -> void:
 			continue  # The keeper module owns its own contact rules.
 		if p.block_shot >= 0:
 			continue  # Thrown at the shot; `_resolve_blocks` has him.
+		if p.escorting:
+			continue  # Walking it out; the whole point is not to touch it.
 		# A ball over head height is met with a leap, which arrives further from
 		# where he was standing than a boot does. `SimAerial.contact_range` is the
 		# one place that difference is stated.

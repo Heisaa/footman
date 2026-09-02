@@ -175,6 +175,10 @@ var block_tick := -1
 var block_point := Vector3.ZERO
 var block_shot := -1
 var block_hit := false
+## Escorting a dying ball over the line (`SimMovement._escort_wanted`): his
+## body is between the ball and the man who wants it, and he does not touch
+## it. `SimDuel.resolve_contacts` leaves him out while it is set.
+var escorting := false
 ## Whether this player's last touch was a settling one -- he put the ball down in
 ## front of himself and is not going anywhere with it until he decides again.
 ##
