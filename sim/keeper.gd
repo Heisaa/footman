@@ -298,8 +298,57 @@ static func _position(ctx: SimContext, k: SimPlayer) -> void:
 		k.steer_to(ctx.pitch.clamp_to_pitch(meet, 0.3), INF)
 		return
 
+	# A man who can shoot: come off the line at him. The arc above is a
+	# resting depth; this is the depth at which his reach covers the goal as
+	# the shooter sees it.
+	var narrowed := _narrowed_station(ctx, k, hold_at)
 	k.look_target = ctx.ball.ground_pos()
-	k.steer_to(ctx.pitch.clamp_to_pitch(hold_at, 0.3), k.max_speed() * 0.7)
+	k.steer_to(ctx.pitch.clamp_to_pitch(narrowed, 0.3), k.max_speed() * 0.7)
+
+
+## Narrowing the angle. With the ball at an opponent's feet inside
+## `NARROW_RANGE`, the keeper stands where what he covers either side of him
+## (`NARROW_REACH`, set and stepping) closes the goal from the shooter's point
+## of view: depth `D * (1 - reach / half_width)` along the line from the goal
+## to the ball. Capped at `NARROW_MAX` so he is never chipped from thirty
+## metres, and only for a ball in front of the goal -- a ball out by the
+## byline is covered from the near post, and coming down its line abandons
+## the far one. Everything the trade costs is already in the save model: a
+## keeper who comes out has less time to extend his dive and less angle to
+## cover, and the chip is priced against his distance off the line.
+const NARROW_RANGE := 24.0
+const NARROW_MAX := 6.5
+const NARROW_REACH := 2.4
+## Tangent of the widest angle off the goal's normal the rule applies at.
+const NARROW_ANGLE := 1.2
+
+
+static func _narrowed_station(ctx: SimContext, k: SimPlayer, hold_at: Vector3) -> Vector3:
+	if ctx.possession_team == k.team or ctx.possession_player < 0 \
+			or ctx.possession_player >= ctx.players.size():
+		return hold_at
+	var carrier := ctx.players[ctx.possession_player]
+	if carrier.team == k.team or not carrier.on_pitch:
+		return hold_at
+	var ball := ctx.ball.ground_pos()
+	if carrier.dist_to(ball) > SimConsts.CONTROL_RANGE:
+		return hold_at
+	var goal := ctx.pitch.own_goal(k.team)
+	var to_ball := SimConsts.horizontal(ball - goal)
+	var dx: float = absf(to_ball.x)
+	if dx < 1.0 or absf(to_ball.z) > dx * NARROW_ANGLE:
+		return hold_at
+	var distance := to_ball.length()
+	if distance > NARROW_RANGE:
+		return hold_at
+	var reach: float = NARROW_REACH * lerpf(0.85, 1.15, k.attrs.command)
+	var depth: float = distance * (1.0 - reach / ctx.pitch.goal_half_width)
+	depth = minf(depth, NARROW_MAX * lerpf(0.85, 1.15, k.attrs.command))
+	var at := goal + to_ball / distance * depth
+	# Never deeper than the arc already has him.
+	if SimConsts.horizontal_length(at - goal) <= SimConsts.horizontal_length(hold_at - goal):
+		return hold_at
+	return at
 
 
 ## How far out a carrier has to be before the keeper stops thinking about him.

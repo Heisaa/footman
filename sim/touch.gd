@@ -1450,6 +1450,11 @@ static func _log_shot(ctx: SimContext, player: SimPlayer, from: Vector3, aim_poi
 		"blocked": false,
 		"minute": ctx.minute(),
 	}
+	# Where the keeper stood when it was struck, off his line: the narrowing
+	# (`SimKeeper._narrowed_station`) is read off this and nothing else.
+	var keeper := ctx.teams[SimConsts.other_team(player.team)].keeper()
+	if keeper != null and keeper.on_pitch:
+		record["k_off"] = SimConsts.horizontal_length(keeper.pos - ctx.pitch.own_goal(keeper.team))
 	ctx.log_event(SimTelemetry.Ev.SHOT, record)
 	ctx.active_shot = record
 	ctx.active_shot_tick = ctx.tick_index

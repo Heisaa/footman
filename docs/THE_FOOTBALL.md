@@ -123,7 +123,7 @@ with a ball in the air. The fourth act is not touching it at all.
 | Claim a cross, command the area | built | `_claim_target`, `_try_gather` |
 | Where a parry goes | partial — the rebound is a loose ball nobody aims (**3**) | |
 | The one-on-one | partial — priced into `expected_goals`, so the engine's answer is not to shoot | |
-| Narrow the angle | absent (**5**) | |
+| Narrow the angle | built — with the ball at an opponent's feet inside 24 m and in front of goal, he stands where his reach closes the goal as the shooter sees it, capped so he is not chipped from range; the save model and the chip already price the trade | `SimKeeper._narrowed_station` |
 
 ## Set pieces, and the laws
 
@@ -1864,6 +1864,22 @@ such. `shot-edge` reads block 0% to 10% with `lost` 2% to 35%: the man at the
 top of the box with bodies in front now carries into them instead of shooting
 through them, which is the row's own question answered. `1v1-clear` did not
 move. `Shots by distance` carries the lunges and where the nearest body stood.
+
+**Built 2026-09-02: the keeper narrows the angle.** The arc (`station`) is a
+resting depth, 0.45 m plus 0.17 a metre, so a shooter at sixteen metres found
+him three metres out and waiting; `_one_on_one` only came for a man *running*
+at goal. `_narrowed_station` stands him where what he covers either side
+(`NARROW_REACH`, set and stepping) closes the goal from the shooter's point of
+view -- `D * (1 - reach / half_width)` down the ball's line -- capped at
+`NARROW_MAX` and only for a ball in front of the goal, since coming down the
+line of a ball on the byline abandons the far post. No new price: the save
+model already pays less dive time for less angle, and the chip is priced off
+his distance out. Measured with the rule switched off against on, same twenty
+fragments: the keeper stood **3.4 m off his line at the strike against 4.1**.
+`1v1-clear` 48% to 45%, `1v1-onrushing` 35% to 45%, `long-range` 25% to 28%
+(n=40, eight points of error): nothing the eye should read as a change yet,
+and the one-on-one answers gated on a keeper who never left his line are now
+gated on one who does.
 **And the pass ends with a re-watch of the attack.** Every attacking row marked
 built was judged, by eye and by number, against a defence that cannot jockey,
 block or defend its box; a judgment made against no resistance is provisional.

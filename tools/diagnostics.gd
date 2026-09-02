@@ -4402,6 +4402,14 @@ static func _lunges(events: Array, shots: int) -> void:
 			near += 1
 			if bool(e["near_saw"]):
 				seen += 1
+	var offs := 0.0
+	var offn := 0
+	for e in events:
+		if e["ev"] == SimTelemetry.Ev.SHOT and e.has("k_off"):
+			offs += float(e["k_off"])
+			offn += 1
+	if offn > 0:
+		print("  the keeper stood %.1f m off his line at the strike (mean of %d)" % [offs / float(offn), offn])
 	var with_body := shots - none
 	if with_body > 0:
 		print("  nearest body in front of the strike: %.1f m along, %.1f m off the line (mean of %d); inside %.0f m on %d, of which %d had the striker in his eyes; nobody in front on %d" % [
