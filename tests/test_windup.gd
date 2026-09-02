@@ -9,6 +9,7 @@ extends SimTestCase
 func run() -> void:
 	_the_long_ball_waits_for_the_swing()
 	_the_first_time_strike_goes_at_once()
+	_a_challenge_inside_it_rushes_the_strike()
 
 
 static func _settled_match() -> SimMatch:
@@ -132,3 +133,52 @@ func _the_first_time_strike_goes_at_once() -> void:
 	SimDecision._execute(ctx, holder, c, true)
 	check_equal(ctx.ball.last_touch_tick, ctx.tick_index, "and the ball leaves at once")
 	check_equal(holder.strike_at, -1, "with nothing queued")
+
+
+## A challenge landing inside the wind-up (`SimDuel._resolve_contest`): the
+## strike goes now, scuffed by the share of the swing left, or is cancelled
+## when the challenge takes the ball.
+func _a_challenge_inside_it_rushes_the_strike() -> void:
+	var m := _settled_match()
+	var ctx := m.ctx
+	if ctx.possession_player < 0:
+		return
+	var holder := ctx.players[ctx.possession_player]
+	var mate: SimPlayer = null
+	for id in ctx.teammate_ids(holder.team):
+		var q := ctx.players[id]
+		if q.id != holder.id and not q.is_keeper and q.on_pitch:
+			mate = q
+			break
+	_place(ctx, holder, mate, 0.0)
+	var dir := Vector3(ctx.pitch.attack_dir(holder.team), 0.0, 0.0)
+	var full := SimTouch.strike_scale(holder, dir)
+	holder.rushed = 1.0
+	check_near(SimTouch.strike_scale(holder, dir), full * SimTouch.STRIKE_BEHIND, 1e-4,
+		"a strike with no swing behind it has the range of one struck with no backlift")
+	var calm := SimTouch.aim_sigma(ctx, holder, 0.6, 20.0, SimTouch.GROUND_AIM_BASE, dir)
+	holder.rushed = 0.0
+	check_near(calm, SimTouch.aim_sigma(ctx, holder, 0.6, 20.0, SimTouch.GROUND_AIM_BASE, dir)
+		* SimTouch.FIRST_TIME_HARD, 1e-4, "and the aim error of the hardest first-time ball")
+
+	var c := _lofted(ctx, mate, false)
+	SimDecision._execute(ctx, holder, c, false)
+	var queued := holder.strike_at
+	check_greater(float(queued), float(ctx.tick_index), "the long ball is queued")
+	var seen := ctx.telemetry.events.size()
+	SimDecision.fire(ctx, holder, 0.5)
+	var rushed := -1.0
+	for i in range(seen, ctx.telemetry.events.size()):
+		var e: Dictionary = ctx.telemetry.events[i]
+		if e["ev"] == SimTelemetry.Ev.TOUCH and int(e["p"]) == holder.id:
+			rushed = float(e.get("rushed", -1.0))
+	check_equal(ctx.ball.last_touch_tick, ctx.tick_index, "rushed, the ball leaves now")
+	check_near(rushed, 0.5, 1e-6, "logged with the share of the swing it had left")
+	check_equal(holder.strike_at, -1, "and nothing is queued after it")
+	check_equal(holder.rushed, 0.0, "the rush is the one strike's")
+
+	_place(ctx, holder, mate, 0.0)
+	SimDecision._execute(ctx, holder, c, false)
+	SimDecision.cancel_windup(holder)
+	check_equal(holder.strike_at, -1, "a challenge that takes the ball cancels the strike")
+	check_equal(holder.commit_ticks, 0, "and releases the body")

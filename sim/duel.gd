@@ -707,9 +707,15 @@ static func _resolve_contest(ctx: SimContext) -> void:
 	# exactly the magnetic touch that control range exists to prevent. The ball
 	# is left alone and the carrier keeps the loser's recovery penalty, so it
 	# runs on loose and both of them have to go and get it.
-	# A man in his wind-up who holds the challenge off keeps his strike; it
-	# goes on its tick, and he does not decide again here.
+	# A challenge landing inside the wind-up: the man who holds it off gets
+	# his strike away now, rushed by the share of the swing he had left --
+	# `SimTouch.aim_sigma` and `strike_scale` price that share as the
+	# backlift he did not have. He does not decide again here. The loser's
+	# wind-up was cancelled above: that is the tackle.
 	if winner.strike_at >= 0:
+		var ticks: int = maxi(int(winner.strike_act.get("ticks", 1)), 1)
+		var left: float = float(winner.strike_at - ctx.tick_index) / float(ticks)
+		SimDecision.fire(ctx, winner, clampf(left, 0.0, 1.0))
 		return
 	if not winner.can_touch():
 		return

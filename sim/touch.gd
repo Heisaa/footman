@@ -395,6 +395,8 @@ static func apply(ctx: SimContext, player: SimPlayer, kind: int, vel: Vector3, s
 	}
 	if target_id >= 0:
 		data["target"] = target_id
+	if player.rushed > 0.0:
+		data["rushed"] = player.rushed
 	for key in extra:
 		data[key] = extra[key]
 	ctx.log_event(SimTelemetry.Ev.TOUCH, data)
@@ -513,6 +515,9 @@ static func aim_sigma(ctx: SimContext, player: SimPlayer, skill: float, distance
 	# bookmark seed3-t75, 2026-08-31). Charged here so the priced ball and the
 	# struck ball stay one model.
 	sigma *= 1.0 + CHALLENGE_AIM * ctx.challenge_on(player)
+	# The strike a challenge rushed (`SimPlayer.rushed`): the share of the
+	# swing he did not get is priced as the hardest first-time ball.
+	sigma *= lerpf(1.0, FIRST_TIME_HARD, player.rushed)
 	sigma *= 1.0 + 0.35 * speed_ratio * speed_ratio
 	sigma *= 1.0 + 0.012 * maxf(distance - 12.0, 0.0)
 	sigma *= lerpf(1.25, 0.9, player.attrs.composure)
@@ -749,11 +754,15 @@ const STRIKE_STATIC_SHARE := 0.75
 ## are different sentences about the strike. Behind him there is no backlift;
 ## on the wrong foot there is a backlift and no boot worth swinging. A man
 ## turning to hit one off his weaker foot is charged both, and should be.
+## A strike a challenge rushed (`SimPlayer.rushed`) has that share of its
+## backlift missing, and no backlift is `STRIKE_BEHIND`: the same number for
+## the same fact.
 static func strike_scale(player: SimPlayer, dir: Vector3) -> float:
 	var off := off_axis(player, dir)
 	var momentum: float = lerpf(STRIKE_STATIC_SHARE, 1.0, drive_of(player))
 	var cost: float = clampf(off * off * lerpf(1.0, 0.75, deftness_of(player)) * momentum, 0.0, 1.0)
-	return lerpf(1.0, STRIKE_BEHIND, cost) * lerpf(1.0, FOOT_STRIKE, foot_cost(player, dir))
+	return lerpf(1.0, STRIKE_BEHIND, cost) * lerpf(1.0, FOOT_STRIKE, foot_cost(player, dir)) \
+		* lerpf(1.0, STRIKE_BEHIND, player.rushed)
 
 
 ## The longest ball this player can strike along `dir`, given that he could hit
