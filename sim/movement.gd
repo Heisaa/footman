@@ -237,11 +237,12 @@ enum Errand {
 	COVER,     ## filling the space a beaten teammate lost (`_pick_cover`)
 	JOCKEY,    ## arrived at the carrier: standing off him, side-on, showing him wide
 	ESCORT,    ## walking a dying ball over the line, body between it and the man
+	STEP_IN,   ## the jockey meeting a carrier who runs at him (`step_in_weight`)
 }
 
 const ERRAND_NAMES := [
 	"station", "chase", "press", "pattern", "shoulder", "offer", "support",
-	"drift", "ascent", "mark", "block", "cover", "jockey", "escort",
+	"drift", "ascent", "mark", "block", "cover", "jockey", "escort", "step-in",
 ]
 
 
@@ -256,6 +257,7 @@ static func reset() -> void:
 	_cover = PackedInt32Array([-1, -1])
 	covers_taken = 0
 	escorts = 0
+	step_ins = 0
 	_trap_tick = PackedInt32Array([-100000, -100000])
 	traps_sprung = 0
 	trap_triggers = 0
@@ -747,8 +749,17 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 				# defending.
 				var jockey := _jockey_weight(ctx, p, holder, at)
 				if jockey > 0.0:
-					p.errand = Errand.JOCKEY
-					point = point.lerp(_jockey_point(ctx, p, holder.pos), jockey)
+					# Unless the carrier is running at him: then he is met,
+					# not stood off, and the target stays the ball. The duel
+					# reads the same weight for the commit roll.
+					var step := step_in_weight(ctx, p, holder, at)
+					jockey *= 1.0 - step
+					if step > 0.5:
+						p.errand = Errand.STEP_IN
+						step_ins += 1
+					else:
+						p.errand = Errand.JOCKEY
+						point = point.lerp(_jockey_point(ctx, p, holder.pos), jockey)
 					p.look_target = at
 		# A ball dying over the line for our restart is walked out, not played:
 		# shielding's cheapest special case.
@@ -1574,6 +1585,89 @@ static func _jockey_weight(ctx: SimContext, p: SimPlayer, holder: SimPlayer, at:
 	var side: float = (offset / od).dot(to_goal / gd)
 	var goal_side: float = clampf((side - JOCKEY_SIDE_LOW) / (JOCKEY_SIDE_HIGH - JOCKEY_SIDE_LOW), 0.0, 1.0)
 	return near * goal_side
+
+
+## The step-in: the jockey's other half. Standing off is right for a carrier
+## who has stopped, is shielding or has his back to goal. A carrier running
+## straight at a defender who has arrived is met: the defender goes for the
+## ball as it is pushed at him, and the duel's commit roll goes with him
+## (`SimDuel.STEP_IN_COMMIT`). A band on the carrier's pace toward him: a
+## walk is not met, a jog is half met, a run is met, and a sprint is not --
+## nobody steps in on a man at full pace with the ball under him, he retreats
+## and delays. Measured before the band, `1v1-chased` went `lost` 61% to 38%
+## with the chaser diving in on a 5.5 m/s striker and losing. Not as the last
+## man either: with nobody level or behind him to cover, he delays, which is
+## the jockey.
+##
+## One function for the body and the roll, read by both (INVARIANTS: the
+## contact rule and the lane model read the same body).
+const STEP_IN_CLOSE_LOW := 1.5
+const STEP_IN_CLOSE_HIGH := 3.0
+const STEP_IN_SPRINT_LOW := 4.0
+const STEP_IN_SPRINT_HIGH := 5.0
+## Who counts as cover: a teammate this near, no further from our goal than
+## the defender by more than the slack. Level counts; two centre-backs side
+## by side cover each other, and the one the carrier runs at steps. Fifteen
+## metres because the man stepping is usually a midfielder with the back line
+## ten metres behind him: at eight, ten match-minutes read zero step-ins.
+const STEP_IN_COVER_RANGE := 15.0
+const STEP_IN_COVER_SLACK := 2.0
+## And when he goes: the touch that pushes the ball off the carrier's foot.
+## The body steps on the carrier's pace; the roll fires on the ball being
+## this far from him, ramped up to a control range. Under the sole, he edges.
+const STEP_IN_AHEAD_LOW := 0.45
+const STEP_IN_AHEAD_HIGH := SimConsts.CONTROL_RANGE
+## Cadences a man spent stepping in. `diagnose` prints it beside the escorts.
+static var step_ins := 0
+
+
+static func step_in_weight(ctx: SimContext, p: SimPlayer, holder: SimPlayer, at: Vector3) -> float:
+	var arrived := _jockey_weight(ctx, p, holder, at)
+	if arrived <= 0.0:
+		return 0.0
+	var to_me := SimConsts.horizontal(p.pos - holder.pos)
+	var d := to_me.length()
+	if d < 1e-3:
+		return 0.0
+	# The gap closing, not the carrier's speed: a defender backpedalling with
+	# him is not being run at.
+	var closing: float = (holder.vel - p.vel).dot(to_me / d)
+	var run: float = clampf((closing - STEP_IN_CLOSE_LOW) / (STEP_IN_CLOSE_HIGH - STEP_IN_CLOSE_LOW), 0.0, 1.0)
+	run *= 1.0 - clampf((closing - STEP_IN_SPRINT_LOW) / (STEP_IN_SPRINT_HIGH - STEP_IN_SPRINT_LOW), 0.0, 1.0)
+	if run <= 0.0:
+		return 0.0
+	if not _covered(ctx, p):
+		return 0.0
+	return arrived * run
+
+
+## The roll's read: the body's weight, and the ball off the carrier's foot.
+## `SimDuel._add_challengers` multiplies the commit by it.
+static func step_in_go(ctx: SimContext, p: SimPlayer, holder: SimPlayer, at: Vector3) -> float:
+	var body := step_in_weight(ctx, p, holder, at)
+	if body <= 0.0:
+		return 0.0
+	var ahead: float = clampf((holder.dist_to(at) - STEP_IN_AHEAD_LOW)
+		/ (STEP_IN_AHEAD_HIGH - STEP_IN_AHEAD_LOW), 0.0, 1.0)
+	return body * ahead
+
+
+## Whether somebody of ours is level with or behind this defender, near
+## enough to pick up the man if he is beaten.
+static func _covered(ctx: SimContext, p: SimPlayer) -> bool:
+	var own_goal := ctx.pitch.own_goal(p.team)
+	var mine := SimConsts.horizontal_length(own_goal - p.pos)
+	for id in ctx.teammate_ids(p.team):
+		if id == p.id:
+			continue
+		var q := ctx.players[id]
+		if not q.on_pitch or q.is_keeper or q.recovery_ticks > 0:
+			continue
+		if q.dist_to(p.pos) > STEP_IN_COVER_RANGE:
+			continue
+		if SimConsts.horizontal_length(own_goal - q.pos) <= mine + STEP_IN_COVER_SLACK:
+			return true
+	return false
 
 
 ## Off the *man*, not the ball. A point relative to the ball moves at the

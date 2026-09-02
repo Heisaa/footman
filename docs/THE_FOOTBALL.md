@@ -89,6 +89,7 @@ re-watch of the attack (the order, below), expecting rework.
 | A committed move does not steer | built 2026-09-02 — one state on the body for the slide, the dive, the leap for a header and, since 2026-09-02, the fall after a foul, read by `locomote` before any steering: in the air the body keeps the velocity it left the ground with and lands with a third of it, on the ground it slides one way and slows; released onto the floor. The block's lunge is paced to have a leg at the point when the ball is, the dive is thrown as far as his reach toward where the ball comes closest, the leap is the fall from the height over his head. Rows unmoved (`shot-edge`, `1v1-clear`, `curl-blocked`) | `SimPlayer.commit_move`, `SimDuel.commit_blocks`, `SimKeeper._dive`, `SimAerial._leap` |
 | Cover a beaten teammate | built — one man a side, latched for the carry, fills the space goal-side of the carrier who has just gone past one of ours; about a dozen a match | `SimMovement._pick_cover`, `Errand.COVER` |
 | Jockey, delay, show him wide | built — the chaser who has arrived goal-side stands off a stride and a half, holds his hips on the carrier, shuffles under the strafe cap, and stands a little inside the line to goal so the easy way is the touchline; the challenge is still the duel's commit roll | `SimMovement._jockey_point`, `Errand.JOCKEY` |
+| Step in on a carrier who runs at him | built 2026-09-02 — the jockey's other half: a carrier closing the gap at a jog or a run is met, the target stays the ball and the commit roll goes to four times, on the touch that pushes the ball a control range off his foot; not at a sprint, and not as the last man | `SimMovement.step_in_weight`, `step_in_go`, `SimDuel.STEP_IN_COMMIT`, `Errand.STEP_IN` |
 | Escort a dying ball over the line | built — a ball the forecast has going out off their touch is walked out: body between it and the man, no touch of his own; rare, a few seconds a match | `SimMovement._escort_wanted`, `Errand.ESCORT` |
 | Spring an offside trap | built — the back line steps up four metres together on a ball played back or a carrier pressed with his back to it, with a runner near the line; it deters the through ball and catches nobody, because the passer's belief of the line is a quarter-second stale at most | `SimMovement._consider_trap`, `trap_lift` |
 | The deliberate foul | built — a man behind or level with a carrier running at his goal, outside the area, with the numbers short or the cover far, goes in when he otherwise would not and through the man when he does; rare, because the break it answers is rare here | `SimDuel._cynical`, `PRO_FOUL_COMMIT` |
@@ -2041,6 +2042,35 @@ the carrier like a man charging him -- `challenge_on` has the closing-speed
 term, `pressure_on` does not. The check first: `Why an option lost` on a
 jockeyed carrier, whether the carry lost on `success` (pressure; the fix is a
 closing-speed term in `pressure_on`, this pass's) or on `gain` (the map; 37).
+
+**Built 2026-09-02: the step-in** (owner, watching `shot-edge`: *he just
+carries into the defenders almost every time*). Probed first
+(`tools/_shot_edge_probe.gd`): the carry into two centre-backs was priced
+honestly -- the shot from the spot is 0.03 and gated, a yard sideways opens
+nothing against two lunges 5 m apart, and the forward carry is credited with
+the shot past them at a success the row's own shares bore out. He carried
+into them because they let him: the jockey stands off whatever the carrier
+does. Now a defender who has arrived goal-side and is being run at meets him
+(`SimMovement.step_in_weight`): the body keeps the ball as its target instead
+of the stand-off point, and the duel's commit roll is multiplied by
+`STEP_IN_COMMIT` (4, so 2 a second) on the touch that pushes the ball off the
+carrier's foot (`step_in_go`). Three gates, each a football rule: the gap has
+to be closing at a jog or a run -- relative pace, so a defender backpedalling
+with him is not being run at, and nobody steps in on a sprint; and not as the
+last man, with nobody level or behind him inside 8 m. One function for the
+body and the roll. `test_step_in` places the three cases. **n=160 against
+the pre-pass table:** `shot-edge` `lost` 38% to 53%, `none` 15% to 10%, touches
+6.4 to 4.8, goals 13% to 15%; `volley` `lost` 2% to 14%, which is the
+defender who closes a man taking a ball down, named as missing when the block
+went in; `hold-up` `lost` 55% to 39% and shots up, the centre-back stepping on
+the turn and beaten; `1v1-chased` `lost` 61% to 38% and shots 0.47 to 1.48 a
+trial, the defender in the box leaving the line of the shot to step and
+losing it; `take-on` unmoved. Two rows had the defence *lose* by stepping,
+and that is a result: the step's win rate is the duel's, and whether it dives
+in too readily is the owner's eye. In a match it is rare because the jockey
+is: 2 and 7 step-in cadences in two ten-minute fragments, against 7 and 20
+jockey cadences, and the first cut read zero because the cover gate was 8 m
+and the man stepping is a midfielder with his line ten metres back. Not tuned.
 
 **Built 2026-09-02: the confident carrier** (owner: the players look scared,
 pass in panic, should look, carry into space and take men on). The named check

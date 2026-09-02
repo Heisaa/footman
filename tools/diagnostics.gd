@@ -5044,6 +5044,7 @@ static func _new_mechanics(events: Array) -> void:
 	print("  chips                   %4d" % SimTouch.chips_played)
 	print("  covers for a beaten man %4d" % SimMovement.covers_taken)
 	print("  escorts of a dying ball %4d  (cadences)" % SimMovement.escorts)
+	print("  step-ins on a carrier   %4d  (cadences)" % SimMovement.step_ins)
 	_traps(events)
 	print("  the link station: asked %d, no gap between their lines %d, pocket not ahead %d, applied %d moving the station %.1f m; the man stood %.1f m ahead of the shape's ball" % [
 		SimMovement.link_asked, SimMovement.link_no_gap, SimMovement.link_no_ahead, SimMovement.link_applied,

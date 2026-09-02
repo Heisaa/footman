@@ -65,6 +65,11 @@ const CHALLENGE_FOUL_BEHIND := 2.4
 ## this a trailing defender lunges on every tick he is in range — which produced
 ## a challenge every 2.7 seconds and roughly eighty fouls a side.
 const CHALLENGE_COMMIT_PER_SECOND := 0.5
+## And the step-in multiplies it: a defender who has arrived and is being run
+## at goes in where a jockey waits (`SimMovement.step_in_weight`). At four
+## the roll is 2 a second, a challenge inside half a second on average. A
+## first value, untuned.
+const STEP_IN_COMMIT := 4.0
 
 static var _contenders: Array[SimPlayer] = []
 static var _weights := PackedFloat32Array()
@@ -545,6 +550,9 @@ static func _add_challengers(ctx: SimContext) -> void:
 		if d > CHALLENGE_RADIUS or d < 1e-4:
 			continue
 		var commit := CHALLENGE_COMMIT_PER_SECOND * SimConsts.DT * lerpf(0.5, 1.6, p.attrs.aggression)
+		# The step-in, read off the same body the movement reads it off.
+		var step := SimMovement.step_in_go(ctx, p, carrier, ball.ground_pos())
+		commit *= 1.0 + step * (STEP_IN_COMMIT - 1.0)
 		# 0 is directly behind the carrier, 1 is square in front of him.
 		var frontness: float = 0.5 * (clampf((to / d).dot(heading), -1.0, 1.0) + 1.0)
 		# The deliberate foul: he goes in when he otherwise would not.
