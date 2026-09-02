@@ -4368,6 +4368,33 @@ static func _shooting(ctx: SimContext, events: Array) -> void:
 	_in_the_box(ctx, events)
 
 
+## The planted foot (`SimDecision.wind_up`): wind-ups begun, the mean swing
+## by act, and how many were rushed by a challenge or never struck.
+static func _windups(events: Array) -> void:
+	var n := {}
+	var secs := {}
+	var total := 0
+	var total_secs := 0.0
+	for e in events:
+		if e["ev"] != SimTelemetry.Ev.WINDUP:
+			continue
+		var k: int = int(e["kind"])
+		n[k] = int(n.get(k, 0)) + 1
+		secs[k] = float(secs.get(k, 0.0)) + float(e["seconds"])
+		total += 1
+		total_secs += float(e["seconds"])
+	if total == 0:
+		print("  wind-ups                   0")
+		return
+	var parts := PackedStringArray()
+	var kinds := n.keys()
+	kinds.sort_custom(func(a, b): return int(n[a]) > int(n[b]))
+	for k in kinds:
+		parts.append("%s %d (%.2f s)" % [SimTelemetry.touch_name(k), n[k], float(secs[k]) / float(n[k])])
+	print("  wind-ups                %4d   mean %.2f s;  by act: %s" % [total, total_secs / float(total), ",  ".join(parts)])
+	print("    rushed by a challenge %4d   cancelled %4d" % [SimDecision.tally_rushed, SimDecision.tally_cancelled])
+
+
 ## Offside traps sprung, and the offsides given inside three seconds of one:
 ## the act and what it caught, side by side, because an offside count alone
 ## cannot tell a runner who mistimed from a line that stepped up.
@@ -5037,6 +5064,7 @@ static func _new_mechanics(events: Array) -> void:
 	print("  first-time balls struck %4d   of them layoffs %4d" % [
 		SimTouch.ft_played, SimTouch.ft_layoff])
 	print("  setting touches         %4d" % SimDecision.tally_set)
+	_windups(events)
 	print("  dummies                 %4d" % SimDecision.tally_dummy)
 	print("  shielded holds          %4d" % SimDecision.tally_shield)
 	print("  cuts tried %4d   beat his man %4d   and was fouled %4d" % [

@@ -184,6 +184,24 @@ var block_hit := false
 ## into `recovery_ticks`, the floor. `docs/THE_FOOTBALL.md` 52.
 var commit_ticks := 0
 var commit_airborne := false
+## And on his feet: the planted foot (`SimDecision.wind_up`). The body is
+## carried at the velocity it was given, not slowed, and it is not down.
+var commit_planted := false
+## The planted foot: the tick his queued strike goes (`-1` for none) and the
+## act it will be, `{"c": candidate, "restart": bool, "seconds": float,
+## "ticks": int}`. One state for every strike with a wind-up, open play and
+## restart alike; `SimDecision.tick_windups` fires it, `SimDuel` reads it as
+## the backlift and `SimKeeper` sets on it. `docs/THE_FOOTBALL.md` 53.
+var strike_at := -1
+var strike_act := {}
+## The tick of his last footed strike and the wind-up he swung before it,
+## for the view's kick phase and for the keeper who watched the backlift.
+var struck_tick := -100000
+var struck_windup := 0.0
+## The share of the swing a challenge left unswung, for the one strike it
+## rushed: `SimTouch.aim_sigma` and `strike_scale` read it while
+## `SimDecision.fire` holds it, and it is zero otherwise.
+var rushed := 0.0
 ## On the floor: sliding, or down after a slide, a dive or a fall. The soft
 ## separation (`SimMatch._separate_players`) does not push him -- the men
 ## standing over him step round -- because it did, and the owner watched a
@@ -382,14 +400,19 @@ func steer_to(target: Vector3, speed_cap: float = INF, deadband: float = 0.4) ->
 
 ## Throws the body: `v` for `seconds`, in the air or along the ground, and
 ## then `down_seconds` on the floor. No steering reaches him until he is up.
-func commit_move(v: Vector3, seconds: float, airborne: bool, down_seconds: float) -> void:
+## `planted` is the fourth mode: on his feet, carried at `v` for the wind-up
+## of a strike, hips kept, nothing on the floor after it and no recovery.
+func commit_move(v: Vector3, seconds: float, airborne: bool, down_seconds: float, planted := false) -> void:
 	commit_ticks = maxi(int(ceil(seconds * float(SimConsts.TICK_HZ))), 1)
 	commit_airborne = airborne
-	down = not airborne
+	commit_planted = planted
+	down = not airborne and not planted
 	vel = Vector3(v.x, 0.0, v.z)
 	desired_vel = Vector3.ZERO
 	look_target = Vector3.INF
 	body_slaved = true
+	if planted:
+		return
 	# A slide goes feet first; a body in the air keeps the hips it left with.
 	if not airborne and vel.length_squared() > 1e-4:
 		facing = atan2(vel.z, vel.x)
@@ -410,13 +433,14 @@ func locomote(dt: float) -> void:
 		commit_ticks -= 1
 		recovery_ticks = maxi(recovery_ticks - 1, 0)
 		_tick_anim_hold()
-		if not commit_airborne:
+		if not commit_airborne and not commit_planted:
 			vel = vel.move_toward(Vector3.ZERO, SLIDE_DECEL * dt)
 		pos += vel * dt
 		distance_run += vel.length() * dt
 		if commit_ticks == 0:
 			if commit_airborne:
 				vel *= LAND_KEEP
+			commit_planted = false
 			# Landed on the floor if there is floor time left, on his feet if not.
 			down = recovery_ticks > 0
 		return

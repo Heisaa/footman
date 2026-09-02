@@ -441,6 +441,10 @@ static func resolve_contacts(ctx: SimContext) -> void:
 	if SimKeeper.ball_in_hands(ctx):
 		return
 	_resolve_blocks(ctx)
+	# The planted foot: a queued strike goes on its tick, and the ball it
+	# struck is nobody's to contest until it has moved.
+	if SimDecision.tick_windups(ctx):
+		return
 	var overhead := SimAerial.is_aerial(ctx)
 	for p in ctx.players:
 		# Note the cooldown is deliberately *not* checked here. A player who has
@@ -490,7 +494,8 @@ static func resolve_contacts(ctx: SimContext) -> void:
 	if _contenders.is_empty():
 		return
 	if _contenders.size() == 1:
-		if _contenders[0].can_touch():
+		# A man in his wind-up does not decide again; the strike is queued.
+		if _contenders[0].can_touch() and _contenders[0].strike_at < 0:
 			_act(ctx, _contenders[0], false)
 		return
 
@@ -504,9 +509,12 @@ static func resolve_contacts(ctx: SimContext) -> void:
 
 	if not contested:
 		# Same side: the best placed player who can actually play it takes it,
-		# and nobody else does.
+		# and nobody else does. Not off a teammate in his wind-up: the ball is
+		# his until it leaves his foot.
 		var best: SimPlayer = null
 		for p in _contenders:
+			if p.strike_at >= 0:
+				return
 			if not p.can_touch():
 				continue
 			if best == null or p.dist_sq_to(ball.pos) < best.dist_sq_to(ball.pos):
@@ -626,6 +634,9 @@ static func _resolve_contest(ctx: SimContext) -> void:
 	# players stand over the ball poking it at each other every third of a
 	# second and the match turns into pinball.
 	if loser != null:
+		# A strike he was winding up is not struck: the challenge landed
+		# inside the backlift and took the ball, or him.
+		SimDecision.cancel_windup(loser)
 		loser.touch_cooldown = maxf(loser.touch_cooldown, ctx.rng.range_float(0.55, 1.1))
 		loser.recovery_ticks = maxi(loser.recovery_ticks, int(ctx.rng.range_float(0.1, 0.35) * SimConsts.TICK_HZ))
 		# And it shows: he went up and missed it, or he was knocked off it.
@@ -696,6 +707,10 @@ static func _resolve_contest(ctx: SimContext) -> void:
 	# exactly the magnetic touch that control range exists to prevent. The ball
 	# is left alone and the carrier keeps the loser's recovery penalty, so it
 	# runs on loose and both of them have to go and get it.
+	# A man in his wind-up who holds the challenge off keeps his strike; it
+	# goes on its tick, and he does not decide again here.
+	if winner.strike_at >= 0:
+		return
 	if not winner.can_touch():
 		return
 	var reach := SimAerial.contact_range(ball.pos.y)

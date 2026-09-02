@@ -329,6 +329,14 @@ static func apply(ctx: SimContext, player: SimPlayer, kind: int, vel: Vector3, s
 	# Counted before the launch, because it is a fact about the man striking it.
 	if is_footed(kind):
 		var line := SimConsts.horizontal(vel)
+		# The strike's tick and the wind-up he swung before it, for the view's
+		# kick phase and the keeper. `SimDecision.fire` leaves `strike_act` set
+		# through the strike so the swing can be read here; an instant strike
+		# has none.
+		player.struck_tick = ctx.tick_index
+		player.struck_windup = 0.0
+		if player.strike_at >= 0:
+			player.struck_windup = float(player.strike_act.get("seconds", 0.0)) * (1.0 - player.rushed)
 		foot_strikes += 1
 		foot_cost_sum += foot_cost(player, line)
 		foot_across_sum += absf(lateral_of(player, line))
@@ -428,6 +436,55 @@ static func _anim_for(player: SimPlayer, kind: int, speed: float, height: float)
 			if height > VOLLEY_HEIGHT and kind != SimTelemetry.Touch.DRIBBLE:
 				return SimConsts.Anim.VOLLEY
 			return SimConsts.Anim.KICK_HARD if speed > 14.0 else SimConsts.Anim.KICK_LIGHT
+
+
+# --- The planted foot -------------------------------------------------------
+
+
+## How long the wind-up before a strike is, in seconds, by act and power
+## (`docs/THE_FOOTBALL.md` 53). A plant and a leg drawn back: about half a
+## second for a long ball or a hard shot, a sixth for a ball rolled to feet.
+## None for a first-time strike -- its backlift was the flight he watched,
+## and `SimDecision.readiness` already counts it. The price
+## (`SimDecision._add_passes`, `expected_goals`) and the act
+## (`SimDecision.wind_up`) read this one function.
+const WINDUP_ROLLED := 0.15
+const WINDUP_DRIVEN := 0.3
+const WINDUP_LONG := 0.45
+const WINDUP_SHOT_SOFT := 0.25
+const WINDUP_SHOT_HARD := 0.45
+## A ground pass is rolled under this and driven beyond twice it.
+const WINDUP_GROUND_FROM := 8.0
+const WINDUP_GROUND_TO := 32.0
+## A lofted ball is a clip under this and a long ball beyond it.
+const WINDUP_AIR_FROM := 15.0
+const WINDUP_AIR_TO := 45.0
+
+
+## `power` is the shot's 0..1, or 1.0 for a driven ground pass and 0 otherwise.
+static func windup_for(kind: int, distance: float, power: float, first_time: bool) -> float:
+	if first_time:
+		return 0.0
+	match kind:
+		SimTelemetry.Touch.SHOT:
+			return lerpf(WINDUP_SHOT_SOFT, WINDUP_SHOT_HARD, clampf(power, 0.0, 1.0))
+		SimTelemetry.Touch.LOFTED_PASS, SimTelemetry.Touch.CROSS:
+			return lerpf(WINDUP_DRIVEN, WINDUP_LONG,
+				clampf((distance - WINDUP_AIR_FROM) / (WINDUP_AIR_TO - WINDUP_AIR_FROM), 0.0, 1.0))
+		SimTelemetry.Touch.GROUND_PASS, SimTelemetry.Touch.THROUGH_BALL:
+			var hard: float = maxf(clampf((distance - WINDUP_GROUND_FROM)
+				/ (WINDUP_GROUND_TO - WINDUP_GROUND_FROM), 0.0, 1.0), clampf(power, 0.0, 1.0))
+			return lerpf(WINDUP_ROLLED, WINDUP_DRIVEN, hard)
+	return 0.0
+
+
+## The kick the wind-up is posed as, chosen before the ball's speed is known:
+## the same split `_anim_for` makes after it, read off the act instead.
+static func windup_anim(kind: int, distance: float, power: float) -> int:
+	match kind:
+		SimTelemetry.Touch.GROUND_PASS, SimTelemetry.Touch.THROUGH_BALL:
+			return SimConsts.Anim.KICK_HARD if distance > 18.0 or power > 0.5 else SimConsts.Anim.KICK_LIGHT
+	return SimConsts.Anim.KICK_HARD
 
 
 # --- Error model ------------------------------------------------------------

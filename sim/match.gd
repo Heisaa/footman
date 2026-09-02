@@ -387,6 +387,7 @@ func _check_ball_out_of_play() -> void:
 func _queue_restart(restart: Dictionary) -> void:
 	ctx.in_play = false
 	ctx.phase = SimConsts.Phase.DEAD_BALL
+	SimDecision.cancel_all(ctx)
 	_pending_restart = restart
 	_dead_ball_ticks = maxi(1, int(round(DEAD_BALL_LINGER * float(SimConsts.TICK_HZ))))
 	# One man goes and fetches it while the rest pull up, which is both what a

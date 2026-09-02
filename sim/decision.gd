@@ -280,6 +280,9 @@ static func reset() -> void:
 	_set_worth = 0.0
 	tally_set = 0
 	tally_dummy = 0
+	tally_windup = 0
+	tally_rushed = 0
+	tally_cancelled = 0
 	tally_shield = 0
 	tally_feint = 0
 	tally_beat = 0
@@ -1508,6 +1511,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 					"gain": d_gain,
 					"loss": ctx.value.xt_at(SimConsts.other_team(player.team), lead, ctx.pitch),
 					"pace": d_pace,
+					"driven": true,
 					# The receiver pays for it: a ball arriving at that pace is a
 					# harder first touch, and `receiver_touch` is where the engine
 					# already prices exactly that about a man.
@@ -3947,6 +3951,11 @@ const BEAT_FOUL := 0.16
 ## from `reset()` like everything else static here.
 static var tally_set := 0
 static var tally_dummy := 0
+## The planted foot: wind-ups begun, strikes rushed by a challenge inside
+## them, and wind-ups cancelled -- the ball taken, or the body thrown.
+static var tally_windup := 0
+static var tally_rushed := 0
+static var tally_cancelled := 0
 static var tally_shield := 0
 static var tally_feint := 0
 static var tally_beat := 0
@@ -6305,32 +6314,15 @@ static func _best_of(scores: PackedFloat32Array) -> int:
 
 static func _execute(ctx: SimContext, player: SimPlayer, c: Dictionary, uncontrolled: bool) -> void:
 	var action: int = c["action"]
-	var xv: float = float(c.get("score", 0.0))
-	var ft := bool(c.get("first_time", false))
 	match action:
-		Action.SHOOT:
-			# The candidate's signed bend executes, as the pass's does.
-			if c.has("curl"):
-				_note_rare(RARE_TRIVELA if c.get("trivela", false) else RARE_BEND, true)
-			SimTouch.shot(ctx, player, c["aim"], c["power"], c["first_time"], c["success"],
-				bool(c.get("chip", false)), float(c.get("curl", NAN)),
-				bool(c.get("trivela", false)))
-		Action.GROUND_PASS:
-			# The candidate's signed bend executes -- never `curl_for` re-read
-			# here, where the foot could disagree with the one that was priced.
-			if c.has("curl"):
-				_note_rare(RARE_TRIVELA if c.get("trivela", false) else RARE_BEND, true)
-			SimTouch.ground_pass(ctx, player, c["point"], c["pace"], c["target"],
-				SimTelemetry.Touch.GROUND_PASS, xv, ft, float(c.get("curl", NAN)),
-				bool(c.get("trivela", false)))
-		Action.THROUGH_BALL:
-			SimTouch.ground_pass(ctx, player, c["point"], c["pace"], c["target"], SimTelemetry.Touch.THROUGH_BALL, xv, ft)
-		Action.LOFTED_PASS:
-			SimTouch.lofted_pass(ctx, player, c["point"], c["flight"], c["target"], SimTelemetry.Touch.LOFTED_PASS,
-				SimTouch.curl_for(ctx, player, c["point"] - ctx.ball.pos, SimTouch.LOFT_CURL, SimTouch.LOFT_CURL_SIGMA), xv, ft)
-		Action.CROSS:
-			SimTouch.lofted_pass(ctx, player, c["point"], c["flight"], c["target"], SimTelemetry.Touch.CROSS,
-				SimTouch.curl_for(ctx, player, c["point"] - ctx.ball.pos, SimTouch.CROSS_CURL, SimTouch.CROSS_CURL_SIGMA), xv, ft)
+		Action.SHOOT, Action.GROUND_PASS, Action.THROUGH_BALL, Action.LOFTED_PASS, Action.CROSS:
+			# The planted foot: the decision plants him and the ball leaves at
+			# the strike tick. A first-time strike has no wind-up and goes now.
+			var seconds := windup_of(ctx, player, c)
+			if seconds > 0.0:
+				wind_up(ctx, player, c, seconds)
+			else:
+				strike(ctx, player, c)
 		Action.DRIBBLE:
 			if c.has("opening"):
 				_note_rare(RARE_OPENING, true)
@@ -6375,6 +6367,202 @@ static func _execute(ctx: SimContext, player: SimPlayer, c: Dictionary, uncontro
 			_play_hold(ctx, player, uncontrolled, c.get("dir", Vector3.ZERO))
 		_:
 			_play_hold(ctx, player, uncontrolled)
+
+
+## The strike itself, the moment the ball leaves: the five footed acts of
+## `_execute`, from the ball where it is now. Called by `_execute` for a
+## first-time strike and by `fire` at the end of a wind-up.
+static func strike(ctx: SimContext, player: SimPlayer, c: Dictionary) -> void:
+	var xv: float = float(c.get("score", 0.0))
+	var ft := bool(c.get("first_time", false))
+	match int(c["action"]):
+		Action.SHOOT:
+			# The candidate's signed bend executes, as the pass's does.
+			if c.has("curl"):
+				_note_rare(RARE_TRIVELA if c.get("trivela", false) else RARE_BEND, true)
+			SimTouch.shot(ctx, player, c["aim"], c["power"], c["first_time"], c["success"],
+				bool(c.get("chip", false)), float(c.get("curl", NAN)),
+				bool(c.get("trivela", false)))
+		Action.GROUND_PASS:
+			# The candidate's signed bend executes -- never `curl_for` re-read
+			# here, where the foot could disagree with the one that was priced.
+			if c.has("curl"):
+				_note_rare(RARE_TRIVELA if c.get("trivela", false) else RARE_BEND, true)
+			SimTouch.ground_pass(ctx, player, c["point"], c["pace"], c["target"],
+				SimTelemetry.Touch.GROUND_PASS, xv, ft, float(c.get("curl", NAN)),
+				bool(c.get("trivela", false)))
+		Action.THROUGH_BALL:
+			SimTouch.ground_pass(ctx, player, c["point"], c["pace"], c["target"], SimTelemetry.Touch.THROUGH_BALL, xv, ft)
+		Action.LOFTED_PASS:
+			SimTouch.lofted_pass(ctx, player, c["point"], c["flight"], c["target"], SimTelemetry.Touch.LOFTED_PASS,
+				SimTouch.curl_for(ctx, player, c["point"] - ctx.ball.pos, SimTouch.LOFT_CURL, SimTouch.LOFT_CURL_SIGMA), xv, ft)
+		Action.CROSS:
+			SimTouch.lofted_pass(ctx, player, c["point"], c["flight"], c["target"], SimTelemetry.Touch.CROSS,
+				SimTouch.curl_for(ctx, player, c["point"] - ctx.ball.pos, SimTouch.CROSS_CURL, SimTouch.CROSS_CURL_SIGMA), xv, ft)
+
+
+# --- The planted foot -------------------------------------------------------
+
+
+## How far behind the ball the striker stands at the strike, along the line
+## he is going to hit it: the plant foot beside it, the swing behind.
+const PLANT_BEHIND := 0.45
+## A wind-up at whose end the ball is further than this from him is a ball
+## he has lost; the strike is cancelled and he goes after it.
+const PLANT_REACH := SimConsts.CONTROL_RANGE * 1.6
+
+
+## The seconds of wind-up this candidate takes, or 0 for a strike that goes at
+## once. `SimTouch.windup_for` is the one function; this maps the candidate onto it.
+static func windup_of(ctx: SimContext, player: SimPlayer, c: Dictionary) -> float:
+	var ft := bool(c.get("first_time", false))
+	var from := ctx.ball.pos
+	match int(c["action"]):
+		Action.SHOOT:
+			return SimTouch.windup_for(SimTelemetry.Touch.SHOT,
+				SimConsts.horizontal_length(c["aim"] - from), float(c.get("power", 0.5)), ft)
+		Action.LOFTED_PASS:
+			return SimTouch.windup_for(SimTelemetry.Touch.LOFTED_PASS,
+				SimConsts.horizontal_length(c["point"] - from), 0.0, ft)
+		Action.CROSS:
+			return SimTouch.windup_for(SimTelemetry.Touch.CROSS,
+				SimConsts.horizontal_length(c["point"] - from), 0.0, ft)
+		Action.GROUND_PASS:
+			return SimTouch.windup_for(SimTelemetry.Touch.GROUND_PASS,
+				SimConsts.horizontal_length(c["point"] - from),
+				1.0 if bool(c.get("driven", false)) else 0.0, ft)
+		Action.THROUGH_BALL:
+			return SimTouch.windup_for(SimTelemetry.Touch.THROUGH_BALL,
+				SimConsts.horizontal_length(c["point"] - from), 0.0, ft)
+	return 0.0
+
+
+## The touch kind a candidate's strike is logged as.
+static func _strike_kind(c: Dictionary) -> int:
+	match int(c["action"]):
+		Action.SHOOT:
+			return SimTelemetry.Touch.SHOT
+		Action.LOFTED_PASS:
+			return SimTelemetry.Touch.LOFTED_PASS
+		Action.CROSS:
+			return SimTelemetry.Touch.CROSS
+		Action.THROUGH_BALL:
+			return SimTelemetry.Touch.THROUGH_BALL
+	return SimTelemetry.Touch.GROUND_PASS
+
+
+## Where a candidate's strike is going, for the line the body is set on.
+static func _strike_target(c: Dictionary) -> Vector3:
+	return c["aim"] if int(c["action"]) == Action.SHOOT else c["point"]
+
+
+## Plants him: the strike is queued for `seconds` from now and the body is
+## committed for the wind-up (`SimPlayer.commit_move`, planted). The ball is
+## forecast to the strike tick and he is carried to stand `PLANT_BEHIND`
+## behind where it will be, on the line of the strike, so a ball he is
+## running with is struck on the run and a ball at his feet from the spot.
+## No steering and no re-decision reach him until `fire`. `restart` marks a
+## dead-ball kick, whose release is `SimSetPiece.release`.
+static func wind_up(ctx: SimContext, player: SimPlayer, c: Dictionary, seconds: float,
+		restart := false) -> void:
+	var ticks := maxi(int(ceil(seconds * float(SimConsts.TICK_HZ))), 1)
+	seconds = float(ticks) * SimConsts.DT
+	player.strike_at = ctx.tick_index + ticks
+	player.strike_act = {"c": c, "restart": restart, "seconds": seconds, "ticks": ticks,
+		"planted": ctx.tick_index}
+	var forecast := ctx.trajectory_now()
+	var at := forecast.position_at(seconds) if forecast.count > 0 else ctx.ball.pos
+	var line := SimConsts.horizontal(_strike_target(c) - at)
+	if line.length_squared() < 1e-6:
+		line = SimConsts.horizontal(player.heading_dir())
+	var stand := SimConsts.horizontal(at) - line.normalized() * PLANT_BEHIND
+	var v := SimConsts.horizontal(stand - player.pos) / seconds
+	var cap := player.max_speed()
+	if v.length() > cap:
+		v = v.normalized() * cap
+	player.commit_move(v, seconds, false, 0.0, true)
+	var kind := _strike_kind(c)
+	var distance := SimConsts.horizontal_length(_strike_target(c) - at)
+	var power := float(c.get("power", 1.0 if bool(c.get("driven", false)) else 0.0))
+	player.play_anim(SimTouch.windup_anim(kind, distance, power), seconds + 0.25)
+	tally_windup += 1
+	ctx.log_event(SimTelemetry.Ev.WINDUP, {
+		"p": player.id,
+		"team": player.team,
+		"kind": kind,
+		"seconds": seconds,
+		"restart": restart,
+		"pos": ctx.ball.ground_pos(),
+	})
+
+
+## Lets go of a queued strike: the ball was taken, or the body thrown.
+static func cancel_windup(player: SimPlayer) -> void:
+	if player.strike_at < 0:
+		return
+	player.strike_at = -1
+	player.strike_act = {}
+	if player.commit_planted:
+		player.commit_ticks = 0
+		player.commit_planted = false
+	tally_cancelled += 1
+
+
+## A dead ball cancels every wind-up: nobody strikes a ball that has stopped.
+static func cancel_all(ctx: SimContext) -> void:
+	for p in ctx.players:
+		cancel_windup(p)
+
+
+## The strike goes: at the end of the wind-up, or rushed by a challenge that
+## landed inside it, `rushed` being the share of the swing left unswung.
+## `strike_at` and the act stay set through the strike so `SimTouch.apply`
+## can read the swing; they are cleared after.
+static func fire(ctx: SimContext, player: SimPlayer, rushed := 0.0) -> void:
+	var act := player.strike_act
+	player.rushed = clampf(rushed, 0.0, 1.0)
+	if player.rushed > 0.0:
+		tally_rushed += 1
+	if player.commit_planted:
+		player.commit_ticks = 0
+		player.commit_planted = false
+	if bool(act.get("restart", false)):
+		SimSetPiece.release(ctx, player, act["c"])
+	else:
+		strike(ctx, player, act["c"])
+	player.strike_at = -1
+	player.strike_act = {}
+	player.rushed = 0.0
+
+
+## Runs every queued strike: fires the one whose tick has come, cancels the
+## one whose ball is gone. Called once a tick, in play from
+## `SimDuel.resolve_contacts` and over a dead ball from `SimSetPiece.update`.
+## True when a strike went this tick, so the caller leaves the struck ball
+## alone until it has moved.
+static func tick_windups(ctx: SimContext) -> bool:
+	for p in ctx.players:
+		if p.strike_at < 0:
+			continue
+		var restart := bool(p.strike_act.get("restart", false))
+		# Thrown by something else -- a foul's fall, a duel's slide -- or the
+		# ball touched by somebody else since he planted: a loose ball he was
+		# first to is his until then. The plant's own commit ends on the
+		# strike tick.
+		var thrown: bool = p.down or (p.commit_ticks > 0 and not p.commit_planted)
+		var taken: bool = ctx.ball.last_touch_tick >= int(p.strike_act.get("planted", 0)) \
+			and ctx.ball.last_touch_player != p.id
+		var lost: bool = not p.on_pitch or thrown or (not restart and taken)
+		if not lost and ctx.tick_index >= p.strike_at and not restart \
+				and p.dist_to(ctx.ball.pos) > PLANT_REACH:
+			lost = true
+		if lost:
+			cancel_windup(p)
+			continue
+		if ctx.tick_index >= p.strike_at:
+			fire(ctx, p, 0.0)
+			return true
+	return false
 
 
 ## Plays the hold: a settling touch that leaves the ball where it is.

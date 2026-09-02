@@ -425,6 +425,7 @@ static func _begin(ctx: SimContext, kind: int, team: int, spot: Vector3) -> void
 	ctx.restart_hold = 0
 	ctx.restart_taker = -1
 	ctx.restart_spots.clear()
+	SimDecision.cancel_all(ctx)
 	_clear_wall(ctx)
 	_corner_target = Vector3.INF
 	_corner_planted = false
@@ -686,6 +687,14 @@ static func update(ctx: SimContext) -> void:
 	var taker: SimPlayer = null
 	if ctx.restart_taker >= 0 and ctx.restart_taker < ctx.players.size():
 		taker = ctx.players[ctx.restart_taker]
+	# The planted foot over a dead ball: the taker is at the ball and winding
+	# up (`_take`), the ball is dead until the strike, and the corner's runners
+	# keep going to their posts meanwhile.
+	if taker != null and taker.strike_at >= 0:
+		if ctx.restart_kind == Kind.CORNER and _corner_planted:
+			_steer_corner_runners(ctx)
+		SimDecision.tick_windups(ctx)
+		return
 	if taker == null or not taker.on_pitch:
 		taker = _nearest_of(ctx, ctx.restart_team, ctx.restart_pos, ctx.restart_kind != Kind.GOAL_KICK)
 	if taker == null:
@@ -727,14 +736,7 @@ static func update(ctx: SimContext) -> void:
 		taker.look_target = Vector3.INF
 		taker.steer_to(ctx.restart_spots[taker.id], taker.max_speed(), 0.15)
 		if ctx.restart_kind == Kind.CORNER and _corner_planted:
-			# The runners are steered from here: the movement ladder does not
-			# run over a dead ball.
-			for pid in _corner_runners:
-				if pid >= 0 and pid < ctx.players.size():
-					var runner := ctx.players[pid]
-					var point := SimOffBall.destination_for(ctx, runner)
-					if not is_inf(point.x):
-						runner.steer_to(point, runner.max_speed() * 0.9, 0.6)
+			_steer_corner_runners(ctx)
 		ready = taker.dist_to(ctx.restart_pos) <= SimConsts.CONTROL_RANGE
 		waited = ctx.restart_ticks >= cap
 	else:
@@ -756,15 +758,28 @@ static func update(ctx: SimContext) -> void:
 	_take(ctx, taker)
 
 
+## The corner's runners are steered from here: the movement ladder does not
+## run over a dead ball.
+static func _steer_corner_runners(ctx: SimContext) -> void:
+	for pid in _corner_runners:
+		if pid >= 0 and pid < ctx.players.size():
+			var runner := ctx.players[pid]
+			var point := SimOffBall.destination_for(ctx, runner)
+			if not is_inf(point.x):
+				runner.steer_to(point, runner.max_speed() * 0.9, 0.6)
+
+
+## The taker is at the ball: what he plays is decided now, and the kick is
+## either struck at once (a throw, a knock-off) or wound up for
+## (`SimDecision.wind_up`), the ball dead until `release` strikes it.
 static func _take(ctx: SimContext, taker: SimPlayer) -> void:
 	ctx.ball.reset(ctx.restart_pos)
+	ctx.restart_taker = taker.id
 	if ctx.restart_kind == Kind.THROW_IN:
 		# It leaves his hands, not the grass. Over his own head rather than over
 		# the spot, because that is where his hands are; he is standing behind the
 		# line, so the ball is still behind it.
 		ctx.ball.pos = Vector3(taker.pos.x, THROW_HEIGHT, taker.pos.z)
-	ctx.in_play = true
-	ctx.phase = SimConsts.Phase.BUILD_UP
 	taker.touch_cooldown = 0.0
 	# A man standing over a dead ball has set his body, and the aim error charged
 	# by `SimTouch.facing_penalty` should not be reading whichever way he happened
@@ -775,19 +790,51 @@ static func _take(ctx: SimContext, taker: SimPlayer) -> void:
 	var upfield := SimConsts.horizontal(ctx.pitch.target_goal(taker.team) - taker.pos)
 	if upfield.length() > 1e-3:
 		taker.facing = atan2(upfield.z, upfield.x)
+	var act := {}
 	match ctx.restart_kind:
 		Kind.KICKOFF:
-			_take_kickoff(ctx, taker)
+			act = _plan_kickoff(ctx, taker)
 		Kind.THROW_IN:
-			_take_throw(ctx, taker)
+			act = {"throw": true}
 		Kind.GOAL_KICK:
-			_take_goal_kick(ctx, taker)
+			act = _plan_goal_kick(ctx, taker)
 		Kind.CORNER:
-			_take_corner(ctx, taker)
+			act = _plan_corner(ctx, taker)
 		Kind.PENALTY:
-			_take_penalty(ctx, taker)
+			act = _plan_penalty(ctx, taker)
 		_:
-			_take_free_kick(ctx, taker)
+			act = _plan_free_kick(ctx, taker)
+	var seconds := 0.0
+	if act.has("action"):
+		seconds = SimDecision.windup_of(ctx, taker, act)
+	if seconds > 0.0:
+		SimDecision.wind_up(ctx, taker, act, seconds, true)
+		return
+	release(ctx, taker, act)
+
+
+## The ball comes into play: struck as planned, the wall going up with a
+## shot, and the restart is over. Called by `SimDecision.fire` at the end of
+## the taker's wind-up, or by `_take` at once for a kick with none.
+static func release(ctx: SimContext, taker: SimPlayer, act: Dictionary) -> void:
+	ctx.in_play = true
+	ctx.phase = SimConsts.Phase.BUILD_UP
+	taker.touch_cooldown = 0.0
+	if ctx.restart_kind == Kind.KICKOFF:
+		ctx.log_event(SimTelemetry.Ev.KICKOFF, {"team": taker.team, "minute": ctx.minute()})
+	if act.has("throw"):
+		_take_throw(ctx, taker)
+	elif act.has("dribble"):
+		SimTouch.dribble(ctx, taker, act["dribble"], 0.4)
+	elif int(act.get("action", -1)) == SimDecision.Action.CLEAR:
+		SimTouch.clearance(ctx, taker)
+	else:
+		SimDecision.strike(ctx, taker, act)
+		if int(act["action"]) == SimDecision.Action.SHOOT:
+			# The wall goes up with the strike. `SimDuel.block_chance` already
+			# judges it as a body that jumps; this is the body doing it.
+			for pid in _wall_ids:
+				ctx.players[pid].play_anim(SimConsts.Anim.JUMP, 0.5)
 	ctx.restart_kind = -1
 	ctx.restart_taker = -1
 	ctx.restart_spots.clear()
@@ -796,13 +843,11 @@ static func _take(ctx: SimContext, taker: SimPlayer) -> void:
 	_clear_wall(ctx)
 
 
-static func _take_kickoff(ctx: SimContext, taker: SimPlayer) -> void:
+static func _plan_kickoff(ctx: SimContext, taker: SimPlayer) -> Dictionary:
 	var mate := _pass_option(ctx, taker, 24.0, -1.0)
-	ctx.log_event(SimTelemetry.Ev.KICKOFF, {"team": taker.team, "minute": ctx.minute()})
-	if mate != null:
-		SimTouch.ground_pass(ctx, taker, mate.pos, 3.5, mate.id)
-	else:
-		SimTouch.dribble(ctx, taker, ctx.pitch.target_goal(taker.team) - taker.pos, 0.4)
+	if mate == null:
+		return {"dribble": ctx.pitch.target_goal(taker.team) - taker.pos}
+	return {"action": SimDecision.Action.GROUND_PASS, "point": mate.pos, "pace": 3.5, "target": mate.id}
 
 
 ## How far this man can throw it.
@@ -872,7 +917,7 @@ static func _take_throw(ctx: SimContext, taker: SimPlayer) -> void:
 	SimTouch.lofted_pass(ctx, taker, lead, clampf(0.45 + d * 0.035, 0.45, 1.25), mate.id, SimTelemetry.Touch.THROW_IN)
 
 
-static func _take_goal_kick(ctx: SimContext, taker: SimPlayer) -> void:
+static func _plan_goal_kick(ctx: SimContext, taker: SimPlayer) -> Dictionary:
 	var tactics := ctx.tactics(taker.team)
 	var go_long := ctx.rng.unit_float() < clampf(0.25 + tactics.directness * 0.7, 0.0, 0.95)
 	# A named routine overrides the default: "keeper plays short" is a thing the
@@ -883,13 +928,12 @@ static func _take_goal_kick(ctx: SimContext, taker: SimPlayer) -> void:
 	if go_long:
 		var target := _long_ball_target(ctx, taker.team)
 		var mate := ctx.nearest_to(target, taker.team, taker.id)
-		SimTouch.lofted_pass(ctx, taker, target, 2.2, mate.id if mate != null else -1, SimTelemetry.Touch.LOFTED_PASS)
-	else:
-		var mate := _pass_option(ctx, taker, 26.0, 0.0)
-		if mate == null:
-			SimTouch.clearance(ctx, taker)
-		else:
-			SimTouch.ground_pass(ctx, taker, mate.pos, 4.0, mate.id)
+		return {"action": SimDecision.Action.LOFTED_PASS, "point": target, "flight": 2.2,
+			"target": mate.id if mate != null else -1}
+	var mate := _pass_option(ctx, taker, 26.0, 0.0)
+	if mate == null:
+		return {"action": SimDecision.Action.CLEAR}
+	return {"action": SimDecision.Action.GROUND_PASS, "point": mate.pos, "pace": 4.0, "target": mate.id}
 
 
 ## The referee's signal. A corner or a free kick is not taken until everyone
@@ -1001,7 +1045,12 @@ static func _corner_plant(ctx: SimContext) -> void:
 			SimOffBall.plant(ctx, ctx.players[pid], SimOffBall.BOX, points[i], CORNER_RUN_SECONDS)
 
 
-static func _take_corner(ctx: SimContext, taker: SimPlayer) -> void:
+## The swing on a corner is the taker's foot, and it used to be the flag he
+## stood at: `-signf(taker.pos.z)`, which reads the same for both ends of the
+## pitch while the goal being attacked does not. `SimTouch.curl_for` asks the
+## only question that decides it -- `docs/THE_FOOTBALL.md` 36 -- and a
+## right-footer at the left flag whips it in; `SimDecision.strike` draws it.
+static func _plan_corner(ctx: SimContext, taker: SimPlayer) -> Dictionary:
 	if is_inf(_corner_target.x):
 		_corner_choose(ctx, taker.team, ctx.restart_pos)
 	_corner_plant(ctx)
@@ -1013,25 +1062,18 @@ static func _take_corner(ctx: SimContext, taker: SimPlayer) -> void:
 	if mate == null:
 		mate = ctx.nearest_to(target, taker.team, taker.id)
 	_corner_target = Vector3.INF
-	# The swing is the taker's foot, and it used to be the flag he stood at:
-	# `-signf(taker.pos.z)`, which reads the same for both ends of the pitch while
-	# the goal being attacked does not. One team's corners from a given corner
-	# therefore swung in and the other's swung out, from the same expression.
-	# `SimTouch.curl_for` asks the only question that decides it -- see
-	# `docs/THE_FOOTBALL.md` 36 -- and a right-footer at the left flag whips it in.
-	var curl := SimTouch.curl_for(ctx, taker, aim - ctx.ball.pos,
-		SimTouch.CROSS_CURL, SimTouch.CROSS_CURL_SIGMA)
-	SimTouch.lofted_pass(ctx, taker, aim, 1.35, mate.id if mate != null else -1, SimTelemetry.Touch.CROSS, curl)
+	return {"action": SimDecision.Action.CROSS, "point": aim, "flight": 1.35,
+		"target": mate.id if mate != null else -1}
 
 
-static func _take_penalty(ctx: SimContext, taker: SimPlayer) -> void:
+static func _plan_penalty(ctx: SimContext, taker: SimPlayer) -> Dictionary:
 	var goal := ctx.pitch.target_goal(taker.team)
 	var side: float = 1.0 if ctx.rng.chance(0.5) else -1.0
 	var aim := Vector3(goal.x, ctx.rng.range_float(0.3, 1.5), side * (ctx.pitch.goal_half_width - 0.6) * ctx.rng.range_float(0.55, 0.95))
-	SimTouch.shot(ctx, taker, aim, 0.72, false, 0.78)
+	return {"action": SimDecision.Action.SHOOT, "aim": aim, "power": 0.72, "first_time": false, "success": 0.78}
 
 
-static func _take_free_kick(ctx: SimContext, taker: SimPlayer) -> void:
+static func _plan_free_kick(ctx: SimContext, taker: SimPlayer) -> Dictionary:
 	var goal := ctx.pitch.target_goal(taker.team)
 	var distance := SimConsts.horizontal_length(goal - ctx.restart_pos)
 	var direct_allowed := ctx.restart_kind == Kind.FREE_KICK
@@ -1043,22 +1085,16 @@ static func _take_free_kick(ctx: SimContext, taker: SimPlayer) -> void:
 			var near_z: float = signf(ctx.restart_pos.z) if absf(ctx.restart_pos.z) > 0.3 else 1.0
 			z = -near_z * (ctx.pitch.goal_half_width - 0.5) * ctx.rng.range_float(0.45, 1.0)
 		var aim := Vector3(goal.x, ctx.rng.range_float(0.6, 2.0), z)
-		SimTouch.shot(ctx, taker, aim, 0.8, false, 0.08)
-		# The wall goes up with the strike. `SimDuel.block_chance` already
-		# judges it as a body that jumps; this is the body doing it.
-		for pid in _wall_ids:
-			ctx.players[pid].play_anim(SimConsts.Anim.JUMP, 0.5)
-		return
+		return {"action": SimDecision.Action.SHOOT, "aim": aim, "power": 0.8, "first_time": false, "success": 0.08}
 	if distance < 42.0:
 		var aim := goal - Vector3(ctx.pitch.attack_dir(taker.team) * 9.0, -2.0, 0.0)
 		var mate := ctx.nearest_to(Vector3(aim.x, 0.0, aim.z), taker.team, taker.id)
-		SimTouch.lofted_pass(ctx, taker, aim, 1.5, mate.id if mate != null else -1, SimTelemetry.Touch.CROSS)
-		return
+		return {"action": SimDecision.Action.CROSS, "point": aim, "flight": 1.5,
+			"target": mate.id if mate != null else -1}
 	var option := _pass_option(ctx, taker, 30.0, 0.1)
 	if option == null:
-		SimTouch.clearance(ctx, taker)
-	else:
-		SimTouch.ground_pass(ctx, taker, option.pos, 4.0, option.id)
+		return {"action": SimDecision.Action.CLEAR}
+	return {"action": SimDecision.Action.GROUND_PASS, "point": option.pos, "pace": 4.0, "target": option.id}
 
 
 ## Nearest teammate within range, optionally requiring them to be forward of the

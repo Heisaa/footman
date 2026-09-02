@@ -40,13 +40,16 @@ enum Ev {
 	TRAP,
 	## The possession changed phase (`SimTempo`): settle, probe or attack, and why.
 	TEMPO,
+	## The planted foot: a strike's wind-up began (`SimDecision.wind_up`), with
+	## the act it is for and the seconds it takes. The touch follows at the strike.
+	WINDUP,
 }
 
 const EV_NAMES := [
 	"kickoff", "touch", "pass_attempt", "pass_outcome", "shot", "duel", "foul",
 	"card", "recovery", "pattern", "phase_change", "goal", "offside", "set_piece",
 	"period", "substitution", "save", "out_of_play", "possession_end", "feint",
-	"block_lunge", "parry", "trap", "tempo",
+	"block_lunge", "parry", "trap", "tempo", "windup",
 ]
 
 ## Touch kinds. Shared with the touch module.
