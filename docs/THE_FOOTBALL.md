@@ -89,7 +89,7 @@ re-watch of the attack (the order, below), expecting rework.
 | Jockey, delay, show him wide | built — the chaser who has arrived goal-side stands off a stride and a half, holds his hips on the carrier, shuffles under the strafe cap, and stands a little inside the line to goal so the easy way is the touchline; the challenge is still the duel's commit roll | `SimMovement._jockey_point`, `Errand.JOCKEY` |
 | Escort a dying ball over the line | built — a ball the forecast has going out off their touch is walked out: body between it and the man, no touch of his own; rare, a few seconds a match | `SimMovement._escort_wanted`, `Errand.ESCORT` |
 | Spring an offside trap | built — the back line steps up four metres together on a ball played back or a carrier pressed with his back to it, with a runner near the line; it deters the through ball and catches nobody, because the passer's belief of the line is a quarter-second stale at most | `SimMovement._consider_trap`, `trap_lift` |
-| The deliberate foul | absent | |
+| The deliberate foul | built — a man behind or level with a carrier running at his goal, outside the area, with the numbers short or the cover far, goes in when he otherwise would not and through the man when he does; rare, because the break it answers is rare here | `SimDuel._cynical`, `PRO_FOUL_COMMIT` |
 | Defend the penalty area | partial — inside the area the presser closes from goal-side and the second man drops onto the line of the shot, which is what the block is thrown from; the keeper narrowing the angle and the cover for a beaten man are the rest of **5** | `SimMovement.LANE_STANDOFF`, `PRESS_FAN_NEAR` |
 
 ## In the air
@@ -1901,6 +1901,23 @@ instead of being hooked clear from the byline. Twenty fragments: 39 cadences
 of it, about four seconds of escorting; the ball went out of play 44 times
 before and 49 after on the same seeds. Rare and cheap, as its row said.
 
+**Built 2026-09-02: the deliberate foul.** The cynical foul that stops a
+break had been falling out of `CHALLENGE_FOUL_BEHIND` by accident; this is the
+choice. `SimDuel._cynical`: a challenger behind or level with a carrier
+running at his goal, outside his own area and inside `PRO_FOUL_RANGE`, with
+their men goal-side of the ball outnumbering ours or the nearest cover further
+than `PRO_FOUL_COVER_NEAR..FAR` from the carrier, commits `PRO_FOUL_COMMIT`
+times as often and fouls `PRO_FOUL` times as often when he loses the contest,
+scaled by aggression. The card is the referee's. Counted as the moment, the
+challenges from it and the fouls from those, under `The small acts`. **The
+first cut was never a candidate**: the numbers test alone held on zero ticks
+in twenty fragments, because a side here keeps four or five men goal-side of
+any carrier -- the break is rare, and that is `The two seconds after a
+regain`'s subject, not this one's. With the cover gap beside it the moment
+held on 88 ticks in twenty fragments, produced 2 challenges and 1 foul; fouls
+4 to 6 on the same seeds. `1v1-chased` reads no foul a trial at n=40 before
+and after. Built and rare; the rate is the break's, and the owner's eye.
+
 **Built 2026-09-02: the offside trap as an act.** The line's standing height
 was a station (`offside_trap * 5` metres with the ball far); the step is
 `_consider_trap`: on a ball played back or a carrier pressed with his back to
@@ -2074,7 +2091,8 @@ not a finding; it is the list working.
 - The ball almost never goes behind for a corner (**5** is in; the parry
   wide, **3**, and the clearing header are what is left).
 - A free kick on the edge of the box is possible but rare; the cynical foul is
-  absent.
+  built (2026-09-02) and fires about as often as a break happens, which is
+  seldom.
 - **The last ten minutes look like the first ten**, whatever the score (**34**).
   A side two down keeps its shape, its width and its patience to the whistle.
 - The ball is circulated at one speed from the first minute to the last: there is

@@ -72,6 +72,73 @@ static var _weights := PackedFloat32Array()
 ## the ball itself; less for a defender challenging the man.
 static var _challenge_win := PackedFloat32Array()
 static var _challenge_foul := PackedFloat32Array()
+## And how much of the challenge was the deliberate one, 0 to 1.
+static var _challenge_cynical := PackedFloat32Array()
+
+## The deliberate foul. The cynical foul that stops a break already fell out
+## of the challenge from behind (`CHALLENGE_FOUL_BEHIND`) by accident; this is
+## the choice. A defender who is behind or beside a carrier running at his
+## goal, with no more of his own men goal-side than they have attackers, and
+## outside his own area, goes in when he otherwise would not and goes through
+## the man when he does. Priced by aggression, because that is the attribute.
+## The card is the referee's, as for any foul.
+const PRO_FOUL_COMMIT := 5.0
+const PRO_FOUL := 2.5
+const PRO_FOUL_RANGE := 55.0
+const PRO_FOUL_RUNNING := 2.0
+const PRO_FOUL_FRONTNESS := 0.65
+## With the numbers not short, how far the nearest cover has to be from the
+## carrier before the foul is worth it, and where it is fully worth it.
+const PRO_FOUL_COVER_NEAR := 6.0
+const PRO_FOUL_COVER_FAR := 14.0
+## Tallies, whole match. Read by `diagnose`: the ticks a challenger had the
+## moment, the challenges it produced, the fouls from those.
+static var cynical_moments := 0
+static var cynical_challenges := 0
+static var cynical_fouls := 0
+
+
+## How much this is the moment for the deliberate foul, 0 to 1.
+static func _cynical(ctx: SimContext, p: SimPlayer, carrier: SimPlayer, frontness: float) -> float:
+	# Behind him or level with him: the man losing the race pulls him back.
+	if frontness > PRO_FOUL_FRONTNESS:
+		return 0.0
+	var own_goal := ctx.pitch.own_goal(p.team)
+	var to_goal := SimConsts.horizontal(own_goal - carrier.pos)
+	var range_to_goal := to_goal.length()
+	if range_to_goal > PRO_FOUL_RANGE or range_to_goal < 1.0:
+		return 0.0
+	if ctx.pitch.in_own_penalty_area(p.team, carrier.pos):
+		return 0.0
+	if carrier.vel.dot(to_goal / range_to_goal) < PRO_FOUL_RUNNING:
+		return 0.0
+	# The numbers: ours goal-side of him, bar the challenger, against theirs
+	# -- and, short of that, whether the nearest of ours goal-side is near
+	# enough to cover. A man beaten with the cover twelve metres off has the
+	# same choice to make as a man beaten on a two-on-two.
+	var dir := ctx.pitch.attack_dir(p.team)
+	var ours := 0
+	var theirs := 0
+	var cover_gap := INF
+	for q in ctx.players:
+		if not q.on_pitch or q.is_keeper or q.id == p.id or q.id == carrier.id:
+			continue
+		if (q.pos.x - carrier.pos.x) * dir < 0.0:
+			if q.team == p.team:
+				ours += 1
+				cover_gap = minf(cover_gap, q.dist_to(carrier.pos))
+			else:
+				theirs += 1
+	var moment: float
+	if theirs >= ours:
+		moment = 1.0
+	else:
+		moment = clampf((cover_gap - PRO_FOUL_COVER_NEAR) / (PRO_FOUL_COVER_FAR - PRO_FOUL_COVER_NEAR), 0.0, 1.0)
+	if moment > 0.0:
+		cynical_moments += 1
+	return moment * lerpf(0.5, 1.2, p.attrs.aggression)
+
+
 
 
 ## How far round a man's leg reaches: a ball in front of his hips or beside
@@ -342,6 +409,7 @@ static func resolve_contacts(ctx: SimContext) -> void:
 	_contenders.clear()
 	_challenge_win.clear()
 	_challenge_foul.clear()
+	_challenge_cynical.clear()
 	var ball := ctx.ball
 	# A ball in a goalkeeper's hands is not a loose ball, and this is the only
 	# place that could have said so. See `SimKeeper.ball_in_hands`.
@@ -390,6 +458,7 @@ static func resolve_contacts(ctx: SimContext) -> void:
 		_contenders.append(p)
 		_challenge_win.append(1.0)
 		_challenge_foul.append(1.0)
+		_challenge_cynical.append(0.0)
 
 	_add_challengers(ctx)
 
@@ -456,13 +525,20 @@ static func _add_challengers(ctx: SimContext) -> void:
 		if d > CHALLENGE_RADIUS or d < 1e-4:
 			continue
 		var commit := CHALLENGE_COMMIT_PER_SECOND * SimConsts.DT * lerpf(0.5, 1.6, p.attrs.aggression)
-		if not ctx.rng.chance(commit):
-			continue
 		# 0 is directly behind the carrier, 1 is square in front of him.
 		var frontness: float = 0.5 * (clampf((to / d).dot(heading), -1.0, 1.0) + 1.0)
+		# The deliberate foul: he goes in when he otherwise would not.
+		var cynical := _cynical(ctx, p, carrier, frontness)
+		commit *= 1.0 + cynical * (PRO_FOUL_COMMIT - 1.0)
+		if not ctx.rng.chance(commit):
+			continue
+		if cynical > 0.0:
+			cynical_challenges += 1
 		_contenders.append(p)
 		_challenge_win.append(lerpf(CHALLENGE_WEIGHT_BEHIND, CHALLENGE_WEIGHT_FRONT, frontness))
-		_challenge_foul.append(lerpf(CHALLENGE_FOUL_BEHIND, CHALLENGE_FOUL_FRONT, frontness))
+		_challenge_foul.append(lerpf(CHALLENGE_FOUL_BEHIND, CHALLENGE_FOUL_FRONT, frontness)
+			* (1.0 + cynical * (PRO_FOUL - 1.0)))
+		_challenge_cynical.append(cynical)
 
 
 ## A weighted random over the contenders, then a foul roll.
@@ -575,6 +651,8 @@ static func _resolve_contest(ctx: SimContext) -> void:
 				p_foul *= lerpf(1.0, lerpf(1.0, INVITE_CONTACT, winner.attrs.composure),
 					shielded(winner, loser))
 		if ctx.rng.chance(clampf(p_foul, 0.0, 0.6)):
+			if _challenge_cynical[loser_index] > 0.0:
+				cynical_fouls += 1
 			SimReferee.award_foul(ctx, loser, winner, closing)
 			return
 

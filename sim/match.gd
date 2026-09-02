@@ -58,6 +58,9 @@ func setup(config: SimMatchConfig) -> void:
 	# `determinism` — has to start from the same blank the first one did.
 	SimOffBall.reset()
 	SimMovement.reset()
+	SimDuel.cynical_moments = 0
+	SimDuel.cynical_challenges = 0
+	SimDuel.cynical_fouls = 0
 	SimDecision.reset()
 	SimTouch.reset_tallies()
 	SimPatterns.reset_tallies()

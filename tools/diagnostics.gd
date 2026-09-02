@@ -4925,6 +4925,12 @@ static func _new_mechanics(events: Array) -> void:
 	print("  covers for a beaten man %4d" % SimMovement.covers_taken)
 	print("  escorts of a dying ball %4d  (cadences)" % SimMovement.escorts)
 	_traps(events)
+	var fouls := 0
+	for e in events:
+		if e["ev"] == SimTelemetry.Ev.FOUL:
+			fouls += 1
+	print("  fouls %d;  the cynical moment on %d ticks, challenges from it %d, fouls from those %d" % [
+		fouls, SimDuel.cynical_moments, SimDuel.cynical_challenges, SimDuel.cynical_fouls])
 	print("  driven ground passes    %4d" % SimTouch.driven_played)
 	print("  volleys                 %4d" % SimTouch.volleys_struck)
 	# Does the foot reach the strike. `mean across` at zero would mean every ball
