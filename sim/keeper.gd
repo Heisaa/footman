@@ -863,8 +863,10 @@ static func _try_gather(ctx: SimContext, k: SimPlayer) -> void:
 		SimTouch.apply(ctx, k, SimTelemetry.Touch.KEEPER_CATCH, Vector3.ZERO, Vector3.ZERO)
 	elif high:
 		# He could not hold it, so he punches: two fists, away and wide, which is
-		# the same ball a defender's clearing header is.
+		# the same ball a defender's clearing header is. Named after the touch,
+		# like the hold: `apply` gave the clearance a kick.
 		SimTouch.clearance(ctx, k)
+		k.play_anim(SimConsts.Anim.PUNCH, 0.45)
 	else:
 		SimTouch.poke(ctx, k, SimTelemetry.Touch.BLOCK)
 

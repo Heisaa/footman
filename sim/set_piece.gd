@@ -1044,6 +1044,10 @@ static func _take_free_kick(ctx: SimContext, taker: SimPlayer) -> void:
 			z = -near_z * (ctx.pitch.goal_half_width - 0.5) * ctx.rng.range_float(0.45, 1.0)
 		var aim := Vector3(goal.x, ctx.rng.range_float(0.6, 2.0), z)
 		SimTouch.shot(ctx, taker, aim, 0.8, false, 0.08)
+		# The wall goes up with the strike. `SimDuel.block_chance` already
+		# judges it as a body that jumps; this is the body doing it.
+		for pid in _wall_ids:
+			ctx.players[pid].play_anim(SimConsts.Anim.JUMP, 0.5)
 		return
 	if distance < 42.0:
 		var aim := goal - Vector3(ctx.pitch.attack_dir(taker.team) * 9.0, -2.0, 0.0)

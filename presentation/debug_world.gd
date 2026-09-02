@@ -204,7 +204,13 @@ func _draw_pressure(frame: MatchDebugFrame) -> void:
 		_ring(frame.pos[i], 0.7 + minf(press, 3.0) * 0.5, Color(colour, 0.7))
 
 
-## Who has offered himself, in which of the three ways, and where he is going.
+const INTENT_COLOURS := [
+	SimPalette.SLATE, SimPalette.AMBER, SimPalette.TEAL, SimPalette.LIME,
+	SimPalette.PLUM, SimPalette.PINK, SimPalette.BROWN, SimPalette.SKY,
+]
+
+
+## Who has offered himself, in which way, and where he is going.
 func _draw_intents(frame: MatchDebugFrame) -> void:
 	for i in frame.count:
 		if frame.on_pitch[i] == 0:
@@ -215,7 +221,8 @@ func _draw_intents(frame: MatchDebugFrame) -> void:
 		var to := frame.intent_point[i]
 		if is_inf(to.x):
 			continue
-		var colour: Color = [SimPalette.SLATE, SimPalette.AMBER, SimPalette.TEAL, SimPalette.LIME, SimPalette.PLUM, SimPalette.PINK, SimPalette.BROWN][kind]
+		# One per kind, in the order of `SimOffBall`'s enum; the last is `WIDE`.
+		var colour: Color = INTENT_COLOURS[mini(kind, INTENT_COLOURS.size() - 1)]
 		_arrow(frame.pos[i], to, Color(colour, 0.9))
 
 

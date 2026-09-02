@@ -459,6 +459,43 @@ cycle, and nothing ever left the grass. Each leg now has an ankle pivot and the
 cycle drives three joints against the hip's pendulum, with the body riding up
 between footfalls and sinking over the planted foot.
 
+**No squash and stretch.** The kick, the header's landing, the fall, the
+throw, the celebration, the dive and the heave of an exhausted man all scaled
+the whole figure, and the owner did not like the look. Every pose is joints and
+position now; the figure keeps its shape.
+
+**A kick is posed on the foot that struck it.** `SimTouch.striking_foot` already
+decided which foot every footed touch was played with; the snapshot now carries
+it (`player_foot`) and the kick and the hold are mirrored onto it, so a
+left-footer reads as one.
+
+**Four acts that read wrong, fixed.** A fouled man now gets up (`GET_UP` was
+posed and never played; `SimPlayer.play_anim` takes a follow-on). A parry no
+longer names a kick over the keeper's dive. A punched cross is a `PUNCH`, not a
+kick. A tackle from a jog is a standing lunge (`TACKLE`), and only a tackle at a
+run is a slide -- the sim does not model the difference, so `SimTouch.SLIDE_SPEED`
+tells the view by the pace he arrived at.
+
+**The rest of the missing states.** A man who loses a challenge stumbles
+(`STUMBLE`) or, in the air, jumps and misses (`JUMP`, which the wall plays too
+when the free kick is struck). The fouler appeals (`PROTEST`, after his slide if
+he was in one). A first touch is a foot raised to cushion the ball (`TRAP`), a
+ball struck above the knee is a volley (`VOLLEY`), and a shielding carrier has
+his arm out behind him, layered over the gait off the snapshot's
+`player_shielding` rather than as a state, so his feet keep doing what the sim
+says. The sim decides none of these off the pose; they are read out of what it
+already knew.
+
+**The fall is a committed move, and a man on the floor is not pushed.** The
+fouled man was `recovery_ticks` on his own, braked at a third of his running
+brakes and shoved clear of the fouler standing on him by the soft separation
+every tick, and the owner watched him slide about the turf face down. He now
+enters `SimPlayer.commit_move` like the slide and the dive, at no speed, and
+`SimPlayer.down` holds separation off him until he is up -- after the fall and
+the getting up at least. The one-shot's clock now runs while he is down, too:
+it did not, so the fall pose began its hold when he was already up and he ran
+off drawn flat. `docs/INVARIANTS.md`.
+
 **Three cameras, and they pan** (§9.2 amended). Twenty-one authored positions
 cutting to whichever sat nearest the ball meant a ball played twenty metres
 sideways changed the shot, and the viewer spent the match re-finding play. All

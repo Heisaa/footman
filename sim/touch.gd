@@ -332,7 +332,8 @@ static func apply(ctx: SimContext, player: SimPlayer, kind: int, vel: Vector3, s
 		foot_strikes += 1
 		foot_cost_sum += foot_cost(player, line)
 		foot_across_sum += absf(lateral_of(player, line))
-		if striking_foot(player, line) != player.attrs.foot:
+		player.anim_foot = striking_foot(player, line)
+		if player.anim_foot != player.attrs.foot:
 			foot_off_foot += 1
 	ctx.ball.launch(vel, spin)
 	ctx.ball.last_touch_player = player.id
@@ -352,10 +353,19 @@ static func apply(ctx: SimContext, player: SimPlayer, kind: int, vel: Vector3, s
 	# Cut to two tenths, both of them snap back to a run mid-act -- which for the
 	# header is a figure that rises off the grass and is put back on it before it
 	# has landed, and no viewer reads that as a leap.
+	# A tackle too: a lunge or a slide is a shape held, not a follow-through.
 	var thrown: bool = kind == SimTelemetry.Touch.THROW_IN or kind == SimTelemetry.Touch.KEEPER_THROW
 	var slow: bool = thrown or kind == SimTelemetry.Touch.CHEST \
-		or kind == SimTelemetry.Touch.HEADER
-	player.play_anim(_anim_for(kind, vel.length()), 0.45 if slow else 0.2)
+		or kind == SimTelemetry.Touch.HEADER or kind == SimTelemetry.Touch.TACKLE
+	var anim := _anim_for(player, kind, vel.length(), before.y)
+	if anim >= 0:
+		var hold := 0.2
+		if slow:
+			hold = 0.45
+		elif kind == SimTelemetry.Touch.FIRST_TOUCH:
+			# A cushion is the foot set down, not a follow-through.
+			hold = 0.35
+		player.play_anim(anim, hold)
 
 	var data := {
 		"p": player.id,
@@ -382,16 +392,32 @@ static func apply(ctx: SimContext, player: SimPlayer, kind: int, vel: Vector3, s
 	ctx.log_event(SimTelemetry.Ev.TOUCH, data)
 
 
-static func _anim_for(kind: int, speed: float) -> int:
+## Above this pace a tackle is a slide; below it the man is standing and lunges.
+## The sim does not model the difference, so the view is told by the speed he
+## arrived at: a jog is a stretch of the leg, a run is a body on the grass.
+const SLIDE_SPEED := 4.5
+## A ball struck above this off the grass is a volley: the leg comes up to it.
+const VOLLEY_HEIGHT := 0.45
+
+
+## The pose for a touch, or -1 to leave the one already playing. `height` is
+## the ball's when it was struck.
+static func _anim_for(player: SimPlayer, kind: int, speed: float, height: float) -> int:
 	match kind:
 		SimTelemetry.Touch.HEADER:
 			return SimConsts.Anim.HEADER
 		SimTelemetry.Touch.CHEST:
 			return SimConsts.Anim.CHEST
+		SimTelemetry.Touch.FIRST_TOUCH:
+			return SimConsts.Anim.TRAP
 		SimTelemetry.Touch.TACKLE:
-			return SimConsts.Anim.SLIDE
+			return SimConsts.Anim.SLIDE if player.speed() > SLIDE_SPEED else SimConsts.Anim.TACKLE
 		SimTelemetry.Touch.KEEPER_CATCH:
 			return SimConsts.Anim.KEEPER_CATCH
+		SimTelemetry.Touch.KEEPER_PARRY:
+			# He is mid-dive: `SimKeeper` played it before the ball reached him,
+			# and a pose named here would cut it off in the air.
+			return -1
 		SimTelemetry.Touch.THROW_IN, SimTelemetry.Touch.KEEPER_THROW:
 			# The wind-up is already running -- `SimSetPiece.update` starts it when
 			# the thrower picks the ball up -- and naming the same anim again here
@@ -399,6 +425,8 @@ static func _anim_for(kind: int, speed: float) -> int:
 			# arc rather than restarting it.
 			return SimConsts.Anim.THROW
 		_:
+			if height > VOLLEY_HEIGHT and kind != SimTelemetry.Touch.DRIBBLE:
+				return SimConsts.Anim.VOLLEY
 			return SimConsts.Anim.KICK_HARD if speed > 14.0 else SimConsts.Anim.KICK_LIGHT
 
 

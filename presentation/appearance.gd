@@ -455,12 +455,15 @@ static func face_for_anim(anim: int, stamina: float) -> int:
 	match anim:
 		SimConsts.Anim.CELEBRATE:
 			return Face.DELIGHT
-		SimConsts.Anim.DEJECTED, SimConsts.Anim.FALL:
+		SimConsts.Anim.DEJECTED, SimConsts.Anim.FALL, SimConsts.Anim.GET_UP, \
+				SimConsts.Anim.PROTEST:
 			return Face.DESPAIR
-		SimConsts.Anim.SLIDE, SimConsts.Anim.KICK_HARD, SimConsts.Anim.HEADER:
+		SimConsts.Anim.SLIDE, SimConsts.Anim.TACKLE, SimConsts.Anim.KICK_HARD, \
+				SimConsts.Anim.HEADER, SimConsts.Anim.PUNCH, SimConsts.Anim.STUMBLE, \
+				SimConsts.Anim.JUMP, SimConsts.Anim.VOLLEY:
 			return Face.EFFORT
-		SimConsts.Anim.CHEST:
-			# Not effort: a chest-down is a man concentrating, not straining.
+		SimConsts.Anim.CHEST, SimConsts.Anim.TRAP:
+			# Not effort: taking a ball down is a man concentrating, not straining.
 			return Face.NEUTRAL
 		SimConsts.Anim.EXHAUSTED:
 			return Face.EFFORT

@@ -25,6 +25,12 @@ var player_vel := PackedVector3Array()
 var player_facing := PackedFloat32Array()
 var player_stamina := PackedFloat32Array()
 var player_anim := PackedInt32Array()
+## The foot the last footed touch was struck with (`SimAttributes.FOOT_*`), so
+## a kick and a hold are posed on the foot that played them.
+var player_foot := PackedInt32Array()
+## 1 while he is holding a man off the ball (`SimPlayer.shielding`): an arm
+## goes out behind him over whatever gait he is in.
+var player_shielding := PackedInt32Array()
 var player_on_pitch := PackedInt32Array()
 
 var score := PackedInt32Array([0, 0])
@@ -52,6 +58,8 @@ func resize(n: int) -> void:
 	player_facing.resize(n)
 	player_stamina.resize(n)
 	player_anim.resize(n)
+	player_foot.resize(n)
+	player_shielding.resize(n)
 	player_on_pitch.resize(n)
 
 
@@ -72,6 +80,8 @@ func copy_from(other: SimSnapshot) -> void:
 	player_facing = other.player_facing.duplicate()
 	player_stamina = other.player_stamina.duplicate()
 	player_anim = other.player_anim.duplicate()
+	player_foot = other.player_foot.duplicate()
+	player_shielding = other.player_shielding.duplicate()
 	player_on_pitch = other.player_on_pitch.duplicate()
 	score = other.score.duplicate()
 	attack_x = other.attack_x.duplicate()

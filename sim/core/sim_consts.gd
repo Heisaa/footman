@@ -287,7 +287,7 @@ enum Phase { KICKOFF, BUILD_UP, ATTACK, TRANSITION_TO_DEFEND, TRANSITION_TO_ATTA
 ## `SHUFFLE` is the gait of a body held off its run: a side-step or a
 ## backpedal, picked by `SimPlayer._update_anim` off the angle between the
 ## velocity and the hips. Appended, so the states before it keep their numbers.
-enum Anim { IDLE, JOG, RUN, SPRINT, TURN, KICK_LIGHT, KICK_HARD, HEADER, SLIDE, FALL, GET_UP, CELEBRATE, DEJECTED, EXHAUSTED, DIVE_LEFT, DIVE_RIGHT, KEEPER_CATCH, THROW, KEEPER_HOLD, HOLD, CHEST, SHUFFLE }
+enum Anim { IDLE, JOG, RUN, SPRINT, TURN, KICK_LIGHT, KICK_HARD, HEADER, SLIDE, FALL, GET_UP, CELEBRATE, DEJECTED, EXHAUSTED, DIVE_LEFT, DIVE_RIGHT, KEEPER_CATCH, THROW, KEEPER_HOLD, HOLD, CHEST, SHUFFLE, PUNCH, TACKLE, STUMBLE, JUMP, PROTEST, TRAP, VOLLEY }
 
 
 static func other_team(team: int) -> int:

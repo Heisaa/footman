@@ -57,12 +57,15 @@ const SPIN_RATE := 24.0
 const REEL := [
 	SimConsts.Anim.IDLE, SimConsts.Anim.JOG, SimConsts.Anim.RUN,
 	SimConsts.Anim.SPRINT, SimConsts.Anim.TURN, SimConsts.Anim.SHUFFLE,
-	SimConsts.Anim.KICK_LIGHT, SimConsts.Anim.KICK_HARD,
-	SimConsts.Anim.HEADER, SimConsts.Anim.CHEST, SimConsts.Anim.THROW,
-	SimConsts.Anim.SLIDE, SimConsts.Anim.FALL, SimConsts.Anim.GET_UP,
+	SimConsts.Anim.KICK_LIGHT, SimConsts.Anim.KICK_HARD, SimConsts.Anim.VOLLEY,
+	SimConsts.Anim.TRAP, SimConsts.Anim.HEADER, SimConsts.Anim.JUMP,
+	SimConsts.Anim.CHEST, SimConsts.Anim.THROW,
+	SimConsts.Anim.TACKLE, SimConsts.Anim.SLIDE, SimConsts.Anim.STUMBLE,
+	SimConsts.Anim.FALL, SimConsts.Anim.GET_UP, SimConsts.Anim.PROTEST,
 	SimConsts.Anim.CELEBRATE, SimConsts.Anim.DEJECTED, SimConsts.Anim.EXHAUSTED,
 	SimConsts.Anim.DIVE_LEFT, SimConsts.Anim.DIVE_RIGHT,
-	SimConsts.Anim.KEEPER_CATCH, SimConsts.Anim.KEEPER_HOLD, SimConsts.Anim.HOLD,
+	SimConsts.Anim.KEEPER_CATCH, SimConsts.Anim.PUNCH, SimConsts.Anim.KEEPER_HOLD,
+	SimConsts.Anim.HOLD,
 ]
 ## Seconds a one-shot state is held before the reel moves on. Long enough to
 ## watch the arc twice, which is what makes a follow-through readable.
@@ -545,7 +548,6 @@ func _play(node: Node3D, index: int, delta: float) -> void:
 	# is put back every frame the way the match does.
 	var yaw: float = node.rotation.y
 	node.rotation = Vector3(0.0, yaw, 0.0)
-	node.scale = Vector3.ONE
 	node.position.y = 0.0
 	# A turn is the gait banked into it; a shuffle is the gait across the hips.
 	var turn: float = 1.0 if anim == SimConsts.Anim.TURN else 0.0

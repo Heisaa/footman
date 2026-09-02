@@ -620,6 +620,8 @@ static func _resolve_contest(ctx: SimContext) -> void:
 	if loser != null:
 		loser.touch_cooldown = maxf(loser.touch_cooldown, ctx.rng.range_float(0.55, 1.1))
 		loser.recovery_ticks = maxi(loser.recovery_ticks, int(ctx.rng.range_float(0.1, 0.35) * SimConsts.TICK_HZ))
+		# And it shows: he went up and missed it, or he was knocked off it.
+		loser.play_anim(SimConsts.Anim.JUMP if aerial else SimConsts.Anim.STUMBLE, 0.45)
 	# Logged so challenges can be counted and judged, not merely believed in.
 	var had_challenger := false
 	for i in n:

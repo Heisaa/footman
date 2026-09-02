@@ -481,12 +481,16 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
 - **A body off its feet is not steered, and one state says so.** The block's
   lunge was a `move_target` under the ordinary steering, the dive was an
   animation over a keeper still walked to his station, and the owner watched a
-  slide change direction and a keeper turn in the air. `SimPlayer.commit_move`
-  is the one entry -- the slide, the dive, the leap -- and `locomote` reads
+  slide change direction and a keeper turn in the air, then a fouled man slide
+  about face down. `SimPlayer.commit_move` is the one entry -- the slide, the
+  dive, the leap, the fall -- and `locomote` reads
   `commit_ticks` before anything else; it holds `recovery_ticks` for the whole
   of it, so every reader that skips a man on the floor skips a man in the air.
   Do not add a per-act freeze beside it, and do not have an act steer a body
-  it has thrown: what steering a committed man wants is thrown away.
+  it has thrown: what steering a committed man wants is thrown away. Nor does
+  the soft separation push a man on the floor (`SimPlayer.down`): the fouler
+  stands on the man he fouled, and shoving him clear each tick slid him about
+  the turf until he got up.
 
 - **`TURN_COMMIT` needs its `TURN_PIVOT` guard or locomotion deadlocks**, and
   silently. A stationary man facing the wrong way may not accelerate until he has

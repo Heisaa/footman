@@ -246,8 +246,16 @@ static func award_foul(ctx: SimContext, offender: SimPlayer, victim: SimPlayer, 
 		"severity": severity,
 		"minute": ctx.minute(),
 	})
-	victim.play_anim(SimConsts.Anim.FALL, 0.6)
-	victim.recovery_ticks = int(SimConsts.TICK_HZ * ctx.rng.range_float(0.6, 1.4))
+	victim.play_anim(SimConsts.Anim.FALL, SimPlayer.FALL_SECONDS + SimPlayer.FLOOR_SECONDS,
+		SimConsts.Anim.GET_UP, SimPlayer.GET_UP_SECONDS)
+	offender.queue_anim(SimConsts.Anim.PROTEST, 1.2)
+	# A body going down is a committed move like a slide, at no speed: he goes
+	# down where he is and nothing steers or pushes him until he is up -- which
+	# is after the fall, a beat on the floor and the getting up, at least, and
+	# longer for a slow riser.
+	var floor_time: float = ctx.rng.range_float(0.6, 1.4)
+	victim.commit_move(Vector3.ZERO, SimPlayer.FALL_SECONDS, false,
+		maxf(floor_time - SimPlayer.FALL_SECONDS, SimPlayer.FLOOR_SECONDS + SimPlayer.GET_UP_SECONDS))
 	add_stoppage(ctx, STOPPAGE_SET_PIECE)
 
 	var card_chance: float = CARD_BASE + closing_speed * CARD_PER_CLOSING_SPEED

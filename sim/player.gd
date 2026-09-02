@@ -176,18 +176,31 @@ var block_point := Vector3.ZERO
 var block_shot := -1
 var block_hit := false
 ## The committed move: a body off its feet. Entered through `commit_move` by
-## the slide (`SimDuel.commit_blocks`), the dive (`SimKeeper._dive`) and the
-## leap for a header (`SimAerial._leap`); the fall is `recovery_ticks` on its
-## own. `locomote` reads it before any steering: in the air the body keeps the
+## the slide (`SimDuel.commit_blocks`), the dive (`SimKeeper._dive`), the leap
+## for a header (`SimAerial._leap`) and the fall (`SimReferee.award_foul`).
+## `locomote` reads it before any steering: in the air the body keeps the
 ## velocity it left the ground with, on the ground it slides one way and slows
-## at `SLIDE_DECEL`, and nothing turns it until it is over. It is released into
-## `recovery_ticks`, the floor. `docs/THE_FOOTBALL.md` 52.
+## at `SLIDE_DECEL`, and nothing turns it until it is over. It is released
+## into `recovery_ticks`, the floor. `docs/THE_FOOTBALL.md` 52.
 var commit_ticks := 0
 var commit_airborne := false
+## On the floor: sliding, or down after a slide, a dive or a fall. The soft
+## separation (`SimMatch._separate_players`) does not push him -- the men
+## standing over him step round -- because it did, and the owner watched a
+## fouled man shoved about the turf face down until he got up.
+var down := false
 ## What a body keeps of its speed when it lands.
 const LAND_KEEP := 0.35
 ## How fast a sliding body slows, in m/s^2.
 const SLIDE_DECEL := 5.0
+## How long the fall takes, the lying still after it, and the getting up. The
+## view's `FALL` and `GET_UP` arcs are the fall's and the get-up's lengths; the
+## fall pose holds flat through the lying. A fall is committed at no speed: he
+## goes down where he is and stays there until he is up. Without the beat on
+## the floor he hit the grass and rose in the same movement, a bounce.
+const FALL_SECONDS := 0.6
+const FLOOR_SECONDS := 0.5
+const GET_UP_SECONDS := 0.6
 ## Escorting a dying ball over the line (`SimMovement._escort_wanted`): his
 ## body is between the ball and the man who wants it, and he does not touch
 ## it. `SimDuel.resolve_contacts` leaves him out while it is set.
@@ -216,6 +229,12 @@ var next_decision_tick := 0
 var marking_target := -1
 var anim := SimConsts.Anim.IDLE
 var anim_hold := 0.0
+## What follows when the hold runs out, or -1 for the gait. A fall is
+## followed by getting up; without this the man lay flat and stood up in a frame.
+var anim_next := -1
+var anim_next_hold := 0.0
+## The foot the last footed touch was struck with; the view poses the kick on it.
+var anim_foot := SimAttributes.FOOT_RIGHT
 
 # --- Availability -----------------------------------------------------------
 
@@ -366,6 +385,7 @@ func steer_to(target: Vector3, speed_cap: float = INF, deadband: float = 0.4) ->
 func commit_move(v: Vector3, seconds: float, airborne: bool, down_seconds: float) -> void:
 	commit_ticks = maxi(int(ceil(seconds * float(SimConsts.TICK_HZ))), 1)
 	commit_airborne = airborne
+	down = not airborne
 	vel = Vector3(v.x, 0.0, v.z)
 	desired_vel = Vector3.ZERO
 	look_target = Vector3.INF
@@ -389,17 +409,24 @@ func locomote(dt: float) -> void:
 		# Off his feet: the move he committed to, and nothing he is asked.
 		commit_ticks -= 1
 		recovery_ticks = maxi(recovery_ticks - 1, 0)
+		_tick_anim_hold()
 		if not commit_airborne:
 			vel = vel.move_toward(Vector3.ZERO, SLIDE_DECEL * dt)
 		pos += vel * dt
 		distance_run += vel.length() * dt
-		if commit_ticks == 0 and commit_airborne:
-			vel *= LAND_KEEP
+		if commit_ticks == 0:
+			if commit_airborne:
+				vel *= LAND_KEEP
+			# Landed on the floor if there is floor time left, on his feet if not.
+			down = recovery_ticks > 0
 		return
 	if recovery_ticks > 0:
 		recovery_ticks -= 1
 		vel = vel.move_toward(Vector3.ZERO, max_decel() * RECOVERY_BRAKE * dt)
 		pos += vel * dt
+		if recovery_ticks == 0:
+			down = false
+		_tick_anim_hold()
 		return
 
 	# Hand-rolled 2D rotation. Vector3.rotated() builds a Basis, which is far
@@ -560,9 +587,24 @@ func spend_action(cost_scale: float = 1.0) -> void:
 	stamina = maxf(0.0, stamina - cost)
 
 
-func _update_anim(cur_speed: float, turning: bool) -> void:
+## Runs the one-shot's clock down, and starts the follow-on when it is out.
+## True while one is playing. Ticked on the floor and in the air too: it was
+## not, so a fall's hold began when the man was already up, and the owner
+## watched him run off drawn flat on the grass, turning as he went.
+func _tick_anim_hold() -> bool:
 	if anim_hold > 0.0:
 		anim_hold -= SimConsts.DT
+		return true
+	if anim_next >= 0:
+		anim = anim_next
+		anim_hold = anim_next_hold
+		anim_next = -1
+		return true
+	return false
+
+
+func _update_anim(cur_speed: float, turning: bool) -> void:
+	if _tick_anim_hold():
 		return
 	var nominal := nominal_max_speed()
 	if stamina < 0.18 and cur_speed < 1.0:
@@ -581,10 +623,23 @@ func _update_anim(cur_speed: float, turning: bool) -> void:
 		anim = SimConsts.Anim.SPRINT
 
 
-## Plays a one-shot animation for `hold` seconds; the sim never reads it back.
-func play_anim(which: int, hold: float = 0.25) -> void:
+## Plays a one-shot animation for `hold` seconds, then `then` for `then_hold`
+## if given; the sim never reads it back.
+func play_anim(which: int, hold: float = 0.25, then: int = -1, then_hold: float = 0.0) -> void:
 	anim = which
 	anim_hold = hold
+	anim_next = then
+	anim_next_hold = then_hold
+
+
+## Plays `which` now, or after the one already playing if there is one: a
+## fouler mid-slide finishes the slide before he appeals.
+func queue_anim(which: int, hold: float) -> void:
+	if anim_hold > 0.0:
+		anim_next = which
+		anim_next_hold = hold
+	else:
+		play_anim(which, hold)
 
 
 func touch_cooldown_length() -> float:

@@ -253,7 +253,8 @@ func _refresh_shared_state() -> void:
 
 
 ## Soft push-apart over the capsule radius, weighted by strength: the stronger
-## player yields less. No impulses, no bounce (PLAN.md §3.2).
+## player yields less. No impulses, no bounce (PLAN.md §3.2). A man on the
+## floor (`SimPlayer.down`) yields nothing: the men over him step round.
 ## Sorted by X, so separation only tests neighbouring pairs. Nearly sorted from
 ## one tick to the next, so the insertion sort is effectively linear.
 var _sweep := PackedInt32Array()
@@ -301,6 +302,8 @@ func _separate_players() -> void:
 			var d2 := dx * dx + dz * dz
 			if d2 >= min_d2 or d2 < 1e-8:
 				continue
+			if a.down and b.down:
+				continue
 			var d := sqrt(d2)
 			var overlap := min_d - d
 			var nx := dx / d
@@ -309,6 +312,10 @@ func _separate_players() -> void:
 			var sa: float = 0.4 + a.attrs.strength * 0.6
 			var sb: float = 0.4 + b.attrs.strength * 0.6
 			var share_a := sb / (sa + sb)
+			if a.down:
+				share_a = 0.0
+			elif b.down:
+				share_a = 1.0
 			a.pos.x -= nx * overlap * share_a
 			a.pos.z -= nz * overlap * share_a
 			b.pos.x += nx * overlap * (1.0 - share_a)
@@ -691,6 +698,8 @@ func write_snapshot(snap: SimSnapshot) -> void:
 		snap.player_facing[i] = p.facing
 		snap.player_stamina[i] = p.stamina
 		snap.player_anim[i] = p.anim
+		snap.player_foot[i] = p.anim_foot
+		snap.player_shielding[i] = 1 if p.shielding else 0
 		snap.player_on_pitch[i] = 1 if p.on_pitch else 0
 	snap.score[0] = ctx.score[0]
 	snap.score[1] = ctx.score[1]

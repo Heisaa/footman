@@ -2181,16 +2181,23 @@ func _spin_ball(sim_dt: float) -> void:
 const ANIM_SECONDS := {
 	SimConsts.Anim.KICK_LIGHT: 0.28,
 	SimConsts.Anim.KICK_HARD: 0.36,
+	SimConsts.Anim.VOLLEY: 0.4,
+	SimConsts.Anim.TRAP: 0.35,
+	SimConsts.Anim.JUMP: 0.5,
+	SimConsts.Anim.STUMBLE: 0.45,
+	SimConsts.Anim.PROTEST: 1.2,
 	SimConsts.Anim.HEADER: 0.5,
 	# As long as the ball takes to drop from his chest to his feet, near enough:
 	# the pose is the whole of that, not the instant of the contact.
 	SimConsts.Anim.CHEST: 0.5,
+	SimConsts.Anim.TACKLE: 0.45,
 	SimConsts.Anim.SLIDE: 0.7,
 	SimConsts.Anim.FALL: 0.7,
 	SimConsts.Anim.GET_UP: 0.6,
 	SimConsts.Anim.DIVE_LEFT: 0.9,
 	SimConsts.Anim.DIVE_RIGHT: 0.9,
 	SimConsts.Anim.KEEPER_CATCH: 0.6,
+	SimConsts.Anim.PUNCH: 0.45,
 	# The only one of these that spans two events rather than one. The wind-up
 	# starts when the thrower picks the ball up and the release comes half a
 	# second later (`SimSetPiece.THROW_WINDUP`), so the arc has to be long enough
@@ -2221,11 +2228,12 @@ func _pose(node: Node3D, index: int, clock: float) -> void:
 
 	var yaw: float = -_facing(index) + PI * 0.5
 	_orient(node, yaw, 0.0, 0.0)
-	node.scale = Vector3.ONE
 	_pose_run(node, index, clock)
 	# A dive is along the pitch's z, so its roll in the body frame depends on
 	# which way the keeper faces.
-	pose_state(node, anim, u, t, yaw, cos(_facing(index)))
+	var named := pose_state(node, anim, u, t, yaw, cos(_facing(index)), _curr.player_foot[index])
+	if not named and _curr.player_shielding[index] == 1:
+		_pose_shield(node)
 
 	SimCharacterModel.set_expression(
 		node, SimAppearance.face_for_anim(anim, _curr.player_stamina[index])
@@ -2236,9 +2244,10 @@ func _pose(node: Node3D, index: int, clock: float) -> void:
 ## figure and the phase alone (`pose_anim`), then the ones that turn the whole
 ## figure over -- a slide, a fall, a dive -- which need its yaw to do it about.
 ## `dive_roll` is the sign a rightward dive rolls the body, in the body frame.
+## `foot` is the one the sim says struck the ball (`SimSnapshot.player_foot`).
 ## Returns whether the state was a named pose at all.
-static func pose_state(node: Node3D, anim: int, u: float, t: float, yaw: float, dive_roll: float) -> bool:
-	if pose_anim(node, anim, u, t):
+static func pose_state(node: Node3D, anim: int, u: float, t: float, yaw: float, dive_roll: float, foot := SimAttributes.FOOT_RIGHT) -> bool:
+	if pose_anim(node, anim, u, t, foot):
 		return true
 	match anim:
 		SimConsts.Anim.SLIDE:
@@ -2251,6 +2260,8 @@ static func pose_state(node: Node3D, anim: int, u: float, t: float, yaw: float, 
 			_pose_dive(node, yaw, u, -dive_roll)
 		SimConsts.Anim.DIVE_RIGHT:
 			_pose_dive(node, yaw, u, dive_roll)
+		SimConsts.Anim.STUMBLE:
+			_pose_stumble(node, yaw, u)
 		_:
 			return false
 	return true
@@ -2265,12 +2276,12 @@ static func pose_state(node: Node3D, anim: int, u: float, t: float, yaw: float, 
 ##
 ## What stays behind is what genuinely needs the match. A slide, a fall and a
 ## keeper's dive are posed off the player's own heading, and a parade has none.
-static func pose_anim(node: Node3D, anim: int, u: float, t: float) -> bool:
+static func pose_anim(node: Node3D, anim: int, u: float, t: float, foot := SimAttributes.FOOT_RIGHT) -> bool:
 	match anim:
 		SimConsts.Anim.KICK_LIGHT:
-			_pose_kick(node, u, 1.0)
+			_pose_kick(node, u, 1.0, foot)
 		SimConsts.Anim.KICK_HARD:
-			_pose_kick(node, u, 1.45)
+			_pose_kick(node, u, 1.45, foot)
 		SimConsts.Anim.HEADER:
 			_pose_header(node, u)
 		SimConsts.Anim.CELEBRATE:
@@ -2286,9 +2297,21 @@ static func pose_anim(node: Node3D, anim: int, u: float, t: float) -> bool:
 		SimConsts.Anim.KEEPER_HOLD:
 			_pose_keeper_hold(node, t)
 		SimConsts.Anim.HOLD:
-			_pose_hold(node, t)
+			_pose_hold(node, t, foot)
 		SimConsts.Anim.CHEST:
 			_pose_chest(node, u)
+		SimConsts.Anim.TACKLE:
+			_pose_tackle(node, u, foot)
+		SimConsts.Anim.PUNCH:
+			_pose_punch(node, u)
+		SimConsts.Anim.VOLLEY:
+			_pose_volley(node, u, foot)
+		SimConsts.Anim.TRAP:
+			_pose_trap(node, u, foot)
+		SimConsts.Anim.JUMP:
+			_pose_jump(node, u)
+		SimConsts.Anim.PROTEST:
+			_pose_protest(node, t)
 		_:
 			return false
 	return true
@@ -2509,22 +2532,209 @@ static func pose_gait(node: Node3D, speed: float, phase: float, turn: float, acr
 
 
 ## The follow-through, not the strike: the sim plays this *after* the ball has
-## gone, so the leg starts extended and relaxes out of it.
-static func _pose_kick(node: Node3D, u: float, force: float) -> void:
+## gone, so the leg starts extended and relaxes out of it. Mirrored onto the
+## foot the sim struck it with: the opposite arm comes forward with the leg.
+static func _pose_kick(node: Node3D, u: float, force: float, foot: int) -> void:
 	var swing: float = lerpf(1.0, 0.2, u) * force
-	_rotate(node, "HipR", -1.15 * swing)
-	_rotate(node, "KneeR", 0.12)
-	_rotate(node, "HipL", 0.3 * swing)
-	_rotate(node, "KneeL", 0.35 * swing)
-	_rotate(node, "ShoulderL", -0.8 * swing)
-	_rotate(node, "ShoulderR", 0.55 * swing)
+	var k := _side(foot)
+	var s := _side(SimAttributes.other_foot(foot))
+	_rotate(node, "Hip" + k, -1.15 * swing)
+	_rotate(node, "Knee" + k, 0.12)
+	_rotate(node, "Hip" + s, 0.3 * swing)
+	_rotate(node, "Knee" + s, 0.35 * swing)
+	_rotate(node, "Shoulder" + s, -0.8 * swing)
+	_rotate(node, "Shoulder" + k, 0.55 * swing)
 	_rotate(node, "ElbowL", -0.3)
 	_rotate(node, "ElbowR", -0.3)
 	_lean(node, -0.32 * swing)
-	# Stretched through the strike, settling back. §9.5 asks for heavy squash and
-	# stretch on kicks, and at ten frames a second it needs to be heavy to read
-	# at all — it is on screen for three frames.
-	_squash(node, -0.16 * swing)
+
+
+## The joint suffix for a foot.
+static func _side(foot: int) -> String:
+	return "L" if foot == SimAttributes.FOOT_LEFT else "R"
+
+
+## The sign the lateral of a joint on this foot's side takes to go out from the
+## body.
+static func _out(foot: int) -> float:
+	return -1.0 if foot == SimAttributes.FOOT_LEFT else 1.0
+
+
+## The volley: a ball struck off the grass, so the leg comes up to it and the
+## body leans away to let it. Contact is the first frame, like the kick, and
+## the leg comes down out of it. The opposite arm is out high for balance.
+static func _pose_volley(node: Node3D, u: float, foot: int) -> void:
+	var swing: float = lerpf(1.0, 0.15, smoothstep(0.0, 1.0, u))
+	var k := _side(foot)
+	var s := _side(SimAttributes.other_foot(foot))
+	var m := _out(foot)
+	_rotate(node, "Hip" + k, -1.9 * swing, 0.35 * swing * m)
+	_rotate(node, "Knee" + k, 0.15)
+	_rotate(node, "Ankle" + k, 0.5 * swing)
+	# Standing leg on its toe.
+	_rotate(node, "Hip" + s, 0.2 * swing)
+	_rotate(node, "Knee" + s, 0.3 * swing)
+	_rotate(node, "Ankle" + s, 0.4 * swing)
+	node.position.y += 0.06 * swing
+	_rotate(node, "Shoulder" + s, -1.4 * swing, -0.8 * swing * m)
+	_rotate(node, "Shoulder" + k, 0.9 * swing, 0.6 * swing * m)
+	_rotate(node, "ElbowL", -0.2)
+	_rotate(node, "ElbowR", -0.2)
+	_lean(node, -0.5 * swing, -0.2 * swing * m)
+	_rotate(node, "Neck", 0.15 * swing)
+
+
+## Taking a ball down with the foot: raised to meet it, sole to the ball, then
+## set down over the third of a second the sim holds the state. How high it is
+## raised is how high the ball was (`contact_y`), so a ball dropping at the
+## knee is met at the knee and a rolling one at the ankle.
+static func _pose_trap(node: Node3D, u: float, foot: int) -> void:
+	var settle: float = 1.0 - smoothstep(0.35, 1.0, u)
+	var raise: float = clampf(float(node.get_meta("contact_y", 0.3)) / 0.6, 0.15, 1.0)
+	var b := _side(foot)
+	var s := _side(SimAttributes.other_foot(foot))
+	var m := _out(foot)
+	_rotate(node, "Hip" + b, -(0.35 + 0.95 * raise) * settle, 0.3 * settle * m)
+	_rotate(node, "Knee" + b, (0.35 + 0.55 * raise) * settle)
+	_rotate(node, "Ankle" + b, -0.3 * settle)
+	_rotate(node, "Hip" + s, 0.1 * settle)
+	_rotate(node, "Knee" + s, 0.25 * settle)
+	_rotate(node, "Ankle" + s, 0.0)
+	node.position.y -= 0.03 * settle
+	_rotate(node, "Shoulder" + s, -0.3 * settle, -0.5 * settle * m)
+	_rotate(node, "Shoulder" + b, 0.2 * settle, 0.45 * settle * m)
+	_rotate(node, "ElbowL", -0.3)
+	_rotate(node, "ElbowR", -0.3)
+	_lean(node, 0.2 * settle)
+	_rotate(node, "Neck", 0.4 * settle)
+
+
+## Up for a ball and not getting it, or up in a wall: the header's leap without
+## the nod, both arms reaching and the eyes on the ball. The wall's men and the
+## man who lost an aerial contest play it.
+static func _pose_jump(node: Node3D, u: float) -> void:
+	var fall: float = clampf(u / HEADER_LAND, 0.0, 1.0)
+	var arc := 1.0 - fall * fall
+	node.position.y += arc * _header_lift(node)
+	_lean(node, -0.12 * arc)
+	_rotate(node, "Neck", -0.35 * arc)
+	_rotate(node, "ShoulderL", 2.4 * arc, -0.5 * arc)
+	_rotate(node, "ShoulderR", 2.4 * arc, 0.5 * arc)
+	_rotate(node, "ElbowL", 0.1)
+	_rotate(node, "ElbowR", 0.1)
+	_rotate(node, "HipL", 0.6 * arc)
+	_rotate(node, "HipR", 0.35 * arc)
+	_rotate(node, "KneeL", 1.1 * arc)
+	_rotate(node, "KneeR", 0.5 * arc)
+
+
+## Knocked off the ball: rocked back and sideways, arms flung out, one leg
+## stepping wide to catch himself, and back upright by the end of it. The
+## whole figure tilts about its feet, so it needs the yaw to tilt against.
+static func _pose_stumble(node: Node3D, yaw: float, u: float) -> void:
+	var peak: float = sin(u * PI)
+	_orient(node, yaw, -0.22 * peak, 0.28 * peak)
+	_rotate(node, "ShoulderL", 0.3 * peak, -1.2 * peak)
+	_rotate(node, "ShoulderR", 0.3 * peak, 1.2 * peak)
+	_rotate(node, "ElbowL", -0.2)
+	_rotate(node, "ElbowR", -0.2)
+	_rotate(node, "HipR", -0.3 * peak, 0.5 * peak)
+	_rotate(node, "HipL", 0.2 * peak)
+	_rotate(node, "KneeR", 0.45 * peak)
+	_rotate(node, "KneeL", 0.35 * peak)
+	_lean(node, -0.2 * peak, -0.15 * peak)
+	_rotate(node, "Neck", -0.2 * peak)
+
+
+## The appeal: both hands up at the shoulders, palms out, a shrug on a slow
+## clock. The fouler's, over whatever his legs are doing.
+static func _pose_protest(node: Node3D, t: float) -> void:
+	var shrug: float = 0.5 + 0.5 * sin(t * 4.0)
+	var lat: float = 0.55 + 0.2 * shrug
+	_rotate(node, "ShoulderL", -1.2, -lat)
+	_rotate(node, "ShoulderR", -1.2, lat)
+	_rotate(node, "ElbowL", -1.45)
+	_rotate(node, "ElbowR", -1.45)
+	_lean(node, -0.15)
+	_rotate(node, "Neck", -0.2, 0.15 * sin(t * 2.0))
+
+
+## Holding a man off the ball, layered over the gait: bent over the ball, one
+## arm out behind him against the man, the other forward for balance, eyes
+## down. Not a state of its own -- the sim flags it on the player -- so the
+## legs go on doing whatever the shuffle or the hold has them doing.
+static func _pose_shield(node: Node3D) -> void:
+	_rotate(node, "ShoulderR", 0.8, 0.85)
+	_rotate(node, "ElbowR", -0.3)
+	_rotate(node, "ShoulderL", -0.4, -0.5)
+	_rotate(node, "ElbowL", -0.4)
+	_lean(node, 0.28)
+	_rotate(node, "Neck", 0.25)
+
+
+## The standing tackle: one leg thrown out long and low at the ball, the other
+## folded under a body that has dropped to reach, arms out to balance it. What
+## a man does over a ball he arrived at from a jog, where a slide would be a
+## man on the grass for no reason. Like the kick, contact is the first frame and
+## the rest is him gathering himself out of it.
+static func _pose_tackle(node: Node3D, u: float, foot: int) -> void:
+	var reach: float = lerpf(1.0, 0.25, smoothstep(0.0, 1.0, u))
+	var k := _side(foot)
+	var s := _side(SimAttributes.other_foot(foot))
+	var m: float = -1.0 if foot == SimAttributes.FOOT_LEFT else 1.0
+	# Tackling leg straight and flat, toe up so the sole faces the ball.
+	_rotate(node, "Hip" + k, -1.35 * reach)
+	_rotate(node, "Knee" + k, 0.05)
+	_rotate(node, "Ankle" + k, -0.5 * reach)
+	# Standing leg folded under him: the body drops as far as that knee bends.
+	_rotate(node, "Hip" + s, 0.95 * reach)
+	_rotate(node, "Knee" + s, 1.5 * reach)
+	_rotate(node, "Ankle" + s, 0.3 * reach)
+	node.position.y -= 0.32 * reach
+	# The arm on the standing side reaches down and out for the grass, the other
+	# goes up and wide against the lunge.
+	_rotate(node, "Shoulder" + s, -0.9 * reach, -1.0 * reach * m)
+	_rotate(node, "Shoulder" + k, 0.5 * reach, 0.9 * reach * m)
+	_rotate(node, "ElbowL", -0.2)
+	_rotate(node, "ElbowR", -0.2)
+	_lean(node, 0.55 * reach, -0.25 * reach * m)
+	_rotate(node, "Neck", -0.35 * reach)
+
+
+## The keeper's punch: one fist driven at a ball he cannot hold, in front of
+## his face rather than over it, off the ground if the ball is above his reach.
+## Contact is the first frame, like the header, and the rest is the arm coming
+## down and the feet landing. The other arm goes out and down for balance.
+static func _pose_punch(node: Node3D, u: float) -> void:
+	var fall: float = clampf(u / HEADER_LAND, 0.0, 1.0)
+	var arc := 1.0 - fall * fall
+	node.position.y += arc * _punch_lift(node)
+	# Forward and up, about fifty degrees above the shoulder, elbow a little
+	# bent: the fist sits ahead of the face at head height.
+	_rotate(node, "ShoulderR", lerpf(-1.1, -2.35, arc), 0.05)
+	_rotate(node, "ElbowR", -0.35 * arc)
+	_rotate(node, "ShoulderL", -0.45 * arc, -0.9 * arc)
+	_rotate(node, "ElbowL", -0.25)
+	# Torso in behind the fist, banked off the punching side.
+	_lean(node, 0.12 * arc, -0.12 * arc)
+	_rotate(node, "Neck", -0.3 * arc)
+	# Knees drawn up under him in the air, one more than the other.
+	_rotate(node, "HipL", 0.55 * arc)
+	_rotate(node, "HipR", 0.3 * arc)
+	_rotate(node, "KneeL", 1.0 * arc)
+	_rotate(node, "KneeR", 0.5 * arc)
+
+
+## The fist reaches about a head's height ahead of the face. Anything higher
+## than that is a jump.
+const PUNCH_REACH := 0.2
+
+
+static func _punch_lift(node: Node3D) -> float:
+	var contact: float = float(node.get_meta("contact_y", 0.0))
+	if contact < 0.01:
+		return HEADER_LIFT_MAX * 0.5
+	return clampf(contact - _head_height(node) - PUNCH_REACH, 0.0, HEADER_LIFT_MAX)
 
 
 ## Where in the header's arc his feet are back on the grass. The rest of the span
@@ -2568,8 +2778,6 @@ static func _pose_header(node: Node3D, u: float) -> void:
 	_rotate(node, "HipR", -0.3 * arc)
 	_rotate(node, "KneeL", 1.3 * arc)
 	_rotate(node, "KneeR", 0.35 * arc)
-	# Squashes on landing rather than in the air.
-	_squash(node, 0.3 * maxf(u - HEADER_LAND, 0.0) / maxf(1.0 - HEADER_LAND, 0.01))
 
 
 ## How high he has to get to meet this particular ball: the gap between it and
@@ -2644,18 +2852,31 @@ static func _pose_slide(node: Node3D, yaw: float, u: float) -> void:
 
 ## Topples forward about the feet, accelerating the way a falling body does. A
 ## linear ramp reads as lying down on purpose.
+##
+## Flat on his front by the end, and nothing under the grass: the arms go out
+## in front to break the fall while he is still upright, then come round past
+## the head and out to the sides, because "in front" of a man on his face is
+## the ground. The knees fold the shins up off it, and the head lifts. Short of
+## dead flat, so the head and shoulders sit on the turf rather than in it.
 static func _pose_fall(node: Node3D, yaw: float, u: float) -> void:
-	_orient(node, yaw, 1.5 * u * u, 0.0)
-	# Arms go out to break the fall, then flail.
-	_rotate(node, "ShoulderL", -1.3 * u, -0.7 * u)
-	_rotate(node, "ShoulderR", -1.1 * u, 0.7 * u)
-	_rotate(node, "ElbowL", -0.15)
-	_rotate(node, "ElbowR", -0.15)
+	_orient(node, yaw, FALL_PITCH * u * u, 0.0)
+	var flat := smoothstep(0.55, 1.0, u)
+	var arms: float = lerpf(-1.3 * u, 2.5, flat)
+	var wide: float = lerpf(0.7 * u, 0.75, flat)
+	_rotate(node, "ShoulderL", arms, -wide)
+	_rotate(node, "ShoulderR", arms, wide)
+	_rotate(node, "ElbowL", -0.15 * (1.0 - flat))
+	_rotate(node, "ElbowR", -0.15 * (1.0 - flat))
 	_rotate(node, "HipL", 0.4 * u)
 	_rotate(node, "HipR", 0.25 * u)
 	_rotate(node, "KneeL", 0.7 * u)
 	_rotate(node, "KneeR", 0.5 * u)
-	_squash(node, 0.35 * maxf(u - 0.8, 0.0) * 5.0)
+	_rotate(node, "Neck", -0.45 * flat)
+
+
+## How far over the fall goes, short of a right angle: the figure has thickness
+## and a face, and at 1.5 rad both were in the grass.
+const FALL_PITCH := 1.38
 
 
 ## Both hands over the head, arched back, then whipped forward over the top.
@@ -2701,7 +2922,6 @@ static func _pose_throw(node: Node3D, u: float) -> void:
 	_rotate(node, "HipR", 0.22 * back + 0.3 * whip)
 	_rotate(node, "KneeL", 0.25 * back)
 	_rotate(node, "KneeR", 0.4 * back + 0.3 * whip)
-	_squash(node, -0.1 * back + 0.16 * whip)
 
 
 static func _pose_celebrate(node: Node3D, t: float) -> void:
@@ -2722,7 +2942,6 @@ static func _pose_celebrate(node: Node3D, t: float) -> void:
 	_rotate(node, "KneeL", 0.5 * (1.0 - hop))
 	_rotate(node, "KneeR", 0.5 * (1.0 - hop))
 	_lean(node, -0.18)
-	_squash(node, 0.22 * (1.0 - hop))
 
 
 static func _pose_dejected(node: Node3D, t: float) -> void:
@@ -2761,7 +2980,6 @@ static func _pose_exhausted(node: Node3D, t: float) -> void:
 	_rotate(node, "AnkleL", 0.0)
 	_rotate(node, "AnkleR", 0.0)
 	node.position.y = -0.02
-	_squash(node, 0.05 + heave)
 
 
 ## The keeper dives to a *world* side — `SimKeeper` picks LEFT or RIGHT from the
@@ -2783,7 +3001,6 @@ static func _pose_dive(node: Node3D, yaw: float, u: float, roll: float) -> void:
 	_rotate(node, "KneeL", 0.25)
 	_rotate(node, "KneeR", 0.15)
 	_lean(node, -0.1)
-	_squash(node, -0.12 * sin(u * PI))
 
 
 ## The ball is his. Two hands cupped at the chest, walking out with it, head up
@@ -2839,23 +3056,28 @@ const HOLD_ANKLE := 0.32
 ## chest up. Both arms come out to balance against a foot that is off the ground.
 ## The one thing that keeps moving is the head: he is scanning, and a figure
 ## standing on a ball with nothing moving reads as the match having paused.
-static func _pose_hold(node: Node3D, t: float) -> void:
+## `foot` is the one on the ball, the foot the settling touch was played with.
+static func _pose_hold(node: Node3D, t: float, foot: int) -> void:
 	var plant: float = smoothstep(0.0, HOLD_PLANT_SECONDS, t)
 	# The ball rolls a little back and forth under the sole. Small, slow, and the
 	# reason the foot does not look welded to it.
 	var roll: float = sin(t * 2.2) * 0.05 * plant
+	var b := _side(foot)
+	var s := _side(SimAttributes.other_foot(foot))
+	# Arms go out away from the body; the lateral flips with the side.
+	var m: float = -1.0 if foot == SimAttributes.FOOT_LEFT else 1.0
 
-	_rotate(node, "HipR", (HOLD_HIP - roll) * plant)
-	_rotate(node, "KneeR", (HOLD_KNEE + roll) * plant)
-	_rotate(node, "AnkleR", HOLD_ANKLE * plant)
+	_rotate(node, "Hip" + b, (HOLD_HIP - roll) * plant)
+	_rotate(node, "Knee" + b, (HOLD_KNEE + roll) * plant)
+	_rotate(node, "Ankle" + b, HOLD_ANKLE * plant)
 	# Standing leg: bent under the weight, and the whole figure drops with it.
-	_rotate(node, "HipL", 0.1 * plant)
-	_rotate(node, "KneeL", 0.22 * plant)
-	_rotate(node, "AnkleL", 0.0)
+	_rotate(node, "Hip" + s, 0.1 * plant)
+	_rotate(node, "Knee" + s, 0.22 * plant)
+	_rotate(node, "Ankle" + s, 0.0)
 	node.position.y -= 0.03 * plant
 
-	_rotate(node, "ShoulderL", -0.2 * plant, -0.6 * plant)
-	_rotate(node, "ShoulderR", 0.3 * plant, 0.45 * plant)
+	_rotate(node, "Shoulder" + s, -0.2 * plant, -0.6 * plant * m)
+	_rotate(node, "Shoulder" + b, 0.3 * plant, 0.45 * plant * m)
 	_rotate(node, "ElbowL", -0.35 * plant)
 	_rotate(node, "ElbowR", -0.35 * plant)
 	# Sat back over the standing foot, head up over the top of it.
@@ -2948,12 +3170,6 @@ static func _lean(node: Node3D, angle: float, bank := 0.0) -> void:
 ## The whole figure's orientation, yaw included, for the same reason.
 static func _orient(node: Node3D, yaw: float, pitch: float, roll: float) -> void:
 	node.rotation = Vector3(pitch, yaw, roll)
-
-
-## Positive squashes, negative stretches, volume roughly held.
-static func _squash(node: Node3D, amount: float) -> void:
-	var a: float = clampf(amount, -0.4, 0.4)
-	node.scale = Vector3(1.0 + a * 0.45, 1.0 - a, 1.0 + a * 0.45)
 
 
 ## Joint lookups are cached per player. `find_child` walks the subtree, and at
