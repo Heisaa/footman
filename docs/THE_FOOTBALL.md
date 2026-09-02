@@ -88,7 +88,7 @@ re-watch of the attack (the order, below), expecting rework.
 | Cover a beaten teammate | built — one man a side, latched for the carry, fills the space goal-side of the carrier who has just gone past one of ours; about a dozen a match | `SimMovement._pick_cover`, `Errand.COVER` |
 | Jockey, delay, show him wide | built — the chaser who has arrived goal-side stands off a stride and a half, holds his hips on the carrier, shuffles under the strafe cap, and stands a little inside the line to goal so the easy way is the touchline; the challenge is still the duel's commit roll | `SimMovement._jockey_point`, `Errand.JOCKEY` |
 | Escort a dying ball over the line | built — a ball the forecast has going out off their touch is walked out: body between it and the man, no touch of his own; rare, a few seconds a match | `SimMovement._escort_wanted`, `Errand.ESCORT` |
-| Spring an offside trap | absent — the line exists; stepping up as an act does not | |
+| Spring an offside trap | built — the back line steps up four metres together on a ball played back or a carrier pressed with his back to it, with a runner near the line; it deters the through ball and catches nobody, because the passer's belief of the line is a quarter-second stale at most | `SimMovement._consider_trap`, `trap_lift` |
 | The deliberate foul | absent | |
 | Defend the penalty area | partial — inside the area the presser closes from goal-side and the second man drops onto the line of the shot, which is what the block is thrown from; the keeper narrowing the angle and the cover for a beaten man are the rest of **5** | `SimMovement.LANE_STANDOFF`, `PRESS_FAN_NEAR` |
 
@@ -1900,6 +1900,26 @@ side of it from whoever wants it, holds his look on the ball, and
 instead of being hooked clear from the byline. Twenty fragments: 39 cadences
 of it, about four seconds of escorting; the ball went out of play 44 times
 before and 49 after on the same seeds. Rare and cheap, as its row said.
+
+**Built 2026-09-02: the offside trap as an act.** The line's standing height
+was a station (`offside_trap * 5` metres with the ball far); the step is
+`_consider_trap`: on a ball played back or a carrier pressed with his back to
+us, with a runner inside `TRAP_BAIT` of the line, the back four go up
+`TRAP_STEP` together -- eased in over a quarter-second and out over half a
+one, latched for `TRAP_HOLD`, at a run (`TRAP_PACE`), rolled per refresh at
+`TRAP_PER_SECOND * offside_trap`. Added after the marking blend, which
+otherwise ate most of the step. Two things measured out on the way: the
+trigger read `possession_player`, which is -1 for most of a pass's flight,
+so a trap on the back pass could not fire (5 in twenty fragments; 18 once it
+read the last touch); and it catches nobody -- 0 offsides inside three
+seconds of 18 traps, and on the new `offside-trap` row (the ball played back
+in front of a line with the trap turned up) through balls 1.4 to 1.2 a trial
+and offsides 0.2 to 0.1 with the trap on. **The step deters and does not
+catch, and the reason is perception**: beliefs refresh at 4-8 Hz with the
+velocity extrapolated, so the passer sees the line go and declines the ball,
+which is the engine being right about a man looking up. Whether a passer with
+his head down on the strike, or a runner watching the ball, should see the
+line move is a perception question for the owner, not a knob here.
 
 **Built 2026-09-02: where a parry goes (3).** Every parry was pushed
 forty-five degrees back into play at a fifth to two fifths of the pace, with

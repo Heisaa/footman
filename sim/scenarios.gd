@@ -59,6 +59,7 @@ static func all() -> Array[SimScenario]:
 		cross_pullback(),
 		cross_open(),
 		through_ball(),
+		offside_trap(),
 		switch_play(),
 		build_up(),
 		pocket(),
@@ -803,6 +804,56 @@ static func through_ball() -> SimScenario:
 				# runner keeps going and the passer knows where.
 				SimOffBall.plant(ctx, f, SimOffBall.BEHIND,
 					Vector3((ctx.pitch.half_length - 15.0) * dir, 0.0, lane), 4.0)
+			ctx.update_possession())
+
+
+## The offside trap, sprung. Their back line with the trap turned right up, the
+## ball played *back* to a midfielder twelve metres in front of it -- the
+## trigger `SimMovement._consider_trap` reads -- and two forwards a stride
+## onside, moving. What the row measures is whether the line steps and whether
+## the runner is caught: `--acts` prints offsides per trial.
+static func offside_trap() -> SimScenario:
+	return _make("offside-trap", "the ball played back in front of a line that steps up", 6.0,
+		func(sc: SimScenario, ctx: SimContext) -> void:
+			var team := sc.attacking_team
+			var them := SimConsts.other_team(team)
+			var dir := ctx.pitch.attack_dir(team)
+			var line_x: float = (ctx.pitch.half_length - 26.0) * dir
+			var at := Vector3(line_x - 12.0 * dir, 0.0, -2.0)
+			var passer := _one(ctx, team, [SimRole.CM, SimRole.DM, SimRole.AM])
+			sc.settle(ctx, at + Vector3(dir * 0.6, 0.0, 0.0), passer)
+			passer.pos = at
+			_face(passer, ctx.pitch.target_goal(team))
+			ctx.teams[them].ensure_tactics().offside_trap = 1.0
+			_flatten_line(ctx, them, line_x, dir, false)
+			for d in ctx.players:
+				if d.team == team or d.is_keeper:
+					continue
+				if absf(d.pos.x - line_x) <= 2.0:
+					continue
+				d.pos.x = at.x - 4.0 * dir
+				d.vel = Vector3(dir * RECOVERY_PACE, 0.0, 0.0)
+				d.facing = 0.0 if dir > 0.0 else PI
+			var forwards := _of_role(ctx, team, SimRole.ST) + _of_role(ctx, team, SimRole.WIDE)
+			var lanes := _gap_lanes(ctx, them, line_x, dir, 3)
+			lanes.sort_custom(func(a, b): return absf(a - at.z) < absf(b - at.z))
+			for i in mini(2, forwards.size()):
+				var f: SimPlayer = forwards[i]
+				var lane: float = lanes[i] if i < lanes.size() else 0.0
+				f.pos = Vector3(line_x - 2.0 * dir, 0.0, lane)
+				f.vel = Vector3(dir * 3.0, 0.0, 0.0)
+				_face(f, ctx.pitch.target_goal(team))
+				SimOffBall.plant(ctx, f, SimOffBall.BEHIND,
+					Vector3((ctx.pitch.half_length - 12.0) * dir, 0.0, lane), 4.0)
+			# The ball played back to him: rolling in from six metres ahead, off
+			# the first forward's boot, so the line reads a pass played back.
+			var from: SimPlayer = forwards[0] if not forwards.is_empty() else passer
+			_put_in_flight(ctx, at + Vector3(dir * 6.0, SimConsts.BALL_RADIUS, 0.0),
+				Vector3(-dir * 6.0, 0.0, 0.0))
+			ctx.ball.last_touch_player = from.id
+			ctx.ball.last_touch_team = team
+			ctx.ball.last_touch_tick = ctx.tick_index
+			ctx.ball.intended_target = passer.id
 			ctx.update_possession())
 
 

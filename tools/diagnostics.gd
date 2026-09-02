@@ -4368,6 +4368,28 @@ static func _shooting(ctx: SimContext, events: Array) -> void:
 	_in_the_box(ctx, events)
 
 
+## Offside traps sprung, and the offsides given inside three seconds of one:
+## the act and what it caught, side by side, because an offside count alone
+## cannot tell a runner who mistimed from a line that stepped up.
+static func _traps(events: Array) -> void:
+	var sprung := 0
+	var offsides := 0
+	var caught := 0
+	var last_trap := PackedInt32Array([-100000, -100000])
+	var window := int(3.0 * float(SimConsts.TICK_HZ))
+	for e in events:
+		if e["ev"] == SimTelemetry.Ev.TRAP:
+			sprung += 1
+			last_trap[int(e["team"])] = int(e.get("t", 0))
+		elif e["ev"] == SimTelemetry.Ev.OFFSIDE:
+			offsides += 1
+			var against: int = SimConsts.other_team(int(e.get("team", 0)))
+			if int(e.get("t", 0)) - last_trap[against] <= window:
+				caught += 1
+	print("  offside traps sprung    %4d   offsides given %d, of which %d inside 3 s of a trap; the trigger held on %d refreshes" % [
+		sprung, offsides, caught, SimMovement.trap_triggers])
+
+
 ## Bodies thrown at shots (`SimDuel.commit_blocks`): how many, at what chance,
 ## and how many got there. A block share that stays low reads two ways -- no
 ## man in front of the strike, or a man in front who never gets there -- and
@@ -4635,7 +4657,7 @@ static func report(m: SimMatch) -> void:
 	_holding_shape(ctx)
 	_the_body(ctx)
 	_giving_up_ground(ctx)
-	_new_mechanics()
+	_new_mechanics(events)
 
 	# --- Pass attempts by kind, with completion -----------------------------
 	var attempts := {}
@@ -4890,7 +4912,7 @@ static func report(m: SimMatch) -> void:
 ## played. Each is a mechanic from the owner's watching list; a row at zero for
 ## a whole match is the mechanic not firing, which is the first thing to know
 ## about it.
-static func _new_mechanics() -> void:
+static func _new_mechanics(events: Array) -> void:
 	print("\nThe small acts  (tallies, whole match)")
 	print("  first-time balls struck %4d   of them layoffs %4d" % [
 		SimTouch.ft_played, SimTouch.ft_layoff])
@@ -4902,6 +4924,7 @@ static func _new_mechanics() -> void:
 	print("  chips                   %4d" % SimTouch.chips_played)
 	print("  covers for a beaten man %4d" % SimMovement.covers_taken)
 	print("  escorts of a dying ball %4d  (cadences)" % SimMovement.escorts)
+	_traps(events)
 	print("  driven ground passes    %4d" % SimTouch.driven_played)
 	print("  volleys                 %4d" % SimTouch.volleys_struck)
 	# Does the foot reach the strike. `mean across` at zero would mean every ball

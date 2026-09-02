@@ -256,6 +256,9 @@ static func reset() -> void:
 	_cover = PackedInt32Array([-1, -1])
 	covers_taken = 0
 	escorts = 0
+	_trap_tick = PackedInt32Array([-100000, -100000])
+	traps_sprung = 0
+	trap_triggers = 0
 
 
 static func update(ctx: SimContext) -> void:
@@ -457,6 +460,7 @@ static func _assign_chasers(ctx: SimContext) -> void:
 		if loose:
 			_add_nearby_chaser(ctx, team, receiver, ball_ground)
 		_pick_cover(ctx, team)
+		_consider_trap(ctx, team)
 	# A man who is not a support presser has no side to close. Cleared here so
 	# that the next press he is given picks one afresh, rather than inheriting
 	# whichever side he happened to be on in some earlier phase.
@@ -858,6 +862,9 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 	# Holding shape is a jog; recovering a long way out of position is not.
 	var gap := p.dist_to(p.move_target)
 	p.move_speed_cap = p.max_speed() * (SHAPE_SPEED * lerpf(0.85, 1.2, p.attrs.work_rate) if gap < SHAPE_SPEED_GAP else RECOVER_SPEED)
+	# A line springing a trap steps up at a run, not at shape-holding pace.
+	if (p.role == SimRole.CB or p.role == SimRole.FB) and trap_lift(ctx, p.team) > 0.0:
+		p.move_speed_cap = maxf(p.move_speed_cap, p.max_speed() * TRAP_PACE)
 	# A footballer holding a station does not sprint to be exactly on it. This
 	# tolerance is what keeps a match inside 9-12 km per player. A timed run in
 	# behind is the exception: it has to be made to the metre.
@@ -1290,6 +1297,98 @@ static func _contest_pace(ctx: SimContext, p: SimPlayer) -> float:
 
 ## Support pressers close the passing lane behind the ball rather than piling in
 ## on it. Convergence on the ball is exactly the failure mode to avoid.
+## The offside trap as an act. The line's standing height is a station
+## (`_hold_the_line`, `offside_trap * 5` metres when the ball is far); this is
+## the step -- the back four going up together on a trigger, for a moment, to
+## leave the runner behind them. The triggers are football's: the ball played
+## back or square, or the carrier closed down with his back to us, either of
+## them with a runner near the line to catch. Rolled per refresh at
+## `TRAP_PER_SECOND * offside_trap`, latched for `TRAP_HOLD` and eased in and
+## out so the station does not teleport (INVARIANTS: a boolean is a station
+## that teleports), with `TRAP_COOLDOWN` before the next. What catches the
+## runner is that he believes a line that is `SEEN_MEMORY` stale.
+const TRAP_STEP := 4.0
+const TRAP_RISE := 0.25
+const TRAP_HOLD := 1.2
+const TRAP_FALL := 0.6
+const TRAP_COOLDOWN := 4.0
+const TRAP_PER_SECOND := 0.8
+const TRAP_PACE := 0.85
+## The line has to be this far off its own goal line to step up, the ball this
+## far ahead of the line, and a runner within this of the line.
+const TRAP_MIN_DEPTH := 18.0
+const TRAP_BALL_AHEAD := 8.0
+const TRAP_BAIT := 5.0
+
+static var _trap_tick := PackedInt32Array([-100000, -100000])
+## Traps sprung, whole match, and the refreshes on which the trigger held.
+## Read by `diagnose`.
+static var traps_sprung := 0
+static var trap_triggers := 0
+
+
+## Metres the line is lifted by a live trap, 0 when none is.
+static func trap_lift(ctx: SimContext, team: int) -> float:
+	if _trap_tick.size() != 2:
+		return 0.0
+	var age: float = float(ctx.tick_index - _trap_tick[team]) * SimConsts.DT
+	if age < 0.0 or age > TRAP_RISE + TRAP_HOLD + TRAP_FALL:
+		return 0.0
+	if age < TRAP_RISE:
+		return TRAP_STEP * age / TRAP_RISE
+	if age < TRAP_RISE + TRAP_HOLD:
+		return TRAP_STEP
+	return TRAP_STEP * (1.0 - (age - TRAP_RISE - TRAP_HOLD) / TRAP_FALL)
+
+
+static func _consider_trap(ctx: SimContext, team: int) -> void:
+	if _trap_tick.size() != 2:
+		_trap_tick = PackedInt32Array([-100000, -100000])
+	# Off the last touch, not `possession_player`: that is -1 for most of a
+	# pass's flight, and the pass played back is the trigger.
+	var ball := ctx.ball
+	if ball.last_touch_team != SimConsts.other_team(team) or ball.last_touch_player < 0 \
+			or ball.last_touch_player >= ctx.players.size() or not ctx.offside_on:
+		return
+	if float(ctx.tick_index - _trap_tick[team]) * SimConsts.DT < TRAP_COOLDOWN:
+		return
+	var tactics := ctx.tactics(team)
+	if tactics.offside_trap <= 0.05:
+		return
+	var dir := ctx.pitch.attack_dir(team)
+	var own_x := ctx.pitch.own_goal(team).x
+	var line_x := SimReferee.offside_line(ctx, SimConsts.other_team(team))
+	var line_depth: float = (line_x - own_x) * dir
+	if line_depth < TRAP_MIN_DEPTH:
+		return
+	var at := ball.ground_pos()
+	if (at.x - line_x) * dir < TRAP_BALL_AHEAD:
+		return
+	# The trigger.
+	var carrier := ctx.players[ball.last_touch_player]
+	var played_back: bool = ball.vel.x * dir > 1.5 and carrier.dist_to(at) > SimConsts.CONTROL_RANGE
+	var pressed_back: bool = carrier.dist_to(at) <= SimConsts.CONTROL_RANGE \
+		and ctx.pressure_on(carrier) > 1.0 and carrier.heading_dir().x * dir > 0.3
+	if not (played_back or pressed_back):
+		return
+	# And somebody to catch.
+	var bait := false
+	for oid in ctx.opponent_ids(team):
+		var o := ctx.players[oid]
+		if o.on_pitch and not o.is_keeper and o.id != carrier.id \
+				and absf(o.pos.x - line_x) <= TRAP_BAIT:
+			bait = true
+			break
+	if not bait:
+		return
+	trap_triggers += 1
+	if not ctx.rng.chance(TRAP_PER_SECOND * tactics.offside_trap * float(CHASE_TICKS) * SimConsts.DT):
+		return
+	_trap_tick[team] = ctx.tick_index
+	traps_sprung += 1
+	ctx.log_event(SimTelemetry.Ev.TRAP, {"team": team, "line": line_x})
+
+
 ## The escort. A ball the forecast has going out of play, last touched by
 ## them -- so the restart is ours -- is not played, it is walked out: the
 ## nearest of ours puts his body between it and whoever wants it and lets it
@@ -1749,9 +1848,16 @@ static func _hold_the_line(ctx: SimContext, p: SimPlayer, shape: Vector3) -> Vec
 ## toward the ball side.
 static func _defensive_adjust(ctx: SimContext, p: SimPlayer, shape: Vector3) -> Vector3:
 	shape = _hold_the_line(ctx, p, shape)
+	# The trap as an act: the whole line steps up together for a moment. Added
+	# after the marking blend below, or the blend eats most of the step --
+	# `pull` runs to 0.9 with the ball near.
+	var lift := 0.0
+	if p.role == SimRole.CB or p.role == SimRole.FB:
+		lift = trap_lift(ctx, p.team)
+	var step := Vector3(ctx.pitch.attack_dir(p.team) * lift, 0.0, 0.0)
 	var mark := _assign_mark(ctx, p)
 	if mark < 0:
-		return shape
+		return shape + step
 	p.errand = Errand.MARK
 	p.marking_target = mark
 	var opponent := ctx.players[mark]
@@ -1775,7 +1881,7 @@ static func _defensive_adjust(ctx: SimContext, p: SimPlayer, shape: Vector3) -> 
 	# defender holds his zone and keeps half an eye on whoever is in it.
 	var pull: float = clampf(ctx.tactics(p.team).press_intensity * 0.5 + 0.35, 0.0, 0.9)
 	pull *= mark_tightness(SimConsts.horizontal_length(opp_pos - ctx.ball.ground_pos()))
-	return shape.lerp(station, pull)
+	return shape.lerp(station, pull) + step
 
 
 ## How near the ball a man has to be before his marker goes with him.

@@ -36,13 +36,15 @@ enum Ev {
 	BLOCK_LUNGE,
 	## Where the keeper sent a parry (`SimKeeper._take_the_save`). Appended.
 	PARRY,
+	## A back line stepping up together on a trigger (`SimMovement._consider_trap`).
+	TRAP,
 }
 
 const EV_NAMES := [
 	"kickoff", "touch", "pass_attempt", "pass_outcome", "shot", "duel", "foul",
 	"card", "recovery", "pattern", "phase_change", "goal", "offside", "set_piece",
 	"period", "substitution", "save", "out_of_play", "possession_end", "feint",
-	"block_lunge", "parry",
+	"block_lunge", "parry", "trap",
 ]
 
 ## Touch kinds. Shared with the touch module.
