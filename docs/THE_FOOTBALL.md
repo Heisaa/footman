@@ -86,7 +86,7 @@ re-watch of the attack (the order, below), expecting rework.
 | Clear under pressure | built | `_add_clear` |
 | Block a shot | built — a body in front of the strike throws itself on the backlift, one roll at the strike, taken when the ball arrives; the price and the act are one function | `SimDuel.commit_blocks`, `block_chance` |
 | Cover a beaten teammate | built — one man a side, latched for the carry, fills the space goal-side of the carrier who has just gone past one of ours; about a dozen a match | `SimMovement._pick_cover`, `Errand.COVER` |
-| Jockey, delay, show him wide | absent — he either goes for it or holds station. The body frame is in, so a jockey is now an arm that looks at the carrier and shuffles side-on under the strafe cap; held for the defensive pass | |
+| Jockey, delay, show him wide | built — the chaser who has arrived goal-side stands off a stride and a half, holds his hips on the carrier, shuffles under the strafe cap, and stands a little inside the line to goal so the easy way is the touchline; the challenge is still the duel's commit roll | `SimMovement._jockey_point`, `Errand.JOCKEY` |
 | Escort a dying ball over the line | absent — shielding's cheapest special case | |
 | Spring an offside trap | absent — the line exists; stepping up as an act does not | |
 | The deliberate foul | absent | |
@@ -1897,6 +1897,25 @@ fragments: the keeper stood **3.4 m off his line at the strike against 4.1**.
 and the one-on-one answers gated on a keeper who never left his line are now
 gated on one who does.
 
+**Built 2026-09-02: the jockey.** The errand turned round, as the body frame
+promised: a chaser inside `JOCKEY_FAR` of the ball and goal-side of the carrier
+(`_jockey_weight`, both ramped) has his target blended onto a point
+`JOCKEY_STANDOFF` from the *man* -- outside `CONTROL_RANGE`, inside
+`CHALLENGE_RADIUS`, so the commit roll still fires -- with his look held on the
+ball, and inside the line to goal by `SHOW_WIDE` when the ball is off centre.
+Under the look and the strafe cap he shuffles; when the carrier goes past at
+pace the target outruns the cap, the body slaves and he turns and runs. `The
+body` reads it: over twenty fragments, 326 jockey samples, **20% of his steps
+sideways and 11% backwards**, against 1% and 0% for every other errand. The
+scenario rows it touches did not move at n=40 (`take-on` 68% lost, `hold-up`
+58%, `1v1-chased` 65%), and `shot-edge` at n=120 reads 22/10/11/8/37: no move.
+Two honest faults recorded. The point was first set off the ball and moved at
+8-9 m/s, because a carrier's ball leaves his foot at several metres a second
+every quarter-second; off the man it reads 2-9, which is the same class as the
+chase it sits inside (5-8 m/s: the intercept point moves with the ball at a
+carrier's feet) and the fix for both is one fix, not this item's. And the
+errand's `switched` column reads 20-60%, the blend crossing `JOCKEY_FAR`.
+
 **Noted 2026-09-02, owner's eye on the block: 52**, the committed move that
 still steers. Not this item's to fix; it is on the list so it is built once,
 under the slide, the dive and the jump together.
@@ -2012,7 +2031,9 @@ not a finding; it is the list working.
 - The better side is more accurate and plays the same football (**38**).
 - A carrier runs straight into a defender and loses it — shielding and the cut
   both exist, so this is the softmax declining them, a tuning fact rather than an
-  absence.
+  absence. Since the jockey (2026-09-02) the defender should be standing off him
+  side-on rather than running through him; a defender who still does is a
+  chaser who never got goal-side.
 
 **Watch at the clock the game ships with.** The nine-minute match is the match, so
 it is what these are judged on and what the numbers are tuned to — `docs/STATUS.md`,

@@ -235,11 +235,12 @@ enum Errand {
 	MARK,      ## goal-side of an opponent
 	BLOCK,     ## thrown at a shot (`SimDuel.commit_blocks`)
 	COVER,     ## filling the space a beaten teammate lost (`_pick_cover`)
+	JOCKEY,    ## arrived at the carrier: standing off him, side-on, showing him wide
 }
 
 const ERRAND_NAMES := [
 	"station", "chase", "press", "pattern", "shoulder", "offer", "support",
-	"drift", "ascent", "mark", "block", "cover",
+	"drift", "ascent", "mark", "block", "cover", "jockey",
 ]
 
 
@@ -723,6 +724,16 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 					var gd := to_goal.length()
 					if gd > LANE_STANDOFF + 0.5:
 						point = point.lerp(at + to_goal / gd * LANE_STANDOFF, lane)
+				# And having got there, he does not run through him. The
+				# jockey: stand off, face him, shuffle with him, show him the
+				# touchline. The challenge is still `SimDuel`'s commit roll;
+				# this is what he does between rolls, which is most of
+				# defending.
+				var jockey := _jockey_weight(ctx, p, holder, at)
+				if jockey > 0.0:
+					p.errand = Errand.JOCKEY
+					point = point.lerp(_jockey_point(ctx, p, holder.pos), jockey)
+					p.look_target = at
 		# A chaser coming from behind a man in possession runs round him rather
 		# than into the back of him.
 		var recovery := _recovery_weight(ctx, p)
@@ -1268,6 +1279,66 @@ static func _contest_pace(ctx: SimContext, p: SimPlayer) -> float:
 
 ## Support pressers close the passing lane behind the ball rather than piling in
 ## on it. Convergence on the ball is exactly the failure mode to avoid.
+## The jockey. A defender who has reached the carrier used to keep running at
+## the ball -- the intercept point, read half a touch ahead of the hips -- and
+## soft separation held him off; so he either went for it or, at his station,
+## did nothing. A footballer who has arrived stands off the ball a stride and a
+## half, faces the man, shuffles with him side-on, and stands a little inside
+## the line to goal so the easy way is the touchline. The body frame makes it:
+## the look holds the hips on the carrier and `SimPlayer.STRAFE_SHARE` caps
+## the shuffle, and when the carrier goes past at pace the target outruns the
+## cap, the body slaves to the run and he turns and chases.
+##
+## `JOCKEY_STANDOFF` sits outside `CONTROL_RANGE` and inside
+## `SimDuel.CHALLENGE_RADIUS`, so the commit roll still fires from there.
+const JOCKEY_STANDOFF := 1.9
+## Fully a jockey inside `JOCKEY_NEAR` of the ball, nothing beyond
+## `JOCKEY_FAR`: outside that he is still arriving.
+const JOCKEY_NEAR := 3.2
+const JOCKEY_FAR := 5.0
+## He has to be goal-side of the carrier to jockey him: the dot of his offset
+## with the line to his own goal, ramped between these.
+const JOCKEY_SIDE_LOW := 0.2
+const JOCKEY_SIDE_HIGH := 0.6
+## How far inside the line to goal he stands, as the tangent of the angle,
+## and how far from the centre line the ball has to be before there is a
+## wide side to show.
+const SHOW_WIDE := 0.35
+const SHOW_WIDE_FROM := 4.0
+
+
+static func _jockey_weight(ctx: SimContext, p: SimPlayer, holder: SimPlayer, at: Vector3) -> float:
+	if not holder.on_pitch or holder.dist_to(at) > SimTouch.DRIBBLE_AHEAD_MAX:
+		return 0.0
+	var d := p.dist_to(at)
+	var near: float = clampf((JOCKEY_FAR - d) / (JOCKEY_FAR - JOCKEY_NEAR), 0.0, 1.0)
+	if near <= 0.0:
+		return 0.0
+	var to_goal := SimConsts.horizontal(ctx.pitch.own_goal(p.team) - at)
+	var gd := to_goal.length()
+	if gd < 1.0:
+		return 0.0
+	var offset := SimConsts.horizontal(p.pos - at)
+	var od: float = maxf(offset.length(), 1e-3)
+	var side: float = (offset / od).dot(to_goal / gd)
+	var goal_side: float = clampf((side - JOCKEY_SIDE_LOW) / (JOCKEY_SIDE_HIGH - JOCKEY_SIDE_LOW), 0.0, 1.0)
+	return near * goal_side
+
+
+## Off the *man*, not the ball. A point relative to the ball moves at the
+## speed of the ball (INVARIANTS), and a carrier's ball leaves his foot at
+## several metres a second every quarter-second: read that way the jockey's
+## target moved at 8-9 m/s and he twitched after it. The man moves at the
+## pace of a man.
+static func _jockey_point(ctx: SimContext, p: SimPlayer, at: Vector3) -> Vector3:
+	var to_goal := SimConsts.horizontal(ctx.pitch.own_goal(p.team) - at)
+	var gd: float = maxf(to_goal.length(), 0.1)
+	var dir := to_goal / gd
+	if absf(at.z) > SHOW_WIDE_FROM:
+		dir = (dir + Vector3(0.0, 0.0, -signf(at.z)) * SHOW_WIDE).normalized()
+	return ctx.pitch.clamp_to_pitch(at + dir * minf(JOCKEY_STANDOFF, gd * 0.5), 0.3)
+
+
 ## Cover: when a man is beaten, somebody fills the space he lost. The chase
 ## ranking already penalises the beaten man (`BEATEN_PENALTY`); that chooses
 ## who presses next, and nobody stood in the lane he had been standing in. One
