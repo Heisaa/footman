@@ -34,13 +34,15 @@ enum Ev {
 	FEINT,
 	## A body thrown at a shot (`SimDuel.commit_blocks`), hit or miss. Appended.
 	BLOCK_LUNGE,
+	## Where the keeper sent a parry (`SimKeeper._take_the_save`). Appended.
+	PARRY,
 }
 
 const EV_NAMES := [
 	"kickoff", "touch", "pass_attempt", "pass_outcome", "shot", "duel", "foul",
 	"card", "recovery", "pattern", "phase_change", "goal", "offside", "set_piece",
 	"period", "substitution", "save", "out_of_play", "possession_end", "feint",
-	"block_lunge",
+	"block_lunge", "parry",
 ]
 
 ## Touch kinds. Shared with the touch module.

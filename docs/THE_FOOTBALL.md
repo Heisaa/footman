@@ -121,7 +121,7 @@ with a ball in the air. The fourth act is not touching it at all.
 | Come out and smother | built | `SimKeeper` |
 | Distribution, short or long | built — and the ball is his while he holds it: nobody else is a contender for it | `decide_with_ball`, `ball_in_hands` |
 | Claim a cross, command the area | built | `_claim_target`, `_try_gather` |
-| Where a parry goes | partial — the rebound is a loose ball nobody aims (**3**) | |
+| Where a parry goes | built — a full hand pushes it round the post or over the bar, a fingertip drops it in front of him; he is on the floor after it, with half his reach until he is up | `SimKeeper._take_the_save`, `PARRY_HAND_GOOD` |
 | The one-on-one | partial — priced into `expected_goals`, so the engine's answer is not to shoot | |
 | Narrow the angle | built — with the ball at an opponent's feet inside 24 m and in front of goal, he stands where his reach closes the goal as the shooter sees it, capped so he is not chipped from range; the save model and the chip already price the trade | `SimKeeper._narrowed_station` |
 
@@ -165,7 +165,6 @@ When one is built its row above changes and its entry here goes.
 
 | | Proposal | Where |
 |---|---|---|
-| **3** | Parry versus hold — the rebound cascade | `SimKeeper` |
 | **5** | Blocks that cost the shooter, a keeper who narrows the angle | `SimKeeper`, `SimDuel` |
 | **19** | Paired-run contrast | `tools/headless_main.gd` |
 | **24** | The pass model is under-confident and the correlated terms are not why | `SimDecision.CORRELATED` |
@@ -182,10 +181,6 @@ When one is built its row above changes and its entry here goes.
 | **44** | A striker and a centre-back are the same speed | `SimRole._WEIGHTS`, `SimAttributes` |
 | **50** | Corners at 0.4-0.5 a team against a floor of 0.5: nobody puts the ball behind | `SimDuel`, `SimKeeper` |
 | **52** | A committed move can still steer: a slide changes direction mid-slide, a keeper turns in the air | `SimPlayer.locomote`, `SimDuel.commit_blocks`, `SimKeeper` |
-
-**3 surfaced when shots started reaching the target.** About a third are second
-attempts within four seconds of the last: parry, rebound, strike again. Real
-football has rebounds, not at that rate.
 
 **5 is the largest hole.** The engine reaches the penalty area about four times as
 often as football does and nothing much resists once it is there. What is left of
@@ -1897,6 +1892,20 @@ fragments: the keeper stood **3.4 m off his line at the strike against 4.1**.
 and the one-on-one answers gated on a keeper who never left his line are now
 gated on one who does.
 
+**Built 2026-09-02: where a parry goes (3).** Every parry was pushed
+forty-five degrees back into play at a fifth to two fifths of the pace, with
+the keeper up and set for the rebound at once -- the cascade. Now the hand he
+got to it decides (`closeness` from the save model, scaled by `handling`): a
+full hand goes round the post with a share toward the byline (`PARRY_BACK`),
+or over the bar if the ball was rising and high; a fingertip drops in front
+of him at a fraction of the pace. And he is down for `PARRY_DOWN_MIN..MAX`
+with half his reach, so the rebound is somebody's before it is his. Tallied
+under `Goalkeeping` (wide / over / in front). Forty fragments before and
+after: second attempts inside four seconds **9 of 37 to 7 of 35**, parries 6
+in all (2 wide, 4 in front), corners 0 to 1. Six parries is not a
+measurement of the rate; the direction is the mechanism and that is what
+changed. Whether the cascade has gone is the eye's and a longer run's.
+
 **Built 2026-09-02: the jockey.** The errand turned round, as the body frame
 promised: a chaser inside `JOCKEY_FAR` of the ball and goal-side of the carrier
 (`_jockey_weight`, both ramped) has his target blended onto a point
@@ -2030,7 +2039,9 @@ not a finding; it is the list working.
 - A shot from twelve yards with a defender beside it: he blocks now if he was
   in front of it and saw it coming; beside it he still does not.
 - Attacks walk into the six-yard box.
-- A keeper parries straight back out and it happens again immediately.
+- A keeper parries straight back out and it happens again immediately — he
+  pushes it round the post now when he gets a hand to it, and is on the floor
+  after; what still comes back out is the fingertip.
 - The ball almost never goes behind for a corner (**5** is in; the parry
   wide, **3**, and the clearing header are what is left).
 - A free kick on the edge of the box is possible but rare; the cynical foul is

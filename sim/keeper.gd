@@ -527,6 +527,9 @@ static func _shot_response(ctx: SimContext, k: SimPlayer) -> void:
 	reach *= lerpf(0.85, 1.15, k.attrs.agility)
 	# 1.0 at real time: `SimMatchConfig`, "the compressed match's scoring fit".
 	reach *= ctx.config.keeper_reach_scale()
+	# On the floor from the last one: a body in the way, not a dive.
+	if k.recovery_ticks > 0:
+		reach *= PARRY_DOWN_REACH
 
 	state["resolved"] = true
 	if margin > reach:
@@ -569,6 +572,7 @@ static func _shot_response(ctx: SimContext, k: SimPlayer) -> void:
 	# Decided, not yet done. The keeper commits before he can know — that is what
 	# a dive is — but the ball keeps flying, and is taken when it arrives.
 	state["caught"] = can_catch
+	state["closeness"] = closeness
 	state["save_tick"] = ctx.tick_index + int(round(dive_time * float(SimConsts.TICK_HZ)))
 
 
@@ -629,21 +633,75 @@ static func _take_the_save(ctx: SimContext, k: SimPlayer, state: Dictionary) -> 
 		SimTouch.apply(ctx, k, SimTelemetry.Touch.KEEPER_CATCH, Vector3.ZERO, Vector3.ZERO)
 		return
 
-	# A parry goes wide or back into play, and it is a live ball. It keeps the
-	# height it was met at: a shot pushed over the bar starts where the hand was.
+	# A parry is a live ball, and where it goes is the keeper's choice as far
+	# as the hand he got to it allows (`docs/THE_FOOTBALL.md` 3). It used to be
+	# pushed forty-five degrees back into play at every save, which is the
+	# rebound cascade: a third of all shots were second attempts inside four
+	# seconds. A full hand on it goes wide of the post -- behind, for the
+	# corner -- or over the bar if the ball was rising; a fingertip or a fist
+	# drops in front of him, which is the rebound football does have. It
+	# keeps the height it was met at: a shot pushed over starts where the hand
+	# was.
 	var pos := ctx.ball.pos
 	var away := ctx.pitch.target_goal(k.team) - pos
 	away.y = 0.0
+	away = away.normalized()
 	var out: float = signf(pos.z) if absf(pos.z) > 0.4 else (1.0 if ctx.rng.chance(0.5) else -1.0)
-	var dir := (away.normalized() * 0.5 + Vector3(0.0, 0.0, out)).normalized()
-	var speed: float = ctx.ball.vel.length() * ctx.rng.range_float(0.18, 0.42)
+	var closeness: float = float(state.get("closeness", 0.5))
+	var full_hand: float = clampf(closeness * lerpf(PARRY_HAND_POOR, PARRY_HAND_GOOD, k.attrs.handling), 0.0, 0.95)
+	var speed_in := ctx.ball.vel.length()
+	var dir: Vector3
+	var speed: float
+	var lift: float
+	var where: String
+	if ctx.rng.chance(full_hand):
+		if ctx.ball.vel.y > PARRY_RISING and pos.y > PARRY_HIGH:
+			# Over the bar.
+			dir = (away * 0.2 + Vector3(0.0, 0.0, out * 0.5)).normalized()
+			speed = speed_in * ctx.rng.range_float(0.25, 0.4)
+			lift = ctx.rng.range_float(4.0, 7.0)
+			where = "over"
+		else:
+			# Round the post: sideways, a little toward the byline.
+			dir = Vector3(side * PARRY_BACK, 0.0, out).normalized()
+			speed = speed_in * ctx.rng.range_float(0.35, 0.55)
+			lift = ctx.rng.range_float(0.3, 1.5)
+			where = "wide"
+	else:
+		dir = (away + Vector3(0.0, 0.0, out * ctx.rng.range_float(0.2, 1.0))).normalized()
+		dir = dir.rotated(Vector3.UP, ctx.rng.gauss_clamped(0.0, 0.4, 2.0))
+		speed = speed_in * ctx.rng.range_float(0.12, 0.3)
+		lift = ctx.rng.range_float(0.5, 2.5)
+		where = "front"
 	pos.y = maxf(pos.y, SimConsts.BALL_RADIUS)
 	# A dive can meet the ball level with the posts, and a parry struck from
 	# behind them is a goal.
 	if (pos.x - goal_x) * side > -0.4:
 		pos.x = goal_x - side * 0.4
 	ctx.ball.pos = pos
-	SimTouch.apply(ctx, k, SimTelemetry.Touch.KEEPER_PARRY, dir * speed + Vector3(0.0, ctx.rng.range_float(0.5, 3.0), 0.0), Vector3.ZERO)
+	SimTouch.apply(ctx, k, SimTelemetry.Touch.KEEPER_PARRY, dir * speed + Vector3(0.0, lift, 0.0), Vector3.ZERO)
+	# And he is on the floor. A keeper who has dived is not set for the
+	# rebound until he has got up; without this he was the first body to the
+	# ball he had just pushed out.
+	k.recovery_ticks = maxi(k.recovery_ticks,
+		int(ctx.rng.range_float(PARRY_DOWN_MIN, PARRY_DOWN_MAX) * float(SimConsts.TICK_HZ)))
+	ctx.log_event(SimTelemetry.Ev.PARRY, {"p": k.id, "team": k.team, "where": where})
+
+
+## The parry. How much of a full hand he gets on a ball, per unit of
+## `closeness`, from a poor handler to a good one; a ball rising this fast and
+## met this high is pushed over rather than round; and how far toward the
+## byline a ball pushed round the post is sent, as a share of the sideways.
+const PARRY_HAND_POOR := 0.55
+const PARRY_HAND_GOOD := 1.1
+const PARRY_RISING := 2.0
+const PARRY_HIGH := 1.5
+const PARRY_BACK := 0.35
+## How long he is down after a parry, in seconds, and what is left of his
+## reach while he is.
+const PARRY_DOWN_MIN := 0.4
+const PARRY_DOWN_MAX := 0.7
+const PARRY_DOWN_REACH := 0.5
 
 
 ## Vertical reach is smaller than lateral: a keeper covers the ground faster

@@ -3705,7 +3705,14 @@ static func _goalkeeping(ctx: SimContext, events: Array) -> void:
 		saves += 1
 		if bool(e.get("caught", false)):
 			caught += 1
-	print("  saves %d, of which caught %d" % [saves, caught])
+	var where := {}
+	for e in events:
+		if e["ev"] == SimTelemetry.Ev.PARRY:
+			var w: String = str(e.get("where", "?"))
+			where[w] = int(where.get(w, 0)) + 1
+	print("  saves %d, of which caught %d; parried wide %d, over %d, in front %d" % [
+		saves, caught, int(where.get("wide", 0)), int(where.get("over", 0)), int(where.get("front", 0)),
+	])
 
 
 const SET_PIECE_NAMES := ["kickoff", "throw-in", "goal kick", "corner", "free kick", "indirect FK", "penalty"]
