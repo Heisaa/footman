@@ -181,6 +181,7 @@ When one is built its row above changes and its entry here goes.
 | **43** | A goal kick is nine passes in his own half and then a turnover | `SimSetPiece._take_goal_kick`, `SimMovement` |
 | **44** | A striker and a centre-back are the same speed | `SimRole._WEIGHTS`, `SimAttributes` |
 | **50** | Corners at 0.4-0.5 a team against a floor of 0.5: nobody puts the ball behind | `SimDuel`, `SimKeeper` |
+| **52** | A committed move can still steer: a slide changes direction mid-slide, a keeper turns in the air | `SimPlayer.locomote`, `SimDuel.commit_blocks`, `SimKeeper` |
 
 **3 surfaced when shots started reaching the target.** About a third are second
 attempts within four seconds of the last: parry, rebound, strike again. Real
@@ -1154,6 +1155,21 @@ and neither act is built. No attacking mechanic can move this number and none
 should try (`PLAN.md` §11.4). It comes back with **5**, whose entry already says
 so; this one exists so the defensive pass starts with the figure in hand.
 
+**52 is the owner's, 2026-09-02, watching the block land (`M`).** A defender who
+slides at a shot can change direction during the slide, and a keeper who has
+left the ground for a ball can change direction in the air; the owner expects
+other committal moves to allow the same. The body is locomoted every tick by
+`SimPlayer.locomote` from a fresh `desired_vel`, and nothing in it knows that
+a man is off his feet: the block's lunge is a `move_target` with the ordinary
+steering under it, the dive is `play_anim` over a keeper still steered to the
+ball, the jump for a header is a reach test with no flight. The rule the owner
+named: **in the air the body follows its ballistic trajectory; in a slide it
+is locked in one direction until he stands up.** The general form is a
+committed-move state on the body -- entered by the slide, the dive, the jump
+and the fall, with its own velocity law and a duration, released into
+`recovery_ticks` -- read by `locomote` before any steering. Not built; noted
+so the next committal act is built onto it rather than beside it.
+
 **The arithmetic is confirmed and it was not what was deciding the row**, which
 is worth writing down because it nearly went in as a fix. Probed tick by tick,
 the two men in `race` were not sprinting: the speed cap on each of them read
@@ -1880,6 +1896,10 @@ fragments: the keeper stood **3.4 m off his line at the strike against 4.1**.
 (n=40, eight points of error): nothing the eye should read as a change yet,
 and the one-on-one answers gated on a keeper who never left his line are now
 gated on one who does.
+
+**Noted 2026-09-02, owner's eye on the block: 52**, the committed move that
+still steers. Not this item's to fix; it is on the list so it is built once,
+under the slide, the dive and the jump together.
 
 **Built 2026-09-02: cover.** A beaten man was only penalised in the chase
 ranking, which chooses who presses next and leaves the lane he had stood in
