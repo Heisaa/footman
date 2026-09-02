@@ -1272,7 +1272,16 @@ static func _carry_pace(ctx: SimContext, p: SimPlayer) -> float:
 	var heading := SimConsts.horizontal(p.vel)
 	if heading.length() < 1.0:
 		return 0.0  # Standing over it. There is no run to pace.
-	heading = heading.normalized()
+	return carry_pace_for(ctx, p, heading.normalized())
+
+
+## The share of his top speed the grass down `heading` asks of a carrier, 0 to
+## 1. The rule above with the direction as an argument, so the decision layer
+## can look down each probe as far as this will run him: a station that
+## priced a four-metre carry for a man stood in front of fifteen metres of
+## open lane was the decision layer not knowing what the movement layer was
+## about to do with it (`SimDecision._add_dribbles`).
+static func carry_pace_for(ctx: SimContext, p: SimPlayer, heading: Vector3) -> float:
 	var open := ctx.pitch.run_room(p.pos, heading, 1.0)
 	for j in ctx.opponent_ids(p.team):
 		var o: SimPlayer = ctx.players[j]

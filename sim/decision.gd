@@ -4119,7 +4119,16 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 		# price it over. The touch is the step he takes along it.
 		# How far down this line he is going, which is a distance over the grass
 		# and not a touch size. See `CARRY_HORIZON_SECONDS`.
-		var pursuit: float = maxf(along_dir * CARRY_HORIZON_SECONDS, DRIBBLE_DISTANCE)
+		#
+		# And as far as the grass will have him running. `SimMovement` paces a
+		# carrier off the open lane in front of him -- from `CARRY_CLEAR` of it
+		# he runs, at `CARRY_OPEN` flat out -- and the look reads the same rule,
+		# so a man stood still with fifteen metres in front of him weighs the
+		# carry he is about to make rather than the four metres his standing
+		# pace bought. Read off the direction, at the pace it gives him, never
+		# the pace he happens to have.
+		var run_pace: float = SimMovement.carry_pace_for(ctx, player, dir) * player.max_speed()
+		var pursuit: float = maxf(maxf(along_dir, run_pace) * CARRY_HORIZON_SECONDS, DRIBBLE_DISTANCE)
 		pursuit = minf(pursuit, maxf(ctx.pitch.run_room(ctx.ball.ground_pos(), dir, LINE_MARGIN), 0.0))
 		pursuit = minf(pursuit, maxf(keeper_room(ctx, ctx.ball.ground_pos(), dir, player.team, along_dir), 0.0))
 		var reach: float = minf(horizon, stride_room(player, dir))
