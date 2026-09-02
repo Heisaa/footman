@@ -1916,6 +1916,17 @@ chase it sits inside (5-8 m/s: the intercept point moves with the ball at a
 carrier's feet) and the fix for both is one fix, not this item's. And the
 errand's `switched` column reads 20-60%, the blend crossing `JOCKEY_FAR`.
 
+**Owner's eye on the jockey, 2026-09-02: hints of it, and the carrier passes
+before it can be seen.** Agreed and deferred: it is **28** and **37**, the
+release rate. Two things to separate when it is picked up. `Under challenge`
+reads 70% pass closed down against 40% free, and a decision comes every
+quarter second, so the pass need only win one. And `pressure_on` weighs a
+facing man inside 6 m by proximity alone, so a jockey standing off reads to
+the carrier like a man charging him -- `challenge_on` has the closing-speed
+term, `pressure_on` does not. The check first: `Why an option lost` on a
+jockeyed carrier, whether the carry lost on `success` (pressure; the fix is a
+closing-speed term in `pressure_on`, this pass's) or on `gain` (the map; 37).
+
 **Noted 2026-09-02, owner's eye on the block: 52**, the committed move that
 still steers. Not this item's to fix; it is on the list so it is built once,
 under the slide, the dive and the jump together.
