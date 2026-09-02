@@ -144,7 +144,7 @@ static func _tolerance(kind: int, distance: float) -> float:
 ## perturbation would agree with itself forever.
 static func _strike(ctx: SimContext, player: SimPlayer, kind: int, aim: Vector3, distance: float) -> void:
 	if kind == SimTelemetry.Touch.GROUND_PASS:
-		var pace := SimDecision.arrival_pace(distance, ctx.tactics(player.team))
+		var pace := SimDecision.arrival_pace(ctx, distance, player.team)
 		SimTouch.ground_pass(ctx, player, aim, pace, -1, kind)
 		return
 	var flight: float = SimTouch.cross_flight(distance) if kind == SimTelemetry.Touch.CROSS \
@@ -172,7 +172,7 @@ const HEADABLE := 1.9
 
 static func _land(ctx: SimContext, kind: int, from: Vector3, distance: float) -> Vector3:
 	var ball := ctx.ball
-	var pace := SimDecision.arrival_pace(distance, ctx.tactics(SimConsts.TEAM_HOME))
+	var pace := SimDecision.arrival_pace(ctx, distance, SimConsts.TEAM_HOME)
 	var falling := false
 	var t := 0.0
 	while t < 8.0:

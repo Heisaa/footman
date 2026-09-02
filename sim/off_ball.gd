@@ -92,6 +92,11 @@ const ASSIGN_TICKS := 12
 ##                  is more of the side available -- and because the cost of being
 ##                  wrong is a man drifting rather than a man abandoning his post.
 const QUOTA := [0, 1, 4, 2, 3, 1, 1, 2]
+## And the ration while the side is settling (`SimTempo.SETTLE`): one man in
+## behind and one in the box, where a probing or attacking side sends two and
+## three. The runs are the errand the tempo names, and a side keeping the ball
+## at the back is not throwing men past the last defender. First values.
+const SETTLE_QUOTA := [0, 1, 4, 1, 1, 1, 1, 2]
 
 ## Nobody further than this from the ball is offering to receive it. He is
 ## holding shape, which at that distance is the right thing to be doing.
@@ -771,9 +776,10 @@ static func _assign(ctx: SimContext, team: int, carrier: int) -> void:
 
 	# The quota goes to whoever gains most by running, not to whoever the loop
 	# reached first.
+	var quota: Array = SETTLE_QUOTA if SimTempo.phase_of(ctx, team) == SimTempo.SETTLE else QUOTA
 	for i in _pick_ids.size():
 		var kind: int = _pick_kinds[i]
-		if used[kind] >= int(QUOTA[kind]):
+		if used[kind] >= int(quota[kind]):
 			chose_blocked[kind] += 1
 			continue
 		var pid: int = _pick_ids[i]
@@ -1894,11 +1900,11 @@ static func _anyone_between_the_lines(ctx: SimContext, team: int, exclude: int, 
 	return false
 
 
-static func _pocket_point(ctx: SimContext, p: SimPlayer, team: int, base: Vector3) -> Vector3:
-	if not SimRole.is_attacking(p.role) and p.role != SimRole.CM:
-		return Vector3.INF
+## The opponents' midfield line: the mean of their central midfielders, in
+## metres up the pitch the way `team` attacks. INF with none on the pitch.
+## Read by the pocket below and by `SimTempo.between_the_lines`.
+static func opponents_midfield_line(ctx: SimContext, team: int) -> float:
 	var dir := ctx.pitch.attack_dir(team)
-	var line: float = SimReferee.believed_offside_line(ctx, p) * dir
 	var mid_sum := 0.0
 	var n := 0
 	for oid in ctx.opponent_ids(team):
@@ -1909,8 +1915,18 @@ static func _pocket_point(ctx: SimContext, p: SimPlayer, team: int, base: Vector
 			mid_sum += o.pos.x * dir
 			n += 1
 	if n == 0:
+		return INF
+	return mid_sum / float(n)
+
+
+static func _pocket_point(ctx: SimContext, p: SimPlayer, team: int, base: Vector3) -> Vector3:
+	if not SimRole.is_attacking(p.role) and p.role != SimRole.CM:
 		return Vector3.INF
-	var mid_line := mid_sum / float(n)
+	var dir := ctx.pitch.attack_dir(team)
+	var line: float = SimReferee.believed_offside_line(ctx, p) * dir
+	var mid_line := opponents_midfield_line(ctx, team)
+	if is_inf(mid_line):
+		return Vector3.INF
 	if line - mid_line < POCKET_GAP:
 		return Vector3.INF
 	var pt := Vector3((line + mid_line) * 0.5 * dir, 0.0, base.z)

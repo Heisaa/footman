@@ -50,7 +50,7 @@ static func update(ctx: SimContext) -> void:
 			continue
 		var facing := observer.heading_dir()
 		# The plan's half of how much he is looking, read once for the whole scan.
-		var scan := 1.0 - ctx.tactics(observer.team).tempo
+		var scan := 1.0 - SimTempo.tempo_of(ctx, observer.team)
 		var cos_half := cos(view_half(observer, scan))
 		# Half the field of view per scan, alternating. Beliefs are noisy and
 		# stale by design, so spreading the refresh over two passes costs

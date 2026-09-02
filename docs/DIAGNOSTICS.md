@@ -44,6 +44,7 @@ Every one exists because a count in the event log cannot answer its question.
 | `Taking it down` | what a first touch did, bucketed by where the ball ended up relative to *where the man wanted to go* |
 | `Under challenge`, `touch` column | how big the carry touch was, by how hard he was being closed down. A row that does not shorten as pressure rises is a carrier who has not noticed the man on him |
 | `Where the carry went` | the touch judged by what was in front of it — a touch into empty grass and one into a defender six metres up the lane are the same kind, same size, same player |
+| `The tempo` | the possession's phase (`SimTempo`): the share of the ball in a settle, a probe and an attack, a man's hold and the seconds a pass in each, and what caused every change. The rows are the contrast 37 is for; the match line is the mean the phases leave alone |
 | `The small acts` | the mechanics that leave no event of their own: first-time balls, layoffs, setting touches, dummies, shielded holds, cuts, chips — and the two ways a teammate never reaches the passer's list at all: he could not see him, or the cap cut him |
 | `Did he have a safe pass?` | whether a body near the ball was an *option*; a man with a defender in the lane is a pass that gets cut out |
 | `How the ball changes hands` | which touch put the ball out, over which line, with how much room beside him |

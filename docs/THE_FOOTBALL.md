@@ -49,6 +49,7 @@ re-watch of the attack (the order, below), expecting rework.
 | Beating a man | built — the knock, the cut, and the feint from a standstill: a body sold at the man without the ball, priced as a lottery in front of the knock across him. On the list in 7 of 100 scenario trials and chosen in none, honestly | `_try_beat`, `_add_feint`, `tools/_feint_probe.gd` |
 | Drawing a foul | built — the duel fouls the skilful or shielding carrier more, and a composed one invites the contact inside shooting range | `SimDuel.INVITE_CONTACT` |
 | Time on the ball — two to three seconds before it is played | partial — about one, and four times football's touch rate with it (**28**). The carry is priced honestly since 2026-09-02 and a free man with grass ahead carries 35% of the time against 12%, so more of that second is spent going forward; what is left is the release rate itself | `SimDecision`, `SimTouch` |
+| Two tempos — the ball going sideways at the back, then three passes in two seconds | built 2026-09-02 — the possession has a phase, settle, probe or attack, caused by where the ball is and who is free, and the phase moves the discount, the dwell, the pass pace, the passer's look, the long ball and the runs together. The settle reads as one; the attack is carries, not yet quick passes | `SimTempo`, `diagnose`'s `The tempo` |
 
 ## Without it, attacking
 
@@ -176,7 +177,6 @@ When one is built its row above changes and its entry here goes.
 | **30** | Positional play in midfield, and the offside count that comes with it | `SimMovement.shape_position`, `SimOffBall` |
 | **33** | The runner ahead of the ball is never generated as an option | `SimOffBall`, `SimDecision._add_passes` |
 | **34** | Nothing in the sim reads the score or the clock | `SimTactics`, `SimContext` |
-| **37** | The match has one tempo and football has two | `SimDecision.scan_gain`, `SimTactics` |
 | **38** | Attributes make a player better, never different | `SimDecision`, `SimAttributes` |
 | **51** | Nothing takes the ball to the byline: the winger's carry past the full-back, the ball down the line | `SimDecision._add_dribbles`, `SimOffBall._wide_point` |
 | **43** | A goal kick is nine passes in his own half and then a turnover | `SimSetPiece._take_goal_kick`, `SimMovement` |
@@ -957,23 +957,6 @@ match, not a scale factor on scoring** — the thing a viewer sees is more men i
 the box and a longer ball, not a better shot. And it will make the goals
 correlated within a match, which every per-match measurement here assumes away;
 `chains --against` compares across seeds and is the honest instrument.
-
-**37 is the fresh idea 28 has been waiting for, and it does not need 28's question
-answered.** The open question at the end of this order asks whether the man on the
-ball is too quick (1.1 s a touch against football's two to three) or the match too
-short to hold enough of them, and says the two pull opposite ways: slowing the
-carrier makes the pass total worse. **Contrast is the way through that costs
-nothing on the mean.** Football is not played at one tempo — it is twenty seconds
-of the ball going sideways at the back, then three passes in two seconds — and this
-engine has one rate for both. Raise the variance and leave the mean where it is:
-the same number of passes a match, and a match that has phases in it.
-
-The state is a possession's own phase — settle, probe, attack — with hysteresis
-so it does not flicker, driven by pressure on the ball and where play is rather
-than by a timer, and moving `scan_gain`, pass-length appetite and the errand
-rations together. **The thing that makes it football rather than a knob is the
-acceleration being caused**: the phase turns over when a man is free between the
-lines, which is the moment 30 built the link players for.
 
 **38 is that the engine has a quality axis and no style axis.** The softmax
 temperature reads `decisions`, so a better player plays closer to the best option
@@ -2104,6 +2087,45 @@ so under its own name in `Holding the shape` (target 4.4 m/s on the seed that
 had one, 0% of samples: it is rare and brief, as it should be). Twenty
 fragments: **28 covers taken**, about a dozen a match. `take-on` 72% lost
 before and after; `race` and `1v1-clear` inside the error.
+
+**Built 2026-09-02: the two tempos (37), at the owner's call, ahead of the
+manager's knob.** The match had one rate and football has two, and the one
+number an eye reads first -- a touch a second -- could not be slowed without
+the pass total falling with it (28). Now the possession has a phase:
+`SimTempo`, settle, probe or attack, one state per side and only the side with
+the ball in one. It is caused, never timed. A spell won deep settles; worked
+out of the third it probes; a man free between their midfield and their back
+line (`between_the_lines`, the pocket 30 built the link station for), the ball
+in the final third, or a regain with the break on is the attack; played back
+behind their midfield with six metres to spare it probes again, and back to
+the keeper it settles. Six-metre margins either side of every line and a
+different exit than entry are the hysteresis. The phase reads out as one
+number, `tempo_of` -- the plan's `tempo` down 0.35 settling and up 0.30
+attacking, clamped -- and everything on the ball that read the plan's tempo
+reads it: the discount on later value (`SimTactics.discount_at`), the pass's
+`arrival_pace`, the passer's look (`can_see`, `SimPerception`). Two readers
+are explicit: the dwell is worth 1.5 times in a settle and a quarter in an
+attack (`scan_scale`), and a settling side taxes the ball over twenty metres
+(`length_scale`) and rations its runs to one in behind and one in the box
+(`SimOffBall.SETTLE_QUOTA`). No station reads it (INVARIANTS). Logged as
+`tempo` events with the cause; `The tempo` in `diagnose` reads them; ablatable
+as `tempo phase`; `test_tempo` places the ball and the lines and asks for the
+transition. **Measured, sixteen ten-minute fragments:** settle 13% of the ball,
+a hold of 0.50 s a man, 3.06 s a pass, 27% of its balls over twenty-five
+metres; probe 60%, 0.27 s, 3.00 s, 16%; attack 27%, 0.84 s, 3.34 s, 11%.
+Entered by cause: won 147, break on 62, final third 61, won deep 55, played
+back behind their midfield 54, free between the lines 33, worked out 23,
+played back deep 10, pressed 2. Ablation on seed 11: applied on 60% of
+decisions, the discount moved 0.91-1.10, and it flipped 2.0% of picks (set to
+carry) against the whole discount's 3.7%. **Read plainly:** the settle is the
+slow phase and reads as one -- a longer hold, the long ball, fewer runs; the
+attack's long holds are carries, and seconds a pass is flat across the three,
+so "three passes in two seconds" is not here yet. Two reasons, neither a
+knob: the priors are first values and small, and the attack has nobody to
+pass to quickly -- a receiving structure in the final third against a box
+that is now defended is the missing half. Not tuned (§11.1.1). The manager's
+tempo, when the manager decides it, is a bias on `SimTactics.tempo`, the
+centre the phases spread around, and nothing in `SimTempo` changes for it.
 
 **Where 5 leaves the corner count.** Still not back: 0-1 over twenty
 fragments, about 0.3 a team a match. The block gives the defence a way to put

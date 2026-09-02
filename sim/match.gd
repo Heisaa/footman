@@ -139,6 +139,7 @@ func setup(config: SimMatchConfig) -> void:
 	# their defending shape, which is what a kickoff looks like.
 	ctx.shape_ball = ctx.ball.ground_pos()
 	ctx.shape_phase = PackedFloat32Array([0.0, 0.0])
+	SimTempo.reset(ctx)
 
 
 # --- The tick loop ----------------------------------------------------------
@@ -247,9 +248,14 @@ func _refresh_shared_state() -> void:
 	# a coarse tier that stepped it four times as far would make a different
 	# shape rather than a cheaper one.
 	ctx.advance_shape(SimConsts.DT)
-	if ctx.tick_index % (SimConsts.PRESSURE_TICKS * ctx.config.decision_stride()) == 0:
+	var pressure_due := ctx.tick_index % (SimConsts.PRESSURE_TICKS * ctx.config.decision_stride()) == 0
+	if pressure_due:
 		ctx.update_pressure()
 	ctx.update_possession()
+	# The possession's phase reads pressure and possession, so it follows both
+	# at the pressure cadence.
+	if pressure_due:
+		SimTempo.advance(ctx)
 
 
 ## Soft push-apart over the capsule radius, weighted by strength: the stronger

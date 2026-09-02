@@ -38,13 +38,15 @@ enum Ev {
 	PARRY,
 	## A back line stepping up together on a trigger (`SimMovement._consider_trap`).
 	TRAP,
+	## The possession changed phase (`SimTempo`): settle, probe or attack, and why.
+	TEMPO,
 }
 
 const EV_NAMES := [
 	"kickoff", "touch", "pass_attempt", "pass_outcome", "shot", "duel", "foul",
 	"card", "recovery", "pattern", "phase_change", "goal", "offside", "set_piece",
 	"period", "substitution", "save", "out_of_play", "possession_end", "feint",
-	"block_lunge", "parry", "trap",
+	"block_lunge", "parry", "trap", "tempo",
 ]
 
 ## Touch kinds. Shared with the touch module.

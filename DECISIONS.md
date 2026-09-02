@@ -602,3 +602,16 @@ that were an inner tube, the hair that sat on the head like a hat. They are
 lessons, not law, and none of them binds a new direction. §9.7's boundary stands
 untouched: the comic register governs the writing and the feel and does not
 govern the art.
+
+### Thirteenth: the two tempos are caused, and the manager's knob comes later
+
+The owner's first thought was to build the possession's phases (`docs/THE_FOOTBALL.md`
+37) when the manager role decides tempo. Built now instead, without the knob,
+on three arguments the owner accepted: the phase is caused by the ball -- a man
+free between the lines, the final third, a break -- not chosen, so a manager
+can only bias it once it exists; a tempo slider without the mechanism is the
+dead knob 28 already measured (every prior saturated flat at ~169 passes); and
+every eye-check from here to Phase 7 would otherwise be judged against a
+one-tempo match. **What the manager gets later is a bias on `SimTactics.tempo`,
+the centre the three phases spread around.** The spread itself is not a plan's
+to set. Not tuned: the offsets and scales in `SimTempo` are first values.

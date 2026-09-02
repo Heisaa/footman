@@ -89,8 +89,16 @@ func risk_weight() -> float:
 
 ## Discount on value that only arrives later. High tempo discounts the future
 ## harder, so the ball is released sooner.
+##
+## The plan's own rate. On the ball the decision layer reads `discount_at` with
+## the possession's tempo (`SimTempo.tempo_of`), which is this `tempo` moved
+## by the phase the possession is in; the plan sets the centre.
 func future_discount() -> float:
-	return lerpf(0.95, 0.72, tempo)
+	return discount_at(tempo)
+
+
+func discount_at(at_tempo: float) -> float:
+	return lerpf(0.95, 0.72, at_tempo)
 
 
 ## Multiplier on the expected value of a lofted or direct ball.

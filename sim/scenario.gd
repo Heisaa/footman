@@ -224,6 +224,9 @@ func settle(ctx: SimContext, ball_at: Vector3, holder: SimPlayer) -> void:
 		1.0 if holder.team == SimConsts.TEAM_AWAY else 0.0,
 	])
 	ctx.update_possession()
+	# The possession's phase, set from the situation rather than inherited.
+	SimTempo.reset(ctx)
+	SimTempo.advance(ctx)
 
 	# And only now the bodies, on a shape that knows all of it.
 	for p in ctx.players:

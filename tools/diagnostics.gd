@@ -4657,6 +4657,7 @@ static func report(m: SimMatch) -> void:
 	_holding_shape(ctx)
 	_the_body(ctx)
 	_giving_up_ground(ctx)
+	_the_tempo(ctx, events)
 	_new_mechanics(events)
 
 	# --- Pass attempts by kind, with completion -----------------------------
@@ -4912,6 +4913,125 @@ static func report(m: SimMatch) -> void:
 ## played. Each is a mechanic from the owner's watching list; a row at zero for
 ## a whole match is the mechanic not firing, which is the first thing to know
 ## about it.
+## The possession's phase (`SimTempo`): how much of the ball is played in each
+## and how quickly it is moved on. What 37 is for is the contrast between the
+## rows, with the match line as the mean the phases are meant to leave where it
+## was. `hold` is a man's time on the ball, his first touch to the touch that
+## sends it away -- the figure 28 quotes against football's two to three
+## seconds -- and `s/pass` is the phase's possession time per pass played.
+## `entered` counts changes into the phase by the cause that made them; a side
+## losing the ball is not one.
+static func _the_tempo(ctx: SimContext, events: Array) -> void:
+	var n := SimTempo.NAMES.size()
+	var phase := PackedInt32Array([SimTempo.PROBE, SimTempo.PROBE])
+	var since := PackedInt32Array([0, 0])
+	var held := PackedInt32Array([1, 1])
+	var ticks := PackedInt32Array()
+	var touches := PackedInt32Array()
+	var passes := PackedInt32Array()
+	var forward := PackedInt32Array()
+	var long_balls := PackedInt32Array()
+	var holds := PackedInt32Array()
+	var hold_ticks := PackedInt32Array()
+	for arr in [ticks, touches, passes, forward, long_balls, holds, hold_ticks]:
+		arr.resize(n)
+	var causes := []
+	for i in n:
+		causes.append({})
+	var hold_player := -1
+	var hold_start := 0
+	var hold_last := 0
+	var hold_phase := SimTempo.PROBE
+	var last_tick := 0
+	for e in events:
+		var ev: int = e["ev"]
+		var t: int = int(e.get("t", 0))
+		last_tick = t
+		if ev == SimTelemetry.Ev.TEMPO:
+			var team: int = e["team"]
+			if held[team] == 1:
+				ticks[phase[team]] += t - since[team]
+			var cause: int = e["cause"]
+			phase[team] = int(e["phase"])
+			since[team] = t
+			held[team] = 0 if cause == SimTempo.Cause.LOST else 1
+			if held[team] == 1:
+				var by: Dictionary = causes[phase[team]]
+				by[cause] = int(by.get(cause, 0)) + 1
+			continue
+		if ev == SimTelemetry.Ev.PASS_ATTEMPT:
+			var team: int = e["team"]
+			var ph: int = phase[team]
+			passes[ph] += 1
+			var from: Vector3 = e.get("from", Vector3.ZERO)
+			var to: Vector3 = e.get("to", from)
+			if (to.x - from.x) * ctx.pitch.attack_dir(team) > 3.0:
+				forward[ph] += 1
+			if SimConsts.horizontal_length(to - from) > 25.0:
+				long_balls[ph] += 1
+			continue
+		if ev != SimTelemetry.Ev.TOUCH:
+			continue
+		var team: int = e["team"]
+		var ph: int = phase[team]
+		touches[ph] += 1
+		var pid: int = int(e.get("p", -1))
+		if pid != hold_player:
+			# The last man's hold is closed at his last touch, in the phase he
+			# released it in.
+			if hold_player >= 0:
+				holds[hold_phase] += 1
+				hold_ticks[hold_phase] += hold_last - hold_start
+			hold_player = pid
+			hold_start = t
+		hold_last = t
+		hold_phase = ph
+	if hold_player >= 0:
+		holds[hold_phase] += 1
+		hold_ticks[hold_phase] += hold_last - hold_start
+	for team in 2:
+		if held[team] == 1:
+			ticks[phase[team]] += last_tick - since[team]
+	var total_ticks := 0
+	var total_passes := 0
+	var total_holds := 0
+	var total_hold_ticks := 0
+	var total_touches := 0
+	for i in n:
+		total_ticks += ticks[i]
+		total_passes += passes[i]
+		total_holds += holds[i]
+		total_hold_ticks += hold_ticks[i]
+		total_touches += touches[i]
+	if total_ticks == 0:
+		return
+	var hz := float(SimConsts.TICK_HZ)
+	print("\nThe tempo  (the possession's phase, `SimTempo`; hold is a man's first touch to his release)")
+	print("  %-8s %7s %8s %7s %7s %7s %5s %6s %8s   entered by" % [
+		"phase", "of ball", "touches", "passes", "hold s", "s/pass", "fwd", "long", "entered"])
+	for i in n:
+		var by: Dictionary = causes[i]
+		var keys := by.keys()
+		keys.sort_custom(func(a, b): return int(by[a]) > int(by[b]))
+		var parts := PackedStringArray()
+		var entered := 0
+		for k in keys:
+			entered += int(by[k])
+			parts.append("%s %d" % [SimTempo.CAUSE_NAMES[int(k)], by[k]])
+		print("  %-8s %6.0f%% %8d %7d %7s %7s %4.0f%% %5.0f%% %8d   %s" % [
+			SimTempo.NAMES[i], 100.0 * float(ticks[i]) / float(total_ticks),
+			touches[i], passes[i],
+			("%.2f" % (float(hold_ticks[i]) / float(holds[i]) / hz)) if holds[i] > 0 else "-",
+			("%.2f" % (float(ticks[i]) / float(passes[i]) / hz)) if passes[i] > 0 else "-",
+			100.0 * float(forward[i]) / maxf(float(passes[i]), 1.0),
+			100.0 * float(long_balls[i]) / maxf(float(passes[i]), 1.0),
+			entered, ", ".join(parts)])
+	print("  %-8s %7s %8d %7d %7s %7s" % [
+		"match", "", total_touches, total_passes,
+		("%.2f" % (float(total_hold_ticks) / float(total_holds) / hz)) if total_holds > 0 else "-",
+		("%.2f" % (float(total_ticks) / float(total_passes) / hz)) if total_passes > 0 else "-"])
+
+
 static func _new_mechanics(events: Array) -> void:
 	print("\nThe small acts  (tallies, whole match)")
 	print("  first-time balls struck %4d   of them layoffs %4d" % [

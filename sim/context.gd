@@ -245,6 +245,12 @@ var possession_last_pos := Vector3.ZERO
 var possession_attack_dir := 1.0
 ## Ticks the current possession has lasted, used for phase-of-play transitions.
 var possession_ticks := 0
+## The possession's phase per side -- settle, probe, attack -- the tick it was
+## entered and the spell it was set for. `SimTempo` owns all three; nothing
+## else writes them, and no station reads them.
+var tempo_phase := PackedInt32Array([1, 1])
+var tempo_since := PackedInt32Array([0, 0])
+var tempo_spell := PackedInt32Array([-1, -1])
 ## Per-team tick counts, for the possession statistic.
 var possession_count := [0, 0]
 

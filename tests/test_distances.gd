@@ -100,7 +100,7 @@ func _ground_passes(ctx: SimContext, moving: bool) -> void:
 		var mean := 0.0
 		for i in REPS:
 			_place(ctx, p, moving)
-			var pace := SimDecision.arrival_pace(distance, ctx.tactics(p.team))
+			var pace := SimDecision.arrival_pace(ctx, distance, p.team)
 			SimTouch.ground_pass(ctx, p, aim, pace, -1)
 			# A ground ball is met at the pace it was asked to arrive at, so its
 			# finishing point for a receiver is where it decays to that pace.

@@ -1274,7 +1274,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 
 		# --- Ground pass to feet -------------------------------------------
 		if raw_distance <= ground_reach:
-			var pace := arrival_pace(raw_distance, tactics)
+			var pace := arrival_pace(ctx, raw_distance, player.team)
 			var travel := ctx.ballistics.ground_travel_time(
 				raw_distance, ctx.ballistics.ground_pass_speed(raw_distance, pace, ctx.env), ctx.env)
 			var lead := _keep_in_play(ctx, _lead_point(ctx, mate, believed, travel))
@@ -1370,7 +1370,8 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				var square: float = square_xg * SQUARE_CONVERT \
 					* ctx.config.shot_appetite_at(square_xg)
 				gain = maxf(gain, square)
-			var length_bias := 1.0 / (1.0 + raw_distance * 0.21)
+			var length_bias := 1.0 / (1.0 + raw_distance * 0.21) \
+				* SimTempo.length_scale(ctx, player.team, raw_distance)
 			var call := _call_bias(ctx, mate)
 			var give_go := _give_and_go_bias(ctx, player, mate_id)
 			var touch := receiver_touch(mate)
@@ -1603,7 +1604,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				behind_reach_n += 1
 			else:
 				_note_behind_gate(mate_id, BEHIND_OFFERED)
-				var t_pace := behind_pace(t_distance, tactics, mate)
+				var t_pace := behind_pace(ctx, t_distance, mate)
 				var t_speed := ctx.ballistics.ground_pass_speed(t_distance, t_pace, ctx.env)
 				var t_travel := ctx.ballistics.ground_travel_time(t_distance, t_speed, ctx.env)
 				# A ball the runner beats to the spot is not a ball he chases.
@@ -1617,7 +1618,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 					# Firm, not fired: capped at the runner's own top speed. The
 					# uncapped arrival read 11-12 m/s and the owner called it
 					# way too hard in the same breath as the slow ones.
-					t_pace = minf(arrival_pace(t_distance, tactics), mate.max_speed())
+					t_pace = minf(arrival_pace(ctx, t_distance, player.team), mate.max_speed())
 					t_speed = ctx.ballistics.ground_pass_speed(t_distance, t_pace, ctx.env)
 					t_travel = ctx.ballistics.ground_travel_time(t_distance, t_speed, ctx.env)
 				# The runner beating everyone there is the whole question, and it
@@ -1642,7 +1643,8 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				var t_focus := tactics.focus_at(target.z, ctx.pitch)
 				var t_arrival := _arrival_gain(ctx, player.team, target, believed, mate, t_travel)
 				var t_call := _call_bias(ctx, mate)
-				var t_length := behind_length_bias(t_distance)
+				var t_length := behind_length_bias(t_distance) \
+					* SimTempo.length_scale(ctx, player.team, t_distance)
 				var t_touch := receiver_touch(mate)
 				_note_factor(SimAblation.F_FOCUS, t_xt * t_focus - t_xt)
 				_note_factor(SimAblation.F_ARRIVAL, t_arrival)
@@ -1709,7 +1711,8 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 			# `docs/THE_FOOTBALL.md` 8b.
 			var l_xt := ctx.value.xt_at(player.team, lofted_target, ctx.pitch)
 			var l_focus := tactics.focus_at(lofted_target.z, ctx.pitch)
-			var l_length := 1.0 / (1.0 + raw_distance * 0.055)
+			var l_length := 1.0 / (1.0 + raw_distance * 0.055) \
+				* SimTempo.length_scale(ctx, player.team, raw_distance)
 			var l_pattern := SimPatterns.pass_bias(ctx, player, mate_id, lofted_target)
 			var l_call := _call_bias(ctx, mate)
 			var l_break: float = brk if (lofted_target - from).x * attack_dir > 4.0 else 1.0
@@ -1880,7 +1883,7 @@ static func _add_pullback(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 		var distance := SimConsts.horizontal_length(point - from)
 		if distance < 6.0 or distance > SimTouch.strike_range(player, point - from, MAX_GROUND_PASS):
 			continue
-		var pace := arrival_pace(distance, tactics)
+		var pace := arrival_pace(ctx, distance, player.team)
 		var travel := ctx.ballistics.ground_travel_time(
 			distance, ctx.ballistics.ground_pass_speed(distance, pace, ctx.env), ctx.env)
 		# Who is arriving, not who is standing there — the same question the cross
@@ -2177,7 +2180,7 @@ static func _shortlist(ctx: SimContext, player: SimPlayer, from: Vector3) -> Pac
 		# gate is here rather than on the candidate because an option outside
 		# perception should never be generated at all -- scoring it and then
 		# discarding it would leave it in every tally as a ball he turned down.
-		if not SimPerception.can_see(ctx, player, mate, 1.0 - ctx.tactics(player.team).tempo):
+		if not SimPerception.can_see(ctx, player, mate, 1.0 - SimTempo.tempo_of(ctx, player.team)):
 			_note_shortlist_unseen()
 			continue
 		var dx := mate.pos.x - from.x
@@ -2289,7 +2292,7 @@ static func _shortlist(ctx: SimContext, player: SimPlayer, from: Vector3) -> Pac
 ## flight, `_pass_success` prices interception off exactly that, and the softmax
 ## will stop choosing the long ground passes that can now be cut out. A slow pass
 ## being easier both to control and to intercept is the trade football makes.
-static func arrival_pace(distance: float, tactics: SimTactics) -> float:
+static func arrival_pace(ctx: SimContext, distance: float, team: int) -> float:
 	# The curve came down a tenth (2.2 + d*0.21 capped at 12) with the player
 	# speeds going up, one feel change in two halves: the owner watched the
 	# ball outrunning the men. The interception trade is priced as the comment
@@ -2304,7 +2307,7 @@ static func arrival_pace(distance: float, tactics: SimTactics) -> float:
 	# slope is what the earlier change was about -- a long ball outrunning the men
 	# -- so the slope stays where it was put and the floor under it moves:
 	# 4.2 + 0.19 d puts ten metres at 6.1 m/s and about a second, twenty at 8.0.
-	return clampf(4.2 + distance * 0.19, 4.2, 12.0) * lerpf(0.9, 1.2, tactics.tempo)
+	return clampf(4.2 + distance * 0.19, 4.2, 12.0) * lerpf(0.9, 1.2, SimTempo.tempo_of(ctx, team))
 
 
 ## What share of the receiver's top speed a ball in behind should still be doing
@@ -2407,8 +2410,8 @@ static func behind_length_bias(distance: float) -> float:
 ## `arrival_pace` names: a slower ball is longer on the grass, `_pass_success`
 ## prices interception off exactly that, and the softmax will stop choosing the
 ## ones a covering defender can now get across to.
-static func behind_pace(distance: float, tactics: SimTactics, mate: SimPlayer) -> float:
-	return minf(arrival_pace(distance, tactics), mate.max_speed() * BEHIND_ARRIVE)
+static func behind_pace(ctx: SimContext, distance: float, mate: SimPlayer) -> float:
+	return minf(arrival_pace(ctx, distance, mate.team), mate.max_speed() * BEHIND_ARRIVE)
 
 
 ## Where to aim a ball in behind: as far along the line he is going as he can get
@@ -2447,7 +2450,7 @@ static func _behind_aim(ctx: SimContext, player: SimPlayer, mate: SimPlayer, fro
 	for _i in 2:
 		var d := SimConsts.horizontal_length(aim - from)
 		var travel := ctx.ballistics.ground_travel_time(d,
-			ctx.ballistics.ground_pass_speed(d, behind_pace(d, tactics, mate), ctx.env), ctx.env)
+			ctx.ballistics.ground_pass_speed(d, behind_pace(ctx, d, mate), ctx.env), ctx.env)
 		aim = believed + dir * SimValueField.reach_in(mate, to_run, travel)
 	# And short of the goalkeeper's collect. The meeting point of a deep run
 	# lands happily where the keeper arrives first -- probed, the aim sat
@@ -2461,7 +2464,7 @@ static func _behind_aim(ctx: SimContext, player: SimPlayer, mate: SimPlayer, fro
 		for _k in 4:
 			var kd := SimConsts.horizontal_length(aim - from)
 			var kt := ctx.ballistics.ground_travel_time(kd,
-				ctx.ballistics.ground_pass_speed(kd, behind_pace(kd, tactics, mate), ctx.env), ctx.env)
+				ctx.ballistics.ground_pass_speed(kd, behind_pace(ctx, kd, mate), ctx.env), ctx.env)
 			if SimValueField.time_to_arrive(keeper, aim, SimValueField.reaction_of(keeper)) \
 					> kt + KEEPER_BEAT:
 				break
@@ -5497,7 +5500,7 @@ static func score_of(ctx: SimContext, player: SimPlayer, c: Dictionary, delay: f
 		# as it priced a five-metre pass. A candidate that knows its own duration
 		# says so; everything else is a second, which is what the flat version
 		# assumed for all of them.
-		gain *= pow(_discount(tactics, ablate),
+		gain *= pow(_discount(ctx, player.team, ablate),
 			float(c.get("seconds", DISCOUNT_SECONDS)) / DISCOUNT_SECONDS)
 		# The bias scales the positional value of the option, never the whole
 		# expression: a penalty applied to a negative score would make a bad
@@ -5514,9 +5517,15 @@ static func score_of(ctx: SimContext, player: SimPlayer, c: Dictionary, delay: f
 	return success * gain - (1.0 - success) * risk * loss
 
 
-## `future_discount`, with the instrument able to turn it off.
-static func _discount(tactics: SimTactics, ablate: int) -> float:
-	return 1.0 if ablate == SimAblation.T_DISCOUNT else tactics.future_discount()
+## `future_discount` at the possession's tempo (`SimTempo`), with the instrument
+## able to turn either off: the whole discount, or only the phase's move on it.
+static func _discount(ctx: SimContext, team: int, ablate: int) -> float:
+	if ablate == SimAblation.T_DISCOUNT:
+		return 1.0
+	var tactics := ctx.tactics(team)
+	if ablate == SimAblation.T_TEMPO:
+		return tactics.future_discount()
+	return tactics.discount_at(SimTempo.tempo_of(ctx, team))
 
 
 ## The delay one application of `tactics.future_discount()` stands for, in
@@ -5557,7 +5566,7 @@ static func _wait_discount(ctx: SimContext, player: SimPlayer, ablate: int = -1)
 	var pressed := clampf(ctx.pressure_on(player) + ctx.challenge_on(player), 0.0, 1.0)
 	var steps: float = player.touch_cooldown_length() / DISCOUNT_SECONDS \
 		* lerpf(FREE_WAIT_COST, 1.0, pressed)
-	return pow(_discount(ctx.tactics(player.team), ablate), steps)
+	return pow(_discount(ctx, player.team, ablate), steps)
 
 
 ## The beat: orient, decide, then act. A footballer who has just come by the
@@ -5714,7 +5723,6 @@ static func _file_develop(ctx: SimContext, player: SimPlayer) -> void:
 	var freedom := 1.0 - clampf(ctx.pressure_on(player) + ctx.challenge_on(player), 0.0, 1.0)
 	if freedom <= 0.0:
 		return
-	var tactics := ctx.tactics(player.team)
 	var from := ctx.ball.pos
 	for i in _candidates.size():
 		var c: Dictionary = _candidates[i]
@@ -5750,10 +5758,10 @@ static func _file_develop(ctx: SimContext, player: SimPlayer) -> void:
 		var into_space := action == Action.THROUGH_BALL \
 			or SimConsts.horizontal_length(aim - mate.pos) > 2.0
 		var succ_now: float = maxf(_pass_success(ctx, player, from, aim,
-			_pass_travel(ctx, SimConsts.horizontal_length(aim - from), tactics),
+			_pass_travel(ctx, SimConsts.horizontal_length(aim - from), player.team),
 			mate, into_space), 0.01)
 		var succ_fut := _pass_success(ctx, player, from, to,
-			_pass_travel(ctx, SimConsts.horizontal_length(to - from), tactics),
+			_pass_travel(ctx, SimConsts.horizontal_length(to - from), player.team),
 			mate, into_space)
 		var patched := c.duplicate()
 		patched["success"] = clampf(float(c["success"]) * succ_fut / succ_now, 0.01, 0.98)
@@ -5762,14 +5770,14 @@ static func _file_develop(ctx: SimContext, player: SimPlayer) -> void:
 			- ctx.value.xt_at(player.team, aim, ctx.pitch)
 		patched["end"] = to
 		var worth := score_of(ctx, player, patched,
-			pow(tactics.future_discount(), dt / DISCOUNT_SECONDS))
+			pow(_discount(ctx, player.team, -1), dt / DISCOUNT_SECONDS))
 		if worth > _develop_value:
 			_develop_value = worth
 
 
 ## The floor ball's flight, the way `_add_passes` computes it.
-static func _pass_travel(ctx: SimContext, distance: float, tactics: SimTactics) -> float:
-	var pace := arrival_pace(distance, tactics)
+static func _pass_travel(ctx: SimContext, distance: float, team: int) -> float:
+	var pace := arrival_pace(ctx, distance, team)
 	return ctx.ballistics.ground_travel_time(
 		distance, ctx.ballistics.ground_pass_speed(distance, pace, ctx.env), ctx.env)
 
@@ -5788,7 +5796,8 @@ static func scan_gain(ctx: SimContext, player: SimPlayer) -> float:
 		n += 1
 	if n == 0:
 		return 0.0
-	return SCAN_GAIN * clampf(stale / float(n) / SCAN_STALE_SECONDS, 0.0, 1.0) * freedom
+	return SCAN_GAIN * clampf(stale / float(n) / SCAN_STALE_SECONDS, 0.0, 1.0) * freedom \
+		* SimTempo.scan_scale(ctx, player.team)
 
 
 ## Whether an option's value depends on where this player's teammates are, which
@@ -6222,7 +6231,13 @@ static func _note_term_values(ctx: SimContext, player: SimPlayer, term: int) -> 
 			SimAblation.note_value(term, tactics.risk_weight())
 			return
 		SimAblation.T_DISCOUNT:
-			SimAblation.note_value(term, tactics.future_discount())
+			SimAblation.note_value(term, _discount(ctx, player.team, -1))
+			return
+		SimAblation.T_TEMPO:
+			# The phase's move on the discount, noted only where there is one:
+			# a probe is the plan's own tempo and would flatten the swing.
+			if SimTempo.phase_of(ctx, player.team) != SimTempo.PROBE:
+				SimAblation.note_value(term, _discount(ctx, player.team, -1) / tactics.future_discount())
 			return
 		SimAblation.T_SCAN:
 			# A property of the situation, noted where it applies: zero is the

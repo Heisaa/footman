@@ -85,7 +85,8 @@ const T_SCAN := 21
 const T_SET := 22
 const T_DEVELOP := 23
 const T_CURL := 24
-const TERMS := 25
+const T_TEMPO := 25
+const TERMS := 26
 
 const TERM_NAMES := [
 	"bias (every prior)", "possession_value", "territory", "turnover_exposure",
@@ -95,6 +96,7 @@ const TERM_NAMES := [
 	"give_and_go", "pattern bias", "LOFTED_BIAS", "receiver_touch",
 	"turnover_stretch", "scan_gain (the dwell)", "set_damp (the beat)",
 	"develop (the run worth waiting for)", "curl (the bent lane)",
+	"tempo phase (settle, probe, attack)",
 ]
 
 const TERM_COMPONENT := [
@@ -104,6 +106,7 @@ const TERM_COMPONENT := [
 	C_BIAS,
 	C_SELF, C_SELF, C_SUCCESS,
 	C_SELF, C_SUCCESS,
+	C_SELF,
 ]
 
 ## The slot each recorded factor is filed in, named for the call sites in
@@ -133,6 +136,7 @@ const TERM_SLOT := [
 	F_PATTERN, F_LOFTED, F_TOUCH,
 	-1, -1, F_SET,
 	-1, F_CURL,
+	-1,
 ]
 
 ## Mirrors `SimDecision.Action`, deliberately rather than importing it: this file

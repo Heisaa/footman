@@ -63,6 +63,11 @@ the phase shift — worth about fifteen metres of station between them. Switched
 hands. **A boolean in a positioning rule is a station that teleports**, and the
 answer is to compute both forms and lerp, never to branch.
 
+**The possession's phase (`SimTempo`) is a decision prior and nothing else.** It
+moves the discount, the dwell, the pass pace, the look, the long ball and the
+runs; no station reads it. A phase in a positioning rule is the boolean above,
+and it changes in one refresh.
+
 **Any positioning rule is answerable for how fast the point it names moves.**
 The general form, and the one that keeps being missed: a target that moves at
 7 m/s has no occupant at any pace, so the gap to it measures the target and not
