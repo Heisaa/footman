@@ -70,7 +70,7 @@ re-watch of the attack (the order, below), expecting rework.
 | Attack a cross — near post, far post, the pull-back | built — the three posts are authored in `_box_point` and `_add_crosses`, and the pull-back is its own act along the floor. It fires in `cross-pullback` and **never in a match**: 0 offered over five seeds of ten minutes (2026-08-25), because nothing takes the ball to the byline — 0% of passes and 4% of touches start in the final sixth. The act is built; the approach is **51** | `SimDecision._add_pullback` |
 | Arrive as the ball does, easing the last metres | built — box runners and runs in behind did; the show and the drift now hold the last stride until the ball is struck to them | `SimOffBall.MEET_EASE` |
 | Link the defence to the strikers, holding height and width | partial — shape slides with play; there are no authored link players, and the middle third holds 78% of touches (**30**) | `SimMovement.shape_position` |
-| Be served when the run is made | partial — a `box` run is made 26 times a match and receives the ball 0% of the time (**33**) | `SimOffBall`, `SimDecision._add_passes` |
+| Be served when the run is made | partial — the run in behind is served now (2026-09-02, twenty fragments: offered 63%, received 13%, 72 through balls played, 58% reaching the man); the `box` run is made about fifty times a match and received 5%, bounded by `space` at arrival in a box that is now defended, and an early cross to it doubled the crosses without serving him (**33**) | `SimOffBall`, `SimDecision._add_passes` |
 
 ## Defending
 
@@ -1900,6 +1900,27 @@ side of it from whoever wants it, holds his look on the ball, and
 instead of being hooked clear from the byline. Twenty fragments: 39 cadences
 of it, about four seconds of escorting; the ball went out of play 44 times
 before and 49 after on the same seeds. Rare and cheap, as its row said.
+
+**Item 6 of the pass, 2026-09-02: the runner served, re-measured against the
+defence.** The brief's figure -- offered to 27-29% of committed runners,
+scores best 0% -- was the morning of 2026-09-01; stage three closed it that
+day. With the defence in, twenty fragments: the run in behind is made 87
+times, offered 63%, received **13%**, 72 through balls played and 58% of them
+reaching the man he was for; when it loses it loses on `success` (0.15
+against 0.73), which is the lane and the space it is played into, honestly.
+Taking it in stride is `RUN_ON_THROUGH` (2026-09-01) and the through-ball
+row's eye is still the check on it. **The box run** is made 118 times,
+offered 49-53%, received **5%**; the ball to him is priced at `succ` 0.18
+(`space` 0.51, `lane` 0.64, `struck` 0.75) and loses by 0.06 to the safe
+ball. One thing was tried and reverted: the early cross to a committed run
+(the cross gated to a fifth of their half instead of a third when a box
+point is claimed). It doubled the crosses -- offered 45 to 86, played 9 to
+18 -- served the runner no more (5% to 4%) and cost shots 22 to 9 on the same
+fragments: a hopeful ball into a box that is now defended. The serve is
+bounded by the space at arrival, which is the defence doing its job; football
+serves a box run about one cross in four and the engine's price is near that.
+What is left is the *rate* the run is made at, about fifty a match, which is
+`QUOTA` and the owner's eye (§11.1.1), not a mechanic.
 
 **The re-watch of the attack, 2026-09-02 (item 5 of the pass).** Every row at
 n=160 against the same rows at the last pre-pass commit; the table and the
