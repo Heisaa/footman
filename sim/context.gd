@@ -310,6 +310,10 @@ func tactics(team: int) -> SimTactics:
 ## 5.5 m and a closing speed of 4 m/s he has most of a second: enough for one
 ## more touch, taken somewhere else.
 const CHALLENGE_SIGHT := 5.5
+## The share of his pressure an opponent exerts by standing near, and the
+## closing speed at which he exerts all of it. Read by `update_pressure`.
+const PRESS_STANDING := 0.4
+const PRESS_CLOSING := 5.0
 
 
 ## Recomputes the per-player pressure and challenge fields. Pressure is what
@@ -345,9 +349,22 @@ func update_pressure() -> void:
 			# the marker at his back lower than he did square to the ball.
 			var to_opp := (o.pos - p.pos)
 			var facing_factor := 1.0
+			var approach := 1.0
 			if d > 0.1:
-				facing_factor = 0.65 + 0.35 * (to_opp / d).dot(p.heading_dir())
-			total += facing_factor * (1.0 - d / 6.0) * (1.0 - d / 6.0)
+				var toward := to_opp / d
+				facing_factor = 0.65 + 0.35 * toward.dot(p.heading_dir())
+				# And whether he is coming. A man standing off at a jockey and a
+				# man charging in read the same at the same distance, so a
+				# carrier who had been shown wide was priced as a carrier being
+				# tackled: the dwell, the take-down and the free wait all read
+				# `pressure + challenge`, and a lone man standing off at two
+				# metres summed to 0.8 of the 1.0 that means "no time at all".
+				# The same shape as `_challenge_from`'s urgency, with the floor
+				# kept because a body inside reach can still lunge, and a man
+				# backing away is worth less than that.
+				var closing: float = (o.vel - p.vel).dot(-toward)
+				approach = PRESS_STANDING + (1.0 - PRESS_STANDING) * clampf(closing / PRESS_CLOSING, -0.5, 1.0)
+			total += facing_factor * approach * (1.0 - d / 6.0) * (1.0 - d / 6.0)
 			if d < CHALLENGE_SIGHT and d > 0.1:
 				closing_in += _challenge_from(p, o, to_opp / d, d)
 		pressure[i] = clampf(total, 0.0, 2.5)
