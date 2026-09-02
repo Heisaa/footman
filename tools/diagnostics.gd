@@ -4925,6 +4925,10 @@ static func _new_mechanics(events: Array) -> void:
 	print("  covers for a beaten man %4d" % SimMovement.covers_taken)
 	print("  escorts of a dying ball %4d  (cadences)" % SimMovement.escorts)
 	_traps(events)
+	print("  the link station: asked %d, no gap between their lines %d, pocket not ahead %d, applied %d moving the station %.1f m; the man stood %.1f m ahead of the shape's ball" % [
+		SimMovement.link_asked, SimMovement.link_no_gap, SimMovement.link_no_ahead, SimMovement.link_applied,
+		SimMovement.link_moved / maxf(float(SimMovement.link_applied), 1.0),
+		SimMovement.link_stood / maxf(float(SimMovement.link_applied), 1.0)])
 	var fouls := 0
 	for e in events:
 		if e["ev"] == SimTelemetry.Ev.FOUL:

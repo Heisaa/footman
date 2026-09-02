@@ -69,7 +69,7 @@ re-watch of the attack (the order, below), expecting rework.
 | Break on the counter | built | `SimDecision.break_on` prices the ball, `SimOffBall` sends the runners |
 | Attack a cross — near post, far post, the pull-back | built — the three posts are authored in `_box_point` and `_add_crosses`, and the pull-back is its own act along the floor. It fires in `cross-pullback` and **never in a match**: 0 offered over five seeds of ten minutes (2026-08-25), because nothing takes the ball to the byline — 0% of passes and 4% of touches start in the final sixth. The act is built; the approach is **51** | `SimDecision._add_pullback` |
 | Arrive as the ball does, easing the last metres | built — box runners and runs in behind did; the show and the drift now hold the last stride until the ball is struck to them | `SimOffBall.MEET_EASE` |
-| Link the defence to the strikers, holding height and width | partial — shape slides with play; there are no authored link players, and the middle third holds 78% of touches (**30**) | `SimMovement.shape_position` |
+| Link the defence to the strikers, holding height and width | built 2026-09-02 — the playmaker's station, and half of each central midfielder's, sits between the opponents' midfield and their line while in possession, width untouched; forty seeds: the middle third 74.5% to 70.5% of touches, the final third 13.5% to 17% (**30** for what is left) | `SimMovement._link_station` |
 | Be served when the run is made | partial — the run in behind is served now (2026-09-02, twenty fragments: offered 63%, received 13%, 72 through balls played, 58% reaching the man); the `box` run is made about fifty times a match and received 5%, bounded by `space` at arrival in a box that is now defended, and an early cross to it doubled the crosses without serving him (**33**) | `SimOffBall`, `SimDecision._add_passes` |
 
 ## Defending
@@ -1901,6 +1901,25 @@ instead of being hooked clear from the byline. Twenty fragments: 39 cadences
 of it, about four seconds of escorting; the ball went out of play 44 times
 before and 49 after on the same seeds. Rare and cheap, as its row said.
 
+**Built 2026-09-02, item 7: the link players (30).** The pocket between the
+opponents' lines was only an *offer* (`_pocket_point`, a lift on a space
+probe), taken or not by the softmax and mostly not; now it is the station.
+`SimMovement._link_station`: in possession, the playmaker's shape x goes to
+the midpoint of their midfield and their line (a stride onside), the central
+midfielders' by half, blended on the possession phase, width the formation's
+own. The pocket is read off where their men stand, which moves at a line's
+pace, and the over-8-m/s column did not move. Tallied under `The small
+acts`: asked on 19,600 cadences over twenty fragments, applied on 77% (the
+rest: the pocket behind the ball or too far ahead; never for want of a gap),
+moving the station 7.4 m forward, the man standing 2.6 m ahead of the shape's
+ball on average. **Forty seeds, on against off**: touches by third own /
+middle / final **12 / 74.5 / 13.5 to 12.5 / 70.5 / 17**, the same direction
+on both batches of twenty; shots halved on one batch and rose by half on the
+other, which is what twenty fragments are worth. Modest, and the middle
+third still holds seven touches in ten: the man is there, and the ball into
+him is priced through their midfield's lane, which is the defence being
+right. What is left of 30 is the pass into the pocket, a decision question.
+
 **Item 6 of the pass, 2026-09-02: the runner served, re-measured against the
 defence.** The brief's figure -- offered to 27-29% of committed runners,
 scores best 0% -- was the morning of 2026-09-01; stage three closed it that
@@ -2117,7 +2136,8 @@ not a finding; it is the list working.
   instead: built 2026-09-02, watch whether the lunge reads as one.
 - A ball is headed in the box and goes anywhere but at goal (**29**).
 - Play crabs across the middle third with no one between the lines to give it
-  forward (**30**).
+  forward (**30**) — the playmaker stands between the lines now (2026-09-02);
+  what to watch is whether the ball ever goes to him.
 - A shot from twelve yards with a defender beside it: he blocks now if he was
   in front of it and saw it coming; beside it he still does not.
 - Attacks walk into the six-yard box.

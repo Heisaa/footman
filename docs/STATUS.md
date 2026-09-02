@@ -85,8 +85,9 @@ lands — `PLAN.md` §11.4 says why, `docs/THE_FOOTBALL.md` has the order of ite
   0.6 m of the closing-in and a quarter of `mark`'s own pull; it belongs to the
   defensive pass and is here because it reads as football, not because it fixed
   the clump.
-- **The middle third still holds most of play** — 78% of touches, 12% in the final
-  third. The pass model no longer referees a race nobody is running, and
+- **The middle third still holds most of play** — 70% of touches, 17% in the
+  final third since the link station (2026-09-02); 78% and 12% before the
+  attacking pass. The pass model no longer referees a race nobody is running, and
   progression improved with it, but the lock eased rather than lifted. What is left
   is the runners (33), midfield structure (30), the flat value map (8b) and the
   correlated-terms half of 24.

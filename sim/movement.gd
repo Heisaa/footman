@@ -259,6 +259,12 @@ static func reset() -> void:
 	_trap_tick = PackedInt32Array([-100000, -100000])
 	traps_sprung = 0
 	trap_triggers = 0
+	link_asked = 0
+	link_no_gap = 0
+	link_no_ahead = 0
+	link_applied = 0
+	link_moved = 0.0
+	link_stood = 0.0
 
 
 static func update(ctx: SimContext) -> void:
@@ -891,6 +897,82 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 		# time and the whole team spent the match a few metres too deep.
 		p.move_deadband = minf(p.move_deadband, 2.0)
 		p.move_speed_cap = maxf(p.move_speed_cap, p.max_speed() * 0.8)
+
+
+## The link players (`docs/THE_FOOTBALL.md` 30). The formation's midfield
+## stations sit where the formation put them, slid with play, and the pocket
+## between the opponents' midfield and their back line was only ever an
+## *offer* (`SimOffBall._pocket_point`, a lift on a space probe) -- taken or
+## not by the softmax, and mostly not: 73% of touches in the middle third.
+## This is the station itself. In possession, the link roles stand between
+## their lines: the playmaker fully, the central midfielders by half, so one
+## of them is always level with the ball and one is ahead of it. The pocket
+## is read off where their men are, which moves at the pace of a line rather
+## than a pass, and blended on the possession phase so it never teleports.
+## Width is the formation's own: keep structure and width, said the owner,
+## and make the midfield a link.
+const LINK_AM := 1.0
+const LINK_CM := 0.5
+## The pocket has to be this far ahead of the shape's ball to be a link and
+## not a striker, and no further than this from it to be a pass.
+const LINK_AHEAD_MIN := 3.0
+const LINK_AHEAD_MAX := 26.0
+## And a stride onside of their line.
+const LINK_ONSIDE := 2.5
+
+
+static func _link_station(ctx: SimContext, p: SimPlayer, shape: Vector3) -> Vector3:
+	var weight: float
+	if p.role == SimRole.AM:
+		weight = LINK_AM
+	elif p.role == SimRole.CM:
+		weight = LINK_CM
+	else:
+		return shape
+	weight *= ctx.shape_phase_of(p.team)
+	if weight <= 0.0:
+		return shape
+	var dir := ctx.pitch.attack_dir(p.team)
+	var line: float = SimReferee.offside_line(ctx, p.team) * dir
+	var mid_sum := 0.0
+	var n := 0
+	for oid in ctx.opponent_ids(p.team):
+		var o := ctx.players[oid]
+		if not o.on_pitch or o.is_keeper:
+			continue
+		if o.role == SimRole.DM or o.role == SimRole.CM or o.role == SimRole.AM:
+			mid_sum += o.pos.x * dir
+			n += 1
+	if n == 0:
+		return shape
+	var mid_line := mid_sum / float(n)
+	link_asked += 1
+	if line - mid_line < SimOffBall.POCKET_GAP:
+		link_no_gap += 1
+		return shape
+	var pocket: float = minf((line + mid_line) * 0.5, line - LINK_ONSIDE)
+	var ball_x: float = ctx.shape_ball.x * dir
+	var ahead := pocket - ball_x
+	if ahead < LINK_AHEAD_MIN or ahead > LINK_AHEAD_MAX:
+		link_no_ahead += 1
+		return shape
+	var x: float = lerpf(shape.x * dir, pocket, weight)
+	link_moved += absf(x - shape.x * dir)
+	link_stood += p.pos.x * dir - ball_x
+	link_applied += 1
+	return Vector3(x * dir, shape.y, shape.z)
+
+
+## Tallies for `diagnose`: how often the link station was asked for by a
+## link role in possession, refused for no gap between their lines, refused
+## for the pocket being behind the ball or too far ahead, applied, and the
+## metres it moved the station when it was.
+static var link_asked := 0
+static var link_no_gap := 0
+static var link_no_ahead := 0
+static var link_applied := 0
+static var link_moved := 0.0
+static var link_stood := 0.0
 
 
 ## Sentinel for `shape_position`: build the shape around wherever the ball
@@ -1759,6 +1841,7 @@ static func _support_adjust(ctx: SimContext, p: SimPlayer, shape: Vector3) -> Ve
 ## everyone offers a passing angle rather than standing in the carrier's shadow.
 static func _attacking_adjust(ctx: SimContext, p: SimPlayer, shape: Vector3) -> Vector3:
 	shape = _run_in_behind(ctx, p, shape)
+	shape = _link_station(ctx, p, shape)
 	# He has decided to go and meet the ball, or to go past the last defender.
 	# Both genuinely relocate him, so both stand in for the generic support and
 	# ascent below -- which are the same ideas arrived at without a decision.
