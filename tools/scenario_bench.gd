@@ -128,7 +128,7 @@ static func _trace(list: Array[SimScenario], index: int, quality: float) -> void
 			var extra := PackedStringArray()
 			if kind == SimTelemetry.Ev.TOUCH:
 				extra.append(SimTelemetry.TOUCH_NAMES[int(e.get("kind", 0))])
-			for key in ["player", "target", "on_target", "goal", "blocked", "outcome", "reason", "ahead", "head"]:
+			for key in ["player", "target", "on_target", "goal", "blocked", "outcome", "reason", "ahead", "head", "chance", "hit"]:
 				if e.has(key):
 					extra.append("%s=%s" % [key, e[key]])
 			if e.has("from"):

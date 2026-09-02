@@ -233,11 +233,12 @@ enum Errand {
 	DRIFT,     ## a few metres off his station, into a pocket
 	ASCENT,    ## the value field's local gradient moved him
 	MARK,      ## goal-side of an opponent
+	BLOCK,     ## thrown at a shot (`SimDuel.commit_blocks`)
 }
 
 const ERRAND_NAMES := [
 	"station", "chase", "press", "pattern", "shoulder", "offer", "support",
-	"drift", "ascent", "mark",
+	"drift", "ascent", "mark", "block",
 ]
 
 
@@ -663,6 +664,15 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 	var is_primary := role == CHASE_PRIMARY
 	var is_support := role == CHASE_SUPPORT
 
+	# A body already thrown at a shot finishes the throw. Shorter than a
+	# cadence, so `commit_blocks` set the first target itself; this holds it.
+	if ctx.tick_index < p.block_until:
+		p.errand = Errand.BLOCK
+		p.move_target = p.block_point
+		p.move_speed_cap = p.max_speed()
+		p.move_deadband = 0.15
+		return
+
 	if is_primary:
 		p.errand = Errand.CHASE
 		var point := _intercept_point(ctx, p)
@@ -695,6 +705,20 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 			if holder.on_pitch and holder.dist_to(at) < SimConsts.CONTROL_RANGE \
 					and p.dist_to(at) < READ_RANGE:
 				point = point.lerp(at + holder.heading_dir() * READ_AHEAD, 0.5)
+			# And in front of our own goal, he is closed from goal-side: the
+			# body between the ball and the net, which is what a block is
+			# thrown from and what a defender in the box is for. Open play
+			# stays as it was -- a chaser who cuts in front of every carry is
+			# the wrong act (`_recovery_point`); this is the one place the
+			# football says otherwise.
+			if holder.on_pitch and holder.dist_to(at) < SimTouch.DRIBBLE_AHEAD_MAX:
+				var lane := _box_lane_weight(ctx, p.team, at)
+				if lane > 0.0:
+					var own_goal := ctx.pitch.own_goal(p.team)
+					var to_goal := SimConsts.horizontal(own_goal - at)
+					var gd := to_goal.length()
+					if gd > LANE_STANDOFF + 0.5:
+						point = point.lerp(at + to_goal / gd * LANE_STANDOFF, lane)
 		# A chaser coming from behind a man in possession runs round him rather
 		# than into the back of him.
 		var recovery := _recovery_weight(ctx, p)
@@ -1234,6 +1258,28 @@ static func _contest_pace(ctx: SimContext, p: SimPlayer) -> float:
 
 ## Support pressers close the passing lane behind the ball rather than piling in
 ## on it. Convergence on the ball is exactly the failure mode to avoid.
+## Defending the penalty area. Inside `BOX_DEFEND_RANGE` of his own goal the
+## man closing the ball does it from goal-side, `LANE_STANDOFF` in front of
+## it, and the second man drops onto the line of the shot instead of five
+## metres to the side of it. The ramp is what stops it being a mode: at
+## `BOX_DEFEND_FADE` and beyond it is worth nothing.
+const BOX_DEFEND_RANGE := 20.0
+const BOX_DEFEND_FADE := 30.0
+const LANE_STANDOFF := 1.3
+## What is left of the support presser's sideways fan-out in front of goal:
+## two men on the line of the shot stand shoulder to shoulder, not on each
+## other.
+const PRESS_FAN_NEAR := 1.6
+const PRESS_FAN_FAR := 5.0
+
+
+## How much the box defence applies to a ball at `at`, 0 to 1.
+static func _box_lane_weight(ctx: SimContext, team: int, at: Vector3) -> float:
+	var own_goal := ctx.pitch.own_goal(team)
+	var d := SimConsts.horizontal_length(own_goal - at)
+	return clampf((BOX_DEFEND_FADE - d) / (BOX_DEFEND_FADE - BOX_DEFEND_RANGE), 0.0, 1.0)
+
+
 static func _support_press_point(ctx: SimContext, p: SimPlayer) -> Vector3:
 	var ball := ctx.ball.ground_pos()
 	var own_goal := ctx.pitch.own_goal(p.team)
@@ -1259,7 +1305,8 @@ static func _support_press_point(ctx: SimContext, p: SimPlayer) -> Vector3:
 			side = 1.0
 		if p.id < _press_side.size():
 			_press_side[p.id] = side
-	return ctx.pitch.clamp_to_pitch(base + lateral * side * 5.0, 1.0)
+	var fan: float = lerpf(PRESS_FAN_FAR, PRESS_FAN_NEAR, _box_lane_weight(ctx, p.team, ball))
+	return ctx.pitch.clamp_to_pitch(base + lateral * side * fan, 1.0)
 
 
 ## How far past the last defender a forward is willing to position. Positive is

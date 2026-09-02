@@ -32,12 +32,15 @@ enum Ev {
 	POSSESSION_END,
 	## A body sold without the ball (`SimDecision._add_feint`). Appended, as above.
 	FEINT,
+	## A body thrown at a shot (`SimDuel.commit_blocks`), hit or miss. Appended.
+	BLOCK_LUNGE,
 }
 
 const EV_NAMES := [
 	"kickoff", "touch", "pass_attempt", "pass_outcome", "shot", "duel", "foul",
 	"card", "recovery", "pattern", "phase_change", "goal", "offside", "set_piece",
 	"period", "substitution", "save", "out_of_play", "possession_end", "feint",
+	"block_lunge",
 ]
 
 ## Touch kinds. Shared with the touch module.

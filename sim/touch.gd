@@ -1453,6 +1453,9 @@ static func _log_shot(ctx: SimContext, player: SimPlayer, from: Vector3, aim_poi
 	ctx.log_event(SimTelemetry.Ev.SHOT, record)
 	ctx.active_shot = record
 	ctx.active_shot_tick = ctx.tick_index
+	# And the bodies in front of it throw themselves at it, now, on the
+	# backlift: `SimDuel.BLOCK_READ`.
+	SimDuel.commit_blocks(ctx, player)
 
 
 ## What a first touch is going to be, before it is played: the direction he can
@@ -1838,6 +1841,39 @@ static func header(ctx: SimContext, player: SimPlayer, dir: Vector3, aim_up: flo
 	if not is_inf(goal_aim.x):
 		_log_shot(ctx, player, from, goal_aim, chance_quality, true,
 			SimConsts.horizontal_length(goal_aim - from))
+
+
+## What a body thrown at a shot does to it. Not `poke`: that is a boot hooking
+## a ball off a carrier toward the far end, and a shot off a shin or a torso
+## goes where the shin sent it. Most come back off him, out of the box at a
+## fraction of the pace and off the floor; a share carry on, wrong-footing the
+## keeper or running behind for the corner nobody could concede before this.
+const BLOCK_ON := 0.3
+const BLOCK_ON_SPREAD := 0.55
+const BLOCK_BACK_SPREAD := 1.0
+
+
+static func block(ctx: SimContext, player: SimPlayer) -> void:
+	var v := ctx.ball.vel
+	var inc := SimConsts.horizontal(v)
+	var speed := inc.length()
+	if speed < 1e-3:
+		inc = player.heading_dir()
+		speed = 1.0
+	else:
+		inc /= speed
+	var dir: Vector3
+	var keep: float
+	if ctx.rng.chance(BLOCK_ON):
+		dir = inc.rotated(Vector3.UP, ctx.rng.gauss_clamped(0.0, BLOCK_ON_SPREAD, 2.0))
+		keep = ctx.rng.range_float(0.45, 0.8)
+	else:
+		dir = (-inc).rotated(Vector3.UP, ctx.rng.gauss_clamped(0.0, BLOCK_BACK_SPREAD, 2.0))
+		keep = ctx.rng.range_float(0.2, 0.5)
+	var out_speed: float = speed * keep
+	var lift: float = ctx.rng.range_float(0.3, 2.5)
+	player.spend_action(2.5)
+	apply(ctx, player, SimTelemetry.Touch.BLOCK, dir * out_speed + Vector3(0.0, lift, 0.0), Vector3.ZERO)
 
 
 ## A defender's poke or block. Knocks the ball away from the carrier; where it

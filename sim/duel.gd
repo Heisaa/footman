@@ -169,6 +169,175 @@ static func in_reach_arc(p: SimPlayer, ball_pos: Vector3) -> bool:
 	return face.normalized().dot(to_ball.normalized()) >= cos(REACH_ARC)
 
 
+# --- The block --------------------------------------------------------------
+
+
+## How far in front of the striker a body can throw itself at the ball. Past
+## this the ordinary contact rule has him: the ball arrives after his reaction
+## has run (`_ready_for`), and he sticks a leg out like at any pass.
+const BLOCK_RANGE := 6.0
+## The anticipation, in seconds: a defender in the striker's face moves on the
+## backlift, not on the strike. A shot at 25 m/s is past a man four metres away
+## in 0.16 s and no reaction reaches it; the read is the whole mechanic.
+const BLOCK_READ := 0.25
+## What a body thrown sideways covers from where he stands, in metres -- a leg
+## flung out, a torso turned across the ball -- and what the lunge adds per
+## second of window.
+const BLOCK_REACH := 1.4
+const BLOCK_CLOSE := 3.5
+## The ball above this at his station goes over the block.
+const BLOCK_HEIGHT := 1.6
+## What a man dead on the line gets, and how the chance falls off toward the
+## edge of his cover.
+const BLOCK_COMMIT := 0.85
+const BLOCK_FALLOFF := 0.7
+## How long he is on the floor for after throwing himself, whether or not he
+## got there. In seconds; his own `recovery_ticks` brake.
+const BLOCK_DOWN_MIN := 0.3
+const BLOCK_DOWN_MAX := 0.5
+
+
+## The chance this defender blocks a ball struck from `from` along `dir` at
+## `speed`, with the striker `shooter` in front of him. Zero for anyone the
+## lunge model does not cover; `_shot_blockers` in `SimDecision` prices those
+## as bodies in the corridor. One function for the price and the act
+## (`docs/INVARIANTS.md`, the contact rule and the lane model read the same
+## body).
+static func block_chance(ctx: SimContext, o: SimPlayer, shooter: SimPlayer, from: Vector3,
+		dir: Vector3, speed: float, launch_y: float = 0.0, climb: float = 0.0) -> float:
+	if not o.on_pitch or o.is_keeper or o.recovery_ticks > 0 or o.team == shooter.team:
+		return 0.0
+	var rel := SimConsts.horizontal(o.pos - from)
+	var along: float = rel.dot(dir)
+	if along < 0.8 or along > BLOCK_RANGE:
+		return 0.0
+	var lateral: float = absf(rel.x * dir.z - rel.z * dir.x)
+	var t: float = along / maxf(speed, 1.0)
+	# Where the ball is when it gets to him: a rising drive clears a body.
+	var y: float = launch_y + climb * t - 0.5 * SimConsts.GRAVITY * t * t
+	if y > BLOCK_HEIGHT:
+		return 0.0
+	# He has to have the striker in his eyes to read the backlift.
+	if not SimPerception.saw_recently(ctx, o, shooter):
+		return 0.0
+	var window: float = t + BLOCK_READ
+	# The way he is already moving, toward or away from the line.
+	var toward := Vector3(-dir.z, 0.0, dir.x)
+	if rel.dot(toward) > 0.0:
+		toward = -toward
+	var drift: float = maxf(o.vel.dot(toward), 0.0) * t
+	var cover: float = BLOCK_REACH + BLOCK_CLOSE * window + drift
+	if lateral >= cover:
+		return 0.0
+	var chance: float = BLOCK_COMMIT * pow(1.0 - lateral / cover, BLOCK_FALLOFF)
+	chance *= lerpf(0.8, 1.15, o.attrs.positioning)
+	chance *= lerpf(0.9, 1.1, o.attrs.aggression)
+	return clampf(chance, 0.0, 0.95)
+
+
+## The share of a shot from `from` at `aim` that gets past every body in lunge
+## range. What `SimDecision.expected_goals` charges for the near bodies.
+static func block_survival(ctx: SimContext, shooter: SimPlayer, from: Vector3, aim: Vector3,
+		speed: float) -> float:
+	var dir := SimConsts.horizontal(aim - from)
+	var d := dir.length()
+	if d < 1e-3:
+		return 1.0
+	dir /= d
+	var survival := 1.0
+	for oid in ctx.opponent_ids(shooter.team):
+		var chance := block_chance(ctx, ctx.players[oid], shooter, from, dir, speed)
+		if chance > 0.0:
+			survival *= 1.0 - chance
+	return survival
+
+
+## The strike has been made: every defender in lunge range throws himself at
+## it, and one roll each says whether he gets there. Decided here and taken
+## when the ball arrives, the keeper's own pattern -- a per-tick roll is a roll
+## until it succeeds (`docs/INVARIANTS.md`).
+static func commit_blocks(ctx: SimContext, shooter: SimPlayer) -> void:
+	var ball := ctx.ball
+	var dir := SimConsts.horizontal(ball.vel)
+	var speed := dir.length()
+	if speed < 1.0:
+		return
+	dir /= speed
+	var from := ball.pos
+	# The nearest body in front of the strike, on the shot's own record, so the
+	# instruments can say whether a block share is geometry or the model.
+	var near_along := INF
+	var near_lat := 0.0
+	var near_saw := false
+	var near_d2 := INF
+	for oid in ctx.opponent_ids(shooter.team):
+		var o := ctx.players[oid]
+		if o.on_pitch and not o.is_keeper:
+			var rel := SimConsts.horizontal(o.pos - from)
+			var along: float = rel.dot(dir)
+			if along > 0.8 and rel.length_squared() < near_d2:
+				near_d2 = rel.length_squared()
+				near_along = along
+				near_lat = absf(rel.x * dir.z - rel.z * dir.x)
+				near_saw = SimPerception.saw_recently(ctx, o, shooter)
+	if not ctx.active_shot.is_empty() and not is_inf(near_along):
+		ctx.active_shot["near_along"] = near_along
+		ctx.active_shot["near_lat"] = near_lat
+		ctx.active_shot["near_saw"] = near_saw
+	for oid in ctx.opponent_ids(shooter.team):
+		var o := ctx.players[oid]
+		var chance := block_chance(ctx, o, shooter, from, dir, speed, ball.pos.y, ball.vel.y)
+		if chance <= 0.0:
+			continue
+		var rel := SimConsts.horizontal(o.pos - from)
+		var along: float = rel.dot(dir)
+		var t: float = along / speed
+		var arrive := ctx.tick_index + int(ceil(t * float(SimConsts.TICK_HZ)))
+		o.block_shot = ball.last_touch_tick
+		o.block_tick = arrive
+		o.block_until = arrive + int(round(0.15 * float(SimConsts.TICK_HZ)))
+		o.block_point = Vector3(from.x + dir.x * along, 0.0, from.z + dir.z * along)
+		o.block_hit = ctx.rng.chance(chance)
+		# He goes now, not on the movement cadence: the whole act is shorter
+		# than one.
+		o.move_target = o.block_point
+		o.move_speed_cap = o.max_speed()
+		o.move_deadband = 0.15
+		o.look_target = Vector3.INF
+		o.play_anim(SimConsts.Anim.SLIDE, t + BLOCK_READ + 0.3)
+		ctx.log_event(SimTelemetry.Ev.BLOCK_LUNGE, {
+			"p": o.id,
+			"team": o.team,
+			"chance": chance,
+			"hit": o.block_hit,
+		})
+
+
+## Takes the blocks committed at the strike, on the tick the ball reaches each
+## man. The ball must still be the shot he threw himself at.
+static func _resolve_blocks(ctx: SimContext) -> void:
+	var ball := ctx.ball
+	for o in ctx.players:
+		if o.block_shot < 0:
+			continue
+		if o.block_shot != ball.last_touch_tick or not o.on_pitch:
+			o.block_shot = -1
+			continue
+		if ctx.tick_index < o.block_tick:
+			continue
+		o.block_shot = -1
+		# On the floor either way.
+		o.recovery_ticks = maxi(o.recovery_ticks,
+			int(ctx.rng.range_float(BLOCK_DOWN_MIN, BLOCK_DOWN_MAX) * float(SimConsts.TICK_HZ)))
+		if not o.block_hit:
+			continue
+		SimTouch.block(ctx, o)
+		# One block per shot: the ball is a different ball now.
+		for other in ctx.players:
+			other.block_shot = -1
+		return
+
+
 static func resolve_contacts(ctx: SimContext) -> void:
 	_contenders.clear()
 	_challenge_win.clear()
@@ -178,6 +347,7 @@ static func resolve_contacts(ctx: SimContext) -> void:
 	# place that could have said so. See `SimKeeper.ball_in_hands`.
 	if SimKeeper.ball_in_hands(ctx):
 		return
+	_resolve_blocks(ctx)
 	var overhead := SimAerial.is_aerial(ctx)
 	for p in ctx.players:
 		# Note the cooldown is deliberately *not* checked here. A player who has
@@ -188,6 +358,8 @@ static func resolve_contacts(ctx: SimContext) -> void:
 			continue
 		if p.is_keeper:
 			continue  # The keeper module owns its own contact rules.
+		if p.block_shot >= 0:
+			continue  # Thrown at the shot; `_resolve_blocks` has him.
 		# A ball over head height is met with a leap, which arrives further from
 		# where he was standing than a boot does. `SimAerial.contact_range` is the
 		# one place that difference is stated.

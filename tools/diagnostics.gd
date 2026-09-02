@@ -4357,7 +4357,57 @@ static func _shooting(ctx: SimContext, events: Array) -> void:
 		print("  %d of them second attempts, inside %.0f s of the same team's last shot" % [
 			follow_ups, REBOUND_SECONDS,
 		])
+	_lunges(events, total)
 	_in_the_box(ctx, events)
+
+
+## Bodies thrown at shots (`SimDuel.commit_blocks`): how many, at what chance,
+## and how many got there. A block share that stays low reads two ways -- no
+## man in front of the strike, or a man in front who never gets there -- and
+## only this line tells them apart.
+static func _lunges(events: Array, shots: int) -> void:
+	var lunges := 0
+	var hits := 0
+	var chance := 0.0
+	for e in events:
+		if e["ev"] != SimTelemetry.Ev.BLOCK_LUNGE:
+			continue
+		lunges += 1
+		chance += float(e.get("chance", 0.0))
+		if bool(e.get("hit", false)):
+			hits += 1
+	if lunges == 0:
+		print("  bodies thrown at them: none")
+	else:
+		print("  bodies thrown at them: %d lunges over %d shots, mean chance %.2f, %d got there" % [
+			lunges, shots, chance / float(lunges), hits,
+		])
+	# And the geometry the lunge model was asked about: the nearest body in
+	# front of each strike.
+	var near := 0
+	var seen := 0
+	var along_sum := 0.0
+	var lat_sum := 0.0
+	var none := 0
+	for e in events:
+		if e["ev"] != SimTelemetry.Ev.SHOT:
+			continue
+		if not e.has("near_along"):
+			none += 1
+			continue
+		var along := float(e["near_along"])
+		along_sum += along
+		lat_sum += float(e["near_lat"])
+		if along <= SimDuel.BLOCK_RANGE:
+			near += 1
+			if bool(e["near_saw"]):
+				seen += 1
+	var with_body := shots - none
+	if with_body > 0:
+		print("  nearest body in front of the strike: %.1f m along, %.1f m off the line (mean of %d); inside %.0f m on %d, of which %d had the striker in his eyes; nobody in front on %d" % [
+			along_sum / float(with_body), lat_sum / float(with_body), with_body,
+			SimDuel.BLOCK_RANGE, near, seen, none,
+		])
 
 
 ## What actually became of every shot, counted where it died.

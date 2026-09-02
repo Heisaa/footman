@@ -1095,8 +1095,17 @@ static func expected_goals(ctx: SimContext, player: SimPlayer, from: Vector3, ai
 	# -- it is what waiting for the right moment waits for, and until this the
 	# model could not see it, so the number never rose and there was never a
 	# reason not to shoot early.
+	# Two populations. Inside `SimDuel.BLOCK_RANGE` a body throws itself at
+	# the strike on the backlift, and the chance is the act's own
+	# (`block_chance`, one function for the price and the block); beyond it a
+	# body in the corridor sticks a leg out after his reaction, the old count.
+	base *= SimDuel.block_survival(ctx, player, from, aim, SHOT_PRICED_SPEED)
 	base *= pow(0.72, float(_shot_blockers(ctx, player, from, aim)))
 	return clampf(base, 0.002, 0.92)
+
+
+## The pace the block model prices a shot at before the power is chosen.
+const SHOT_PRICED_SPEED := 22.0
 
 
 ## Bodies on a shot's corridor, the count `expected_goals` charges -- and, with
@@ -1106,8 +1115,9 @@ static func _shot_blockers(ctx: SimContext, player: SimPlayer, from: Vector3, ai
 	var blockers := 0
 	for oid in ctx.opponent_ids(player.team):
 		var o := ctx.players[oid]
+		# Inside lunge range he is `block_chance`'s, not a leg in the corridor.
 		if o.on_pitch and o.recovery_ticks == 0 \
-				and _near_segment(o.pos, from, aim, 1.1, bow) and o.dist_to(from) > 0.8:
+				and _near_segment(o.pos, from, aim, 1.1, bow) and o.dist_to(from) > SimDuel.BLOCK_RANGE:
 			blockers += 1
 	return blockers
 

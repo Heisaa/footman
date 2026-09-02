@@ -35,8 +35,8 @@ what is there and what is still loose. `./run.sh world` prints a club.
 
 ## The current work
 
-**The attacking pass**, and the goal count is meant to run high while it lasts —
-`PLAN.md` §11.4 says why, `docs/THE_FOOTBALL.md` has the order of items.
+**The defensive pass**, from 2026-09-02, and goals are meant to fall as it
+lands — `PLAN.md` §11.4 says why, `docs/THE_FOOTBALL.md` has the order of items.
 
 ## What is known to be rough
 

@@ -13,11 +13,11 @@ against the working tree, not against the last commit** — 2026-08-15 found 10 
 written off that had two of its first three items done. When one is built, move the row; the account of what it cost is
 the commit that built it.
 
-**The attacking rows are the current pass** (`PLAN.md` §11.4). The defending rows
-and the keeper's saves are the next one, held on purpose — a defending row marked
-*absent* is scheduled, not overlooked. And *built* on an attacking row means
-judged against today's defence: the defensive pass ends with a re-watch of the
-attack (the order, below), expecting rework.
+**The defending rows are the current pass** (`PLAN.md` §11.4), opened
+2026-09-02; the attacking pass is closed for now. Goals are expected to fall as
+it lands, and that is the point. *Built* on an attacking row means judged
+against the defence of the day it was built: the defensive pass ends with a
+re-watch of the attack (the order, below), expecting rework.
 
 ## With the ball at his feet
 
@@ -84,13 +84,13 @@ attack (the order, below), expecting rework.
 | React to the strike before running, as before reaching — a ball played out of his sight is not chased until it is news | built | `SimDuel.ball_news_age`, `SimMovement._recompute_target` |
 | Hold a defensive line, with offside off it | built | `SimReferee.offside_line` |
 | Clear under pressure | built | `_add_clear` |
-| Block a shot | partial — a defender in the path can take it; nobody throws himself in the way (**5**) | |
+| Block a shot | built — a body in front of the strike throws itself on the backlift, one roll at the strike, taken when the ball arrives; the price and the act are one function | `SimDuel.commit_blocks`, `block_chance` |
 | Cover a beaten teammate | partial — he is penalised in the chase ranking; nobody covers the space he lost | |
 | Jockey, delay, show him wide | absent — he either goes for it or holds station. The body frame is in, so a jockey is now an arm that looks at the carrier and shuffles side-on under the strafe cap; held for the defensive pass | |
 | Escort a dying ball over the line | absent — shielding's cheapest special case | |
 | Spring an offside trap | absent — the line exists; stepping up as an act does not | |
 | The deliberate foul | absent | |
-| Defend the penalty area | absent — the largest single hole an eye will find (**5**) | |
+| Defend the penalty area | partial — inside the area the presser closes from goal-side and the second man drops onto the line of the shot, which is what the block is thrown from; the keeper narrowing the angle and the cover for a beaten man are the rest of **5** | `SimMovement.LANE_STANDOFF`, `PRESS_FAN_NEAR` |
 
 ## In the air
 
@@ -1836,10 +1836,34 @@ line, which is **5**.
    side really does turn and run, so it stays until somebody watching says
    otherwise.
 
-**The defensive pass — next, not now.** Held deliberately; each costs goals, and
-the attacking pass is allowed to run high until they land. **5** first — it is
-still the largest single thing an eye would name — then **3**, then the remaining
-defending rows above: jockeying, covering, the offside trap, the deliberate foul.
+**The defensive pass — the current work, from 2026-09-02.** Each costs goals,
+and goals are meant to fall. **5** first — it is still the largest single thing
+an eye would name — then **3**, then the remaining defending rows above:
+jockeying, covering, the offside trap, the deliberate foul.
+
+**Built 2026-09-02: the block, and the box defended.** A defender in the shot's
+path could take it only on the ordinary contact rule -- a leg inside 0.9 m
+after his reaction had run -- and a shot at 25 m/s is past a man four metres
+away in 0.16 s, so nobody in front of a strike ever got there. Now a body
+inside `SimDuel.BLOCK_RANGE` who has the striker in his eyes moves on the
+backlift (`BLOCK_READ`), and what he covers is a thrown body plus the lunge
+over the ball's flight; one roll at the strike, taken on the tick the ball
+reaches him, the keeper's own pattern. `block_chance` is one function for the
+price (`expected_goals`) and the act. Where it goes is `SimTouch.block`:
+mostly back out at a fraction of the pace and off the floor, three in ten
+carrying on -- which is the corner the engine could not concede.
+**And the model measured out first**: over twenty ten-minute fragments it
+fired zero times, because the nearest body in front of a strike stood 6-12 m
+along and 4-20 m off the line. Nobody was in front of a shot to throw himself
+at it. So the box defence went in beside it: inside `BOX_DEFEND_RANGE` the
+presser closes from goal-side (`LANE_STANDOFF`, the one place a chaser in
+front of the carrier is the football) and the second man's fan-out shrinks
+onto the line of the shot (`PRESS_FAN_NEAR`). Same twenty fragments: shots 21
+to 15, goals 3 to 1, blocked 0 to 2, corners 0 to 1 -- thin, and reported as
+such. `shot-edge` reads block 0% to 10% with `lost` 2% to 35%: the man at the
+top of the box with bodies in front now carries into them instead of shooting
+through them, which is the row's own question answered. `1v1-clear` did not
+move. `Shots by distance` carries the lunges and where the nearest body stood.
 **And the pass ends with a re-watch of the attack.** Every attacking row marked
 built was judged, by eye and by number, against a defence that cannot jockey,
 block or defend its box; a judgment made against no resistance is provisional.
