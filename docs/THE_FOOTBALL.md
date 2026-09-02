@@ -29,7 +29,7 @@ re-watch of the attack (the order, below), expecting rework.
 | Shot, with a chosen placement | built | `_add_shot`, `_pick_shot_aim` |
 | Clearance | built | `_add_clear` |
 | Carry, eight probed directions | built — and the room it has ends at the goalkeeper, not at the paint | `_add_dribbles`, `keeper_room` |
-| Knock past a man, and race him | built — same room, except when going round the keeper *is* the act | `_add_dribbles`, the burst |
+| Knock past a man, and race him | built — same room, except when going round the keeper *is* the act; since 2026-09-02 at any pace, past either shoulder of the man in front, sized by the run he can make from the pace he has, and priced as a ball into space for himself. On the list at 57 of 128 pressed decisions, a coin at 0.42 the defence mostly wins | `_add_burst`, `stride_run`, `_meet_ball` |
 | Hold — the settling touch | built | `_add_hold`, `_play_hold` |
 | The dwell — a free man keeps it a beat, takes another look, then plays | built | `SimDecision.scan_gain` |
 | Orient before the act — a beat between coming by the ball and striking it | built — a price either side of a gate, because the price alone loses to the shot appetite | `SimDecision.readiness`, `_apply_set_damp`, `SET_STRIKE_FLOOR` |
@@ -48,7 +48,7 @@ re-watch of the attack (the order, below), expecting rework.
 | Give-and-go, and the executed one-two | built — a named pattern, so the passer is committed to the run and the return ball is lifted to him | `SimPatterns._try_one_two` |
 | Beating a man | built — the knock, the cut, and the feint from a standstill: a body sold at the man without the ball, priced as a lottery in front of the knock across him. On the list in 7 of 100 scenario trials and chosen in none, honestly | `_try_beat`, `_add_feint`, `tools/_feint_probe.gd` |
 | Drawing a foul | built — the duel fouls the skilful or shielding carrier more, and a composed one invites the contact inside shooting range | `SimDuel.INVITE_CONTACT` |
-| Time on the ball — two to three seconds before it is played | partial — about one, and four times football's touch rate with it (**28**) | `SimDecision`, `SimTouch` |
+| Time on the ball — two to three seconds before it is played | partial — about one, and four times football's touch rate with it (**28**). The carry is priced honestly since 2026-09-02 and a free man with grass ahead carries 35% of the time against 12%, so more of that second is spent going forward; what is left is the release rate itself | `SimDecision`, `SimTouch` |
 
 ## Without it, attacking
 
@@ -2074,6 +2074,36 @@ term, `pressure_on` does not. The check first: `Why an option lost` on a
 jockeyed carrier, whether the carry lost on `success` (pressure; the fix is a
 closing-speed term in `pressure_on`, this pass's) or on `gain` (the map; 37).
 
+**Built 2026-09-02: the confident carrier** (owner: the players look scared,
+pass in panic, should look, carry into space and take men on). The named check
+ran first, with `tools/_pressure_probe.gd`: 81% of on-ball decisions are made
+at pressure under 0.25, and only a fifth of what pressure there is came from
+men standing off -- so the closing-speed term was real and small. A lone man
+standing off at one to two metres read 0.30 and reads 0.13 (`PRESS_STANDING`).
+What was rushing the free man was the carry's price: over eight seeds it was
+priced 0.50-0.60 and kept 79%, in open grass and in traffic alike, while the
+pass beside it was priced 0.80 and kept 78%. Three faults on `success` -- the
+landing priced by the neutral race (men six metres off who could not reach a
+two-metre touch), the challenger charged three times for one race, and the
+dribbling tax paid flat in empty grass -- and the carry reads 0.84 in an open
+lane, kept 78%. Then the look: a standing man with fifteen metres in front of
+him weighed a four-metre carry; the probe now reads the lane through the pace
+rule that will run him at it, 8.7 m against 4.5. Then the take-on from a jog,
+which did not exist between `BURST_PACE` and the feint's standstill: the knock
+past a man is asked past either shoulder at any pace, sized by an accelerating
+stride, and its ball met by a man who accelerates (`_meet_ball`; the sprint's
+closed form kept to the last decimal) -- forced from the probe it was priced
+0.18 and kept 68%, and reads 0.43 now. Seed 7 at ten minutes: a possession
+sequence 2.7 passes, 2.8 s, -1.1 m up the pitch to 4.3 passes, 7.1 s,
++15.6 m; dribbles 27 to 31 and passes 38 to 26. Rows at n=160 against the
+pre-pass tree: `hold-up` goals 6% to 12%, lost 55% to 41%; `take-on` 4% to
+8%, the winger carrying at the full-back instead of crossing; `through-ball`
+6% to 19%, lost 61% to 44%; `1v1-clear` 44% to 51%; `build-up` lost 15% to
+19%; `shot-edge` lost 38% to 57%. **Owner's eye:** feints are played at 10% of
+pressed decisions, 29% of the closed-down band; the pressed centre-back
+carries and sometimes loses it; and `away` on `take-on` reads 2.1 m, which is
+the knock past the man.
+
 **Noted 2026-09-02, owner's eye on the block: 52**, the committed move that
 still steers. Not this item's to fix; it is on the list so it is built once,
 under the slide, the dive and the jump together.
@@ -2196,7 +2226,12 @@ not a finding; it is the list working.
   both exist, so this is the softmax declining them, a tuning fact rather than an
   absence. Since the jockey (2026-09-02) the defender should be standing off him
   side-on rather than running through him; a defender who still does is a
-  chaser who never got goal-side.
+  chaser who never got goal-side. And since the confident carrier (same day)
+  a jogging man has the knock past either shoulder on his list; if he never
+  plays it, it is a coin the defence wins, at 0.42.
+- **A man drops a shoulder and nothing happens** (`M`): the feint is played at
+  a tenth of pressed decisions now, riding the carry's repricing. Whether it
+  reads as a feint is the owner's.
 
 **Watch at the clock the game ships with.** The nine-minute match is the match, so
 it is what these are judged on and what the numbers are tuned to — `docs/STATUS.md`,

@@ -228,6 +228,16 @@ whole of the selection above it.
   to three times an hour, so it cannot be measured from matches at all. It runs at
   the compressed clock deliberately: `shot_appetite` is part of what decides this.
 
+- **`tools/_pressure_probe.gd`** (`godot --headless --script`, `--seed N
+  --minutes M`) is the man on the ball: what he is pressed by, split by whether
+  each opponent was closing, standing or backing off; what a free man with grass
+  ahead played and what the best carry lost on; the carry's `success` against
+  kept two seconds later; and whether the knock past a man was on the list.
+  `--force-push` plays that knock whenever it is listed
+  (`SimDecision.debug_force_push`), which is the only way to read its price
+  against what it does -- unforced it is played twice in thirty minutes. Runs
+  a match, so about fifteen seconds a seed.
+
 ## The scenarios — set the situation, run it forward, watch it too
 
 `./run.sh scenario` and `./run.sh view3d --scenario NAME`. The benches above set a

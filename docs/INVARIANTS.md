@@ -280,7 +280,17 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   the lane. `control_at_time` had always taken him as its `ignore_id`; the third
   term missed the convention, and the double charge was `succ` 0.02 where one
   charge is 0.44. When a candidate names an opponent, check every term that
-  walks the opponents.
+  walks the opponents. The ordinary carry had the same man three times for
+  most of a year -- escape, landing and lane -- and was priced 0.55 for a
+  touch kept 79%.
+
+- **A carrier arrives at his own touch with the ball, so its landing is a ball
+  to feet, not loose grass.** The neutral race gave every body half a second
+  behind the play a third of a two-metre touch, which was men six metres off
+  who could not reach it: `ctrl` 0.81 for a free man with nine metres in front
+  of him. `control_at_pass` with himself as the receiver; the knock that
+  outruns him is a ball into space for a named runner, and takes the through
+  ball's clock.
 
 - **The distance the ball runs before he plays it again is a third number, and
   it is not `carry_travel`.** That one answers "where would it be if he never
@@ -314,6 +324,16 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   the touchline already cut down, or the protection collapses to the shortening.
 
 ## The touch and the ball
+
+- **The man chasing his own knock accelerates, and a model that reads his pace
+  now is not the man.** `carry_travel` and `carry_time` were the sprint's
+  closed form, exact at top speed and a fiction at a jog: a man at 3.5 m/s who
+  pushed it six metres was modelled running fifteen metres for 4.2 s to reach
+  it, when his legs have him on it in two, and every term priced at the end of
+  the knock was charged for the longer journey. `_meet_ball` solves the meeting
+  under the body's own law (`SimValueField.ground_in`), and `carry_push_for`
+  inverts it by halving. The same rule as the predictor's: the model of the man
+  is the man.
 
 - **The distance a carry needs is the ball's catch-up distance, not its roll to a
   stop.** Three lengths are easy to confuse: where the touch puts the ball

@@ -91,6 +91,19 @@ lands — `PLAN.md` §11.4 says why, `docs/THE_FOOTBALL.md` has the order of ite
   progression improved with it, but the lock eased rather than lifted. What is left
   is the runners (33), midfield structure (30), the flat value map (8b) and the
   correlated-terms half of 24.
+- **The carry was the underconfident act, and is repriced (2026-09-02).** Over
+  eight seeds it was priced 0.50-0.60 and kept 79%; the pass beside it 0.80 and
+  78%. Priced as a man with the ball at his feet, looking as far as the lane
+  will run him, with the knock past a man from a jog on the list, a free man
+  with grass ahead carries 35% against 12% and a possession sequence on seed 7
+  gains 15 m where it lost one. The release rate itself (28) is untouched:
+  still about a second a touch. `docs/THE_FOOTBALL.md`, "the confident
+  carrier", has the rows.
+- **Two fast test cases fail, and did before today's work** (checked at
+  `0684b82`, identical figures): `test_value_field`'s peak threat reads 0.126
+  against a floor of 0.15, and `test_distances`' moving man's 20 m and 40 m
+  lofted passes finish 27.3 m and 46.0 m out against ceilings of 26 and 46.
+  Neither was touched; both want a look.
 - **Seventeen things were built on 2026-08-15**, listed with their numbers in
   `docs/THE_FOOTBALL.md`. The proposals table went from 18 open to 8.
 - **Where the shots come from is close to football; what happens to them is not.**
