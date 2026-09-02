@@ -396,6 +396,17 @@ static func arrive_time(d: float, v0: float, vmax: float, a0: float) -> float:
 	return maxf(t, 0.0)
 
 
+## `arrive_time` the other way round: the ground covered in `t` from pace `v0`
+## under the same law, closed-form. What a run he starts now buys him.
+static func ground_in(v0: float, vmax: float, a0: float, t: float) -> float:
+	if t <= 0.0:
+		return 0.0
+	if v0 >= vmax:
+		return vmax * t
+	var tau: float = vmax / maxf(a0, 0.5)
+	return vmax * t - (vmax - v0) * tau * (1.0 - exp(-t / tau))
+
+
 ## `time_to_arrive` to the edge of his reach rather than to the spot.
 ##
 ## A man a metre off a point does not run to it, he reaches -- `_lane_survival`

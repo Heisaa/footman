@@ -491,10 +491,16 @@ const BURST_DISTANCE := 9.0
 const TOUCH_SECONDS := 0.55
 ## The same measure for the knock past a man, which is deliberately further than
 ## his stride -- that is what makes it a foot race rather than a carry -- and the
-## pace below which it is not a foot race at all. A jogger who launches it nine
-## metres has not beaten anybody, he has given it away.
+## pace below which the knock into empty space is not a foot race at all. A
+## jogger who launches it nine metres into nothing has not gone anywhere, he
+## has given it away. The knock past a *man* has no pace gate: the stride he
+## can make from his pace sizes it (`stride_run`), and a knock that does not
+## finish past the man is not offered.
 const BURST_SECONDS := 1.2
 const BURST_PACE := 3.5
+## How far off the line to the man the knock past him is aimed, in radians:
+## past his shoulder, either side. See `_add_dribbles`.
+const BURST_SHOULDER := 0.7
 ## How far past the man the ball has to finish for the knock to be a foot race
 ## rather than a touch he can stick a boot on -- his reach and a stride.
 ##
@@ -3618,6 +3624,16 @@ static func stride_room(player: SimPlayer, dir: Vector3, seconds: float = TOUCH_
 	return maxf(along * seconds, SimTouch.DRIBBLE_AHEAD_FLOOR)
 
 
+## The same measure for a run he starts now: the ground his legs cover in
+## `seconds` from the pace he has, accelerating under the body's own law,
+## floored like `stride_room`. The knock past a man is sized by this, because
+## the man running onto it is not the man who struck it.
+static func stride_run(player: SimPlayer, dir: Vector3, seconds: float) -> float:
+	var along: float = maxf(player.vel.x * dir.x + player.vel.z * dir.z, 0.0)
+	return maxf(SimValueField.ground_in(along, player.max_speed(), player.max_accel(), seconds),
+		SimTouch.DRIBBLE_AHEAD_FLOOR)
+
+
 ## Shrinks an intended touch by how close to goal it is being played.
 ##
 ## A knock four metres in front of you is a way of covering ground, and inside
@@ -3656,14 +3672,60 @@ static func close_control(ctx: SimContext, player: SimPlayer, wanted: float) -> 
 ## against the 16 the first stage alone reports.
 ##
 ## Floored at `ahead`, which is the standing case: no pace to add, so the ball
-## goes exactly as far as the touch was struck to send it.
+## goes exactly as far as the touch was struck to send it. That is the sprint's
+## arithmetic; the man accelerates, and `_meet_ball` is the model.
 static func carry_travel(ctx: SimContext, player: SimPlayer, dir: Vector3, ahead: float) -> float:
+	return maxf(ahead, _meet_ball(ctx, player, dir, ahead).x)
+
+
+## Where and when a carrier meets the ball he has pushed `ahead` clear, as
+## `(travel, seconds)` measured from the ball.
+##
+## The ball leaves at his pace plus `delta` and slows at the roll; he runs on
+## under the body's own law, accelerating from the pace he has
+## (`SimValueField.ground_in`). The meeting is the first moment he has covered
+## as much ground as the ball. At a sprint there is nothing left to accelerate
+## with and this is the closed form the engine had, `2 * along * delta /
+## decel`, to the last decimal. At a jog it is not: read off his standing pace,
+## a man at 3.5 m/s who pushed it six metres clear was modelled running fifteen
+## metres for 4.2 s to reach it, when his legs have him on it in about two --
+## and every term that prices the end of a knock (who owns that grass, whose
+## leg is in the lane) was charged for the longer journey. Measured with the
+## knock forced, it was priced 0.18 and kept 68%.
+##
+## If the ball stops before he catches it, the meeting is where it stops, when
+## he gets there.
+static func _meet_ball(ctx: SimContext, player: SimPlayer, dir: Vector3, ahead: float) -> Vector2:
 	var along: float = maxf(player.vel.dot(dir), 0.0)
 	var decel: float = maxf(ctx.env.roll_decel, 0.1)
 	# The same `delta` the strike uses, off the same function, or this is a model
 	# of `SimTouch.dribble` that `SimTouch.dribble` does not obey.
 	var delta: float = sqrt(2.0 * decel * SimTouch.dribble_opening(ctx, player, dir, ahead))
-	return maxf(ahead, 2.0 * along * delta / decel)
+	var launch: float = along + delta
+	var stop_t: float = launch / decel
+	var stop_d: float = launch * launch / (2.0 * decel)
+	var vmax: float = maxf(player.max_speed(), 1.0)
+	var a0: float = maxf(player.max_accel(), 0.5)
+	if delta <= 1e-3 or stop_t <= 1e-3:
+		return Vector2(0.0, 0.0)
+	# f(t) is his ground less the ball's: zero at the strike, falling at
+	# `-delta`, and rising again as the ball slows. The first root is the
+	# meeting; none before the ball stops means he walks up to it.
+	var lo: float = 0.02
+	var hi: float = stop_t
+	if _ground_gap(along, vmax, a0, launch, decel, hi) < 0.0:
+		return Vector2(stop_d, maxf(stop_t, SimValueField.arrive_time(stop_d, along, vmax, a0)))
+	for _i in 24:
+		var mid: float = 0.5 * (lo + hi)
+		if _ground_gap(along, vmax, a0, launch, decel, mid) < 0.0:
+			lo = mid
+		else:
+			hi = mid
+	return Vector2(launch * hi - 0.5 * decel * hi * hi, hi)
+
+
+static func _ground_gap(along: float, vmax: float, a0: float, launch: float, decel: float, t: float) -> float:
+	return SimValueField.ground_in(along, vmax, a0, t) - (launch * t - 0.5 * decel * t * t)
 
 
 ## The knock, in metres of *gap*, that sends the ball `travel` metres over the
@@ -3676,11 +3738,21 @@ static func carry_travel(ctx: SimContext, player: SimPlayer, dir: Vector3, ahead
 ## defender, a touchline, a goalkeeper -- is a distance over the grass; and at
 ## any real running pace the second is three or four times the first.
 static func carry_push_for(ctx: SimContext, player: SimPlayer, dir: Vector3, travel: float) -> float:
-	var along: float = maxf(player.vel.dot(dir), 0.0)
-	var decel: float = maxf(ctx.env.roll_decel, 0.1)
-	if along <= 0.01:
-		return maxf(travel, 0.0)
-	return maxf(travel, 0.0) * maxf(travel, 0.0) * decel / (8.0 * along * along)
+	# `carry_travel` has no closed inverse now that the man accelerates, and it
+	# is monotone in the push, so the largest push whose ball he meets inside
+	# `travel` is found by halving. Twenty steps on forty metres is a centimetre.
+	travel = maxf(travel, 0.0)
+	var lo := 0.0
+	var hi := 40.0
+	if carry_travel(ctx, player, dir, hi) <= travel:
+		return hi
+	for _i in 20:
+		var mid: float = 0.5 * (lo + hi)
+		if carry_travel(ctx, player, dir, mid) <= travel:
+			lo = mid
+		else:
+			hi = mid
+	return lo
 
 
 ## Where the ball is when the carrier plays it again, which for every touch but
@@ -3754,17 +3826,9 @@ static func touch_travel(ctx: SimContext, player: SimPlayer, dir: Vector3, ahead
 ## has to be told so.
 ##
 ## Read off the runner, not off the ball. The ball rolls further than this and
-## stops later; the contest is where he meets it, and at pace that is
-## `travel / along` -- the same `2 * delta / decel` the two stages above come to.
-## Standing still he has no pace to run it down with, so the honest answer is the
-## ball's own roll to a stop.
+## stops later; the contest is where he meets it. `_meet_ball` is the model.
 static func carry_time(ctx: SimContext, player: SimPlayer, dir: Vector3, ahead: float) -> float:
-	var along: float = maxf(player.vel.dot(dir), 0.0)
-	var decel: float = maxf(ctx.env.roll_decel, 0.1)
-	var rolling: float = sqrt(2.0 * decel * maxf(ahead, 0.0)) / decel
-	if along <= 0.01:
-		return rolling
-	return maxf(rolling, carry_travel(ctx, player, dir, ahead) / along)
+	return _meet_ball(ctx, player, dir, ahead).y
 
 
 ## Probability this carry leaves the ball on the field of play.
@@ -4307,10 +4371,36 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 	# after it. Knocking it into space and going is the same act whether or not
 	# somebody is chasing; when nobody is, `_escape_value` returns 1.0 and
 	# `control_at` ignores nobody, so the knock is priced on the grass alone.
+	# Which way. Along his run when he is running -- the knock into space --
+	# and past the shoulders of the man in front of him at any pace: a
+	# footballer at a jog with a defender two metres off does not need to be
+	# sprinting to push it past him and go, he needs the stride he can make
+	# from here, and `stride_run` sizes it. Between `BURST_PACE` and the feint's
+	# standstill the engine had no take-on at all, which is where most of a
+	# match's carriers are (mean speed 2.5 m/s): measured over three seeds,
+	# the knock past a man was on the list at 7 of 125 decisions with a
+	# challenger in sight.
 	var running := SimConsts.horizontal(player.vel)
-	if running.length() < BURST_PACE:
-		return
-	var burst_dir := running.normalized()
+	var dirs: Array[Vector3] = []
+	if running.length() >= BURST_PACE:
+		dirs.append(running.normalized())
+	if challenger != null:
+		var to_man := SimConsts.horizontal(challenger.pos - ctx.ball.ground_pos())
+		var gap := to_man.length()
+		if gap > 0.3 and gap <= SimContext.CHALLENGE_SIGHT and to_man.dot(player.heading_dir()) > 0.0:
+			var line := to_man / gap
+			for side in [-1.0, 1.0]:
+				var d := line.rotated(Vector3.UP, BURST_SHOULDER * side)
+				if dirs.is_empty() or dirs[0].dot(d) < cos(BURST_SHOULDER * 0.5):
+					dirs.append(d)
+	for burst_dir in dirs:
+		_add_burst(ctx, player, challenger, burst_dir, skill, settle, tactics)
+
+
+## The knock past a man (or into space) down one line, priced and listed.
+## Split out of `_add_dribbles` so it can be asked once per direction.
+static func _add_burst(ctx: SimContext, player: SimPlayer, challenger: SimPlayer, burst_dir: Vector3,
+		skill: float, settle: float, tactics: SimTactics) -> void:
 	# Round the keeper. `close_control` exists to stop the box knock giving the
 	# keeper the ball, and it is exactly wrong in the one case where the keeper
 	# is the man to beat: advanced, committed, with nothing behind him. There
@@ -4326,8 +4416,11 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 	var wanted_burst: float = BURST_DISTANCE * 0.7 if round_keeper else close_control(ctx, player, BURST_DISTANCE)
 	var push := minf(wanted_burst, _room_ahead(ctx, player, burst_dir, round_keeper))
 	# Beyond his stride, but still off it: the knock a man at full pace can run
-	# onto is not the one a man who has just got going can.
-	push = minf(push, stride_room(player, burst_dir, BURST_SECONDS))
+	# onto is not the one a man who has just got going can -- and a man who
+	# has just got going is accelerating, which `stride_run` knows and
+	# `stride_room` does not. Read off his standing pace, a jogging carrier
+	# was refused every knock past a man two metres in front of him.
+	push = minf(push, stride_run(player, burst_dir, BURST_SECONDS))
 	# In a one-on-one the man to beat is the keeper, who is never a challenger.
 	var beat_man := challenger
 	if round_keeper and beat_man == null:
@@ -4398,8 +4491,16 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 	# lofted pass into the box is priced with, for the same reason.
 	var burst_seconds := carry_time(ctx, player, burst_dir, push)
 	var burst_escape := _escape_value(beat_man, player, arrival)
-	var burst_success := ctx.value.control_at_time(
-		ctx, arrival, player.team, burst_seconds, beat_man.id if beat_man != null else -1)
+	# A knock that outruns its carrier is a ball into space with a named
+	# runner -- himself -- and is priced as one (`control_at_pass`, the through
+	# ball's clock): he pays no reaction for a ball he chose, and an opponent
+	# takes it only by getting in front of it (`AIMED_STEP_IN`). The neutral
+	# race put every body that could reach the arrival by the ball's time on
+	# level terms with the man running onto it, and read 0.56 on knocks that,
+	# forced, were kept 70% two seconds on.
+	var burst_success := ctx.value.control_at_pass(
+		ctx, arrival, player.team, burst_seconds, player.id,
+		beat_man.id if beat_man != null else -1, true)
 	burst_success *= skill * burst_escape
 	# The same question the carry above is asked. `_room_ahead` shortens the knock
 	# to fit the grass, which stops him aiming it off the pitch, and says nothing
@@ -4456,6 +4557,19 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 		"push": push,
 		"bias": tactics.retention_bias() * lerpf(0.9, 1.25, player.attrs.pace) * settle,
 	})
+	if debug_parts:
+		var beat_id: int = beat_man.id if beat_man != null else -1
+		_candidates[_candidates.size() - 1]["parts"] = {
+			"ctrl": ctx.value.control_at_pass(ctx, arrival, player.team, burst_seconds, player.id, beat_id, true),
+			"escape": burst_escape,
+			"skill_press": skill,
+			"face": 1.0,
+			"in_play": _in_play_odds(ctx, player, burst_dir, push, true),
+			"lane": _lane_survival(ctx, player, ctx.ball.ground_pos(), arrival, burst_seconds, 0.0, beat_id),
+			"seconds": burst_seconds,
+			"travel": SimConsts.horizontal_length(arrival - ctx.ball.ground_pos()),
+			"push": push,
+		}
 	_keep_factors()
 
 
@@ -5234,6 +5348,8 @@ static var behind_gate := PackedFloat32Array()
 ## its success factors. Off in play -- the dictionary is allocation per probe --
 ## and turned on only by the factor probes in tools/.
 static var debug_parts := false
+## Probe-only: the softmax plays the knock past a man whenever it is listed.
+static var debug_force_push := false
 ## The same tally again, committed runners only. The full population answers for
 ## generation; this one answers for the serve -- the man who has set off is who
 ## stage 2 of the order is about, and the shares above drown him twenty to one.
@@ -5871,6 +5987,16 @@ static func _softmax_pick(ctx: SimContext, player: SimPlayer) -> Dictionary:
 	var idx: int = ctx.rng.weighted_index(_weights)
 	if idx < 0:
 		idx = 0
+	if debug_force_push:
+		# An instrument, never the match: play the best knock past a man
+		# whenever one is on the list, so its price can be read against what
+		# it does. `tools/_pressure_probe.gd`.
+		var best_push := -1
+		for i in n:
+			if _candidates[i].has("push") and (best_push < 0 or _scores[i] > _scores[best_push]):
+				best_push = i
+		if best_push >= 0:
+			idx = best_push
 	_note_rejections(player.id, idx)
 	if SimChoices.enabled:
 		_note_choice(ctx, player, idx)
