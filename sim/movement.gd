@@ -723,7 +723,13 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 			# stays as it was -- a chaser who cuts in front of every carry is
 			# the wrong act (`_recovery_point`); this is the one place the
 			# football says otherwise.
-			if holder.on_pitch and holder.dist_to(at) < SimTouch.DRIBBLE_AHEAD_MAX:
+			# Not from behind him: a chaser in the slipstream aimed at a point
+			# in front of the carrier is the tailgate INVARIANTS names, and it
+			# undid the recovery run -- `1v1-clear` read 35% to 44% goals at
+			# n=160 until this line. He runs round first; the lane is for the
+			# man who is level or in front.
+			if holder.on_pitch and holder.dist_to(at) < SimTouch.DRIBBLE_AHEAD_MAX \
+					and _recovery_weight(ctx, p) <= 0.0:
 				var lane := _box_lane_weight(ctx, p.team, at)
 				if lane > 0.0:
 					var own_goal := ctx.pitch.own_goal(p.team)

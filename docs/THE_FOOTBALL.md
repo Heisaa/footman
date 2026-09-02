@@ -1901,6 +1901,21 @@ instead of being hooked clear from the byline. Twenty fragments: 39 cadences
 of it, about four seconds of escorting; the ball went out of play 44 times
 before and 49 after on the same seeds. Rare and cheap, as its row said.
 
+**The re-watch of the attack, 2026-09-02 (item 5 of the pass).** Every row at
+n=160 against the same rows at the last pre-pass commit; the table and the
+reading are in `docs/STATUS.md`, "The scenarios, measured". Rows that stopped
+reading as football, named: **`volley`** -- the first-time strike is priced
+low with bodies in front, so he takes it down and carries, and nobody closes
+him (goals 25% to 36%, `lost` 2%); the missing defender is the one who
+closes a man taking a dropping ball down. **`shot-edge`** -- he no longer
+shoots through two centre-backs, and carries into them instead, one in seven
+to nothing. Rows that moved and read right: the crosses lose 70-80% now,
+which is football's rate; `hold-up` keeps it under a jockey; `long-range` and
+`race` score less. `1v1-clear` rose 35% to 44% from small pricing effects,
+none alone beyond the error, and sits inside football's rate. One guard went
+in on the way: the box lane is not given to a chaser behind the carrier, who
+runs round first (`_recovery_weight`), the tailgate INVARIANTS names.
+
 **Built 2026-09-02: the deliberate foul.** The cynical foul that stops a
 break had been falling out of `CHALLENGE_FOUL_BEHIND` by accident; this is the
 choice. `SimDuel._cynical`: a challenger behind or level with a carrier
