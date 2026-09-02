@@ -34,9 +34,9 @@ const SCALE_MIN := 0.75
 const SCALE_MAX := 1.6
 
 const MARGIN := 14.0
-## Where the panels start, below the scoreboard. The board is drawn from the top
-## middle and is 430 wide at its own scale, so anything higher than this collides
-## with it on a narrow window.
+## Where the panels start, below the scoreboard. The board sits in the top-left
+## corner with a prompt chip under it, about 102 deep at its own scale, so
+## anything higher than this collides with it.
 const TOP := 122.0
 const PAD := 9.0
 const ROW := 15.0

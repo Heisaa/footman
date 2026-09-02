@@ -635,13 +635,13 @@ Perspective with a **low field of view**, at a high angle, to approximate isomet
 set of authored camera positions that cut between each other over a free-orbit camera; the
 faked-isometric look breaks if the player can tilt to eye level.
 
-**Three positions, and they pan** (amended — see `DECISIONS.md`). All three stand off the same
-touchline, one on the halfway line and one level with each penalty area, and each pans, tilts and
-zooms to hold play. Motion inside a shot is free; cutting is expensive, and a grid of authored
-positions dense enough to keep play framed spends it constantly. The elevation is stated at the
-middle of the pitch (35°) because a panning camera has a different angle on every point it can
-look at, and the field of view is solved each frame to hold a fixed frame width, which keeps a
-player the same size on screen wherever play is.
+**One position, and it pans** (amended — see `DECISIONS.md`). It stands off one touchline on
+the halfway line and pans, tilts and zooms to hold play; it never cuts. Cutting is expensive, and
+a grid of authored positions dense enough to keep play framed spends it constantly; the pair of
+penalty-area cameras that followed cut rarely and still cut more than wanted. The elevation is
+stated at the middle of the pitch (27°) because a panning camera has a different angle on every
+point it can look at, and the field of view is solved each frame to hold a fixed frame width,
+which keeps a player the same size on screen wherever play is.
 
 ### 9.5 Animation
 

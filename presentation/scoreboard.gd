@@ -12,6 +12,12 @@ extends Control
 ## against a bright kit. Nothing here is a texture, so it costs one draw pass and
 ## re-skins with the palette.
 
+## The board sits in the top-left corner, one strip: the home chip, the score,
+## the away chip and the clock in a row. A corner rather than the top middle
+## because the middle of the top edge is where the far touchline and the
+## crowd behind it are, which is the picture; a corner is where a broadcast
+## keeps its bug, and the eye has learned to glance there and back.
+##
 ## The board is authored at this viewport height and scaled from it, so the same
 ## layout numbers hold at 720p and at 4K. Clamped at the bottom because a very
 ## short window should shrink the board rather than have it eat the pitch, and at
@@ -20,30 +26,27 @@ const REFERENCE_HEIGHT := 720.0
 const SCALE_MIN := 0.7
 const SCALE_MAX := 2.0
 
-const BOARD_WIDTH := 430.0
-const BOARD_HEIGHT := 74.0
-const CHIP_WIDTH := 128.0
-const TAB_WIDTH := 168.0
-const TAB_HEIGHT := 34.0
-## How far the clock tab is pushed up into the board, so the two read as one
-## object with a step in it rather than as two panels that happen to touch.
-const TAB_OVERLAP := 6.0
-const MARGIN_TOP := 18.0
+const BOARD_HEIGHT := 48.0
+const CHIP_WIDTH := 92.0
+const SCORE_WIDTH := 86.0
+const CLOCK_WIDTH := 96.0
+const MARGIN := 16.0
 
 const BORDER := 4.0
 const SHADOW := Vector2(0.0, 5.0)
 const CORNER := 9.0
 const PAD := 5.0
 
-const NAME_SIZE := 27
-const SCORE_SIZE := 40
-const CLOCK_SIZE := 22
-const PERIOD_SIZE := 17
+const NAME_SIZE := 20
+const SCORE_SIZE := 28
+const CLOCK_SIZE := 20
+const PERIOD_SIZE := 14
 
-## The full-time prompt's chip. Sized off its own text so the two words and the
-## six do not need two layouts, and set well clear of the clock tab: it appears
-## from nothing, and something appearing hard against the board reads as the
-## board having grown rather than as a new thing to read.
+## The full-time prompt's chip, hung under the board and flush with its left
+## edge. Sized off its own text so the two words and the six do not need two
+## layouts, and set clear of the board: it appears from nothing, and something
+## appearing hard against the board reads as the board having grown rather than
+## as a new thing to read.
 const PROMPT_SIZE := 16
 const PROMPT_HEIGHT := 28.0
 const PROMPT_PAD := 16.0
@@ -135,7 +138,9 @@ func _draw() -> void:
 	# the layout below is then written in the authored units throughout, and the
 	# swell is the same transform with a different factor.
 	var swell := 1.0 + PULSE_SWELL * _pulse_shape()
-	var origin := Vector2(size.x * 0.5, MARGIN_TOP * scale)
+	# Swells out of the corner it sits in, so the margin holds and the board
+	# grows into the picture rather than off the screen.
+	var origin := Vector2(MARGIN, MARGIN) * scale
 	draw_set_transform(origin, 0.0, Vector2(scale * swell, scale * swell))
 	_draw_board()
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -150,34 +155,29 @@ func _pulse_shape() -> float:
 	return sin(pow(clampf(t, 0.0, 1.0), 0.45) * PI)
 
 
-## Everything below is in authored units, centred on (0, 0) at the top middle of
-## the board.
+## Everything below is in authored units, with (0, 0) at the board's top-left
+## corner.
 func _draw_board() -> void:
-	var board := Rect2(-BOARD_WIDTH * 0.5, 0.0, BOARD_WIDTH, BOARD_HEIGHT)
-	var tab := Rect2(-TAB_WIDTH * 0.5, BOARD_HEIGHT - TAB_OVERLAP, TAB_WIDTH, TAB_HEIGHT)
-
-	# The shadow slab is one shape behind both panels, so the step between them
-	# does not print twice.
+	var width := PAD * 2.0 + CHIP_WIDTH * 2.0 + SCORE_WIDTH + CLOCK_WIDTH
+	var board := Rect2(0.0, 0.0, width, BOARD_HEIGHT)
 	_panel(board.grow(BORDER * 0.5).abs(), SimPalette.INK, SimPalette.INK, SHADOW)
-	_panel(tab.grow(BORDER * 0.5).abs(), SimPalette.INK, SimPalette.INK, SHADOW)
-	_panel(tab, SimPalette.PAPER, SimPalette.INK, Vector2.ZERO)
 	_panel(board, SimPalette.PAPER, SimPalette.INK, Vector2.ZERO)
 
 	var inner := board.grow(-PAD)
-	var home_chip := Rect2(inner.position, Vector2(CHIP_WIDTH, inner.size.y))
-	var away_chip := Rect2(
-		Vector2(inner.end.x - CHIP_WIDTH, inner.position.y), Vector2(CHIP_WIDTH, inner.size.y)
-	)
-	_draw_chip(home_chip, home_name, home_kit, 0)
-	_draw_chip(away_chip, away_name, away_kit, 1)
+	var x := inner.position.x
+	var home_chip := Rect2(x, inner.position.y, CHIP_WIDTH, inner.size.y)
+	x += CHIP_WIDTH
+	var middle := Rect2(x, inner.position.y, SCORE_WIDTH, inner.size.y)
+	x += SCORE_WIDTH
+	var away_chip := Rect2(x, inner.position.y, CHIP_WIDTH, inner.size.y)
+	x += CHIP_WIDTH
+	var clock := Rect2(x, inner.position.y, CLOCK_WIDTH, inner.size.y)
 
-	var middle := Rect2(
-		Vector2(home_chip.end.x, inner.position.y),
-		Vector2(away_chip.position.x - home_chip.end.x, inner.size.y)
-	)
+	_draw_chip(home_chip, home_name, home_kit, 0)
 	_text(middle, "%d - %d" % [_score[0], _score[1]], SCORE_SIZE, SimPalette.INK, SimPalette.PAPER)
-	_draw_tab(tab)
-	_draw_prompt(tab)
+	_draw_chip(away_chip, away_name, away_kit, 1)
+	_draw_clock(clock)
+	_draw_prompt(board)
 
 
 ## A team's end of the board: kit colour behind, the short name in whatever
@@ -191,10 +191,11 @@ func _draw_chip(rect: Rect2, label: String, kit: Color, team: int) -> void:
 	_text(rect, label, NAME_SIZE, ink, SimPalette.contrast_for(ink))
 
 
-## The clock, or the name of the break when play has stopped for one. A period
+## The clock, or the name of the break when play has stopped for one, on an ink
+## chip at the end of the strip so it reads apart from the two kits. A period
 ## label is longer than a time and gets the smaller size, which is also how the
 ## eye is told the number it was reading has been replaced by a word.
-func _draw_tab(tab: Rect2) -> void:
+func _draw_clock(rect: Rect2) -> void:
 	var label := ""
 	var size_px := CLOCK_SIZE
 	match _period:
@@ -206,14 +207,15 @@ func _draw_tab(tab: Rect2) -> void:
 			size_px = PERIOD_SIZE
 		_:
 			label = "%02d:%02d" % [int(_clock / 60.0), int(_clock) % 60]
-	_text(tab, label, size_px, SimPalette.INK, SimPalette.PAPER)
+	_panel(rect, SimPalette.INK, SimPalette.INK, Vector2.ZERO)
+	_text(rect, label, size_px, SimPalette.PAPER, SimPalette.INK)
 
 
 ## What to press when the football has stopped, on a chip of its own hung below
-## the clock. Lemon, because it is the one thing on screen asking to be acted on,
-## and narrower than the board so it reads as a label on it rather than a second
-## board.
-func _draw_prompt(tab: Rect2) -> void:
+## the board and flush with its left edge. Lemon, because it is the one thing on
+## screen asking to be acted on, and sized to its words so it reads as a label
+## on the board rather than a second board.
+func _draw_prompt(board: Rect2) -> void:
 	var text := prompt if prompt != "" else subtitle
 	if text == "":
 		return
@@ -222,7 +224,7 @@ func _draw_prompt(tab: Rect2) -> void:
 		text, HORIZONTAL_ALIGNMENT_LEFT, -1, PROMPT_SIZE
 	).x + PROMPT_PAD * 2.0
 	var chip := Rect2(
-		Vector2(-width * 0.5, tab.end.y + PROMPT_GAP), Vector2(width, PROMPT_HEIGHT)
+		Vector2(board.position.x, board.end.y + PROMPT_GAP), Vector2(width, PROMPT_HEIGHT)
 	)
 	_panel(chip.grow(BORDER * 0.5).abs(), SimPalette.INK, SimPalette.INK, SHADOW)
 	_panel(chip, fill, SimPalette.INK, Vector2.ZERO)

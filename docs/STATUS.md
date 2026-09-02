@@ -18,8 +18,8 @@ success rates, and a passing distinguishability test.
 
 **6 started.** Procedural appearance, character builder, face atlas, and a 3D
 match view with flat materials, painted pitch lines, pool-noodle goals and an
-instanced crowd. Three fixed cameras off one touchline, each panning to hold play
-and cutting rarely. A hand-drawn scoreboard over it. Animation runs at the
+instanced crowd. One fixed camera on the halfway line, panning to hold play and
+never cutting. A hand-drawn scoreboard over it. Animation runs at the
 display's frame rate. **Not yet judged against "watchable and charming at 1x"**,
 which is Phase 6's exit criterion and only the owner can call it.
 

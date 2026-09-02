@@ -470,6 +470,12 @@ did the work is a **commitment delay**: play has to stay in the new camera's
 territory before the cut is taken, so a ball cleared straight back out is covered
 by the pan and costs nothing.
 
+**One camera, and it pans** (§9.2 amended again, 2026-09-02). The two
+penalty-area cameras are gone at the owner's direction: even the rare cut was
+more than wanted. The halfway camera takes the whole match, and its elevation
+comes down from 35° to 27°, and the zoom only half-compensates for range, so
+the far touchline is no longer pulled in to full size.
+
 ## Deviations from the plan
 
 **The ball has a drag crisis, which §3.1 said to ignore.** A football's boundary
@@ -542,7 +548,7 @@ none, because it argues back:
 
 So §9.1 is now one page saying where to look: `art/reference/`, the rank render,
 the parade, and the two silhouette measuring tools. §9.3 and §9.4 are gone.
-§9.2 (camera) stays as written: it is a system -- three panning positions, the
+§9.2 (camera) stays as written: it is a system -- a panning position, the
 elevation and the frame width solved each frame -- and not a statement about the
 look. §9.6 (interface) was generalised rather than deleted, at the owner's
 direction: it now says the interface is drawn in whatever look the figures

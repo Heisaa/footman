@@ -15,44 +15,35 @@ extends Node3D
 ## pose layer measures over time — the gait's cadence, the turn rate — is stated
 ## in seconds rather than in stepped frames, so one set of code drives both.
 
-## Three cameras, and they pan (§9.2).
+## One camera, and it pans (§9.2).
 ##
 ## An earlier version had twenty-one authored positions — seven along the pitch
 ## by three across it — and cut to whichever was nearest the ball. It cut far too
 ## often: a ball played twenty metres sideways changed the shot, and the viewer
 ## spent the match re-finding play instead of watching it. Cutting is the most
-## violent thing a camera can do and it was being spent on nothing.
+## violent thing a camera can do and it was being spent on nothing. A later
+## version kept three, one on the halfway line and one level with each box, and
+## cut between them; even those cuts were more than the owner wanted.
 ##
-## What replaces it is the rig a television match is actually shot on. Three
-## fixed positions, all on the *same* touchline — reversing the side would
-## reverse the direction of play, which is the one thing a football viewer cannot
-## be asked to re-learn mid-match — and each of them pans and tilts to hold the
-## ball. The one on the halfway line takes almost the whole match; the two level
-## with the penalty areas take over when play arrives there, where the halfway
-## camera's angle into the box has gone too oblique to read.
-##
-## Motion inside a shot is free, and it is what the eye follows. Cuts are then
-## rare enough to mean something.
+## What is left is the main camera of a television match: one fixed position on
+## the halfway line, off one touchline, panning, tilting and zooming to hold the
+## ball. It never cuts, so motion inside the shot is all the eye has to follow.
 
-## Where each camera stands, stated as an angle and a distance from the point it
+## Where the camera stands, stated as an angle and a distance from the point it
 ## is aimed at when that point is on the halfway line.
 ##
 ## Elevation is what makes this a toy set rather than a broadcast: shallower than
 ## about twenty-five degrees and the pitch foreshortens to nothing, so positions
-## stop reading as positions. It is now the elevation *at the middle* of the
-## pitch rather than a fixed one, because a panning camera has a different angle
-## on every point it can look at — thirty-five here swings from about
-## twenty-five degrees on the far touchline to fifty-five on the near one, which
-## is the widest band that still reads as one stadium.
-const CAMERA_ELEVATION_DEG := 35.0
+## stop reading as positions. It is the elevation *at the middle* of the pitch
+## rather than a fixed one, because a panning camera has a different angle on
+## every point it can look at. Twenty-seven is the owner's call, down from
+## thirty-five in two steps: a lower stand, nearer the broadcast gantry.
+const CAMERA_ELEVATION_DEG := 27.0
 const CAMERA_RANGE := 80.0
-## How far along the pitch the two penalty-area cameras stand. The box edge is at
-## 36, so this is level with the spot and looking slightly in at the goal.
-const CAMERA_SIDE_X := 40.0
 
 ## Frame width decides how big a player is on screen, and a player who is forty
 ## pixels tall has no body language: the expressions, the arm swing and the
-## squash of a kick are all below the resolution of the shot, and the whole
+## follow-through of a kick are all below the resolution of the shot, and the whole
 ## character system may as well not exist. Fifty metres across the frame put a
 ## player at roughly sixty pixels in 720p, which is enough to read a face, while
 ## still holding the ball carrier and the players around him. Fifty-eight is the
@@ -66,42 +57,31 @@ const CAMERA_SIDE_X := 40.0
 ## width at whatever the range to the ball currently is, which is what a camera
 ## operator does with the zoom rocker and for the same reason.
 const CAMERA_FRAME_WIDTH := 58.0
+## How much of that range compensation the zoom actually does. One holds the
+## frame width exactly and a player is the same size on either touchline; zero
+## fixes the lens at the width it has on the halfway line and lets the far side
+## shrink with distance. Full compensation read as the lens lunging in whenever
+## play crossed to the far side, so it does half: the far touchline still comes
+## in, but only halfway to size.
+const CAMERA_ZOOM_FOLLOW := 0.5
+## The lens tightens as the ball nears a penalty area: the frame narrows to this
+## fraction of its width by the time the ball is level with the edge of the box,
+## starting this many metres short of it. A chance is the moment a face and a
+## follow-through matter most, and the box is where the players bunch, so the
+## frame can afford to lose the width of midfield. Driven by the aim point
+## rather than the ball, so the zoom is as smooth as the pan.
+const CAMERA_BOX_ZOOM := 0.8
+const CAMERA_BOX_ZOOM_RUN_IN := 12.0
+## Degrees the lens is tilted down after it has found the ball, so the ball sits
+## above the middle of the frame with more grass below it than above. Positive
+## is down.
+const CAMERA_TILT_DOWN_DEG := 3.0
 const CAMERA_FOV_MIN := 8.0
 const CAMERA_FOV_MAX := 50.0
 
-## When play is this far up the pitch, the penalty-area camera has the better
-## angle. The hysteresis is deliberately large: coming back to the halfway camera
-## needs the ball eight metres inside the line that sent us away, so a ball
-## cleared to the edge of the box and headed back does not cost two cuts.
-##
-## Thirty is a good way short of the box, which is deliberate — waiting for the
-## ball to reach the edge of it meant the cut landed after the attack had already
-## arrived, and the box camera kept showing up late to its own shot.
-const CAMERA_SWITCH_X := 30.0
-const CAMERA_SWITCH_HYSTERESIS := 8.0
-## Three timers, all in *simulated* seconds so the same match is shot the same
-## way at 1x and at 8x: a wall-clock pan would trail hopelessly behind a
-## fast-forwarded ball, and wall-clock delays would silently cut less often the
-## faster you watched.
-##
-## The minimum is a floor on how long a shot lasts, and it is a backstop rather
-## than the mechanism — with the commitment doing the real work it hardly ever
-## binds. Kept short so play that sweeps end to end can be followed up the pitch,
-## halfway camera and all, instead of the halfway shot being skipped because it
-## would have been too brief to allow.
-##
-## The commitment is the useful one: play has to stay in the new camera's
-## territory for this long before the cut is taken, so a ball that arrives in the
-## final third and is cleared straight back out is covered by the pan and costs
-## no cut at all. Without it the camera sat out its minimum and then cut
-## immediately, which is the same twitchiness one step slower.
-##
-## A second of it was too much to sit through, though: an attack develops fast
-## enough that the cut has to be part of it rather than a reaction to it. What is
-## left is long enough to swallow a ball passing through, short enough that the
-## box camera is live before the cross comes in.
-const CAMERA_MIN_SHOT := 3.0
-const CAMERA_COMMIT := 1.0
+## The pan's time constant, in *simulated* seconds so the same match is shot the
+## same way at 1x and at 8x: a wall-clock pan would trail hopelessly behind a
+## fast-forwarded ball.
 const CAMERA_PAN_TAU := 0.35
 
 ## The ball is drawn larger than it is simulated, and only drawn.
@@ -229,18 +209,10 @@ var _ball: Node3D
 ## being a rotation.
 var _ball_roll := Quaternion.IDENTITY
 var _camera: Camera3D
-## Which of the three cameras is live: 0 and 2 are the penalty-area pair, 1 the
-## halfway line, which is where a match starts and where it mostly stays.
-var _camera_shot := 1
-## The point on the grass the live camera is pointed at, chased toward the ball
+## The point on the grass the camera is pointed at, chased toward the ball
 ## rather than snapped to it. This is the pan and the tilt: the camera body never
 ## moves, only what it is looking at.
 var _camera_aim := Vector3.ZERO
-## Simulated seconds the live camera has held the shot, against CAMERA_MIN_SHOT.
-var _camera_held := 0.0
-## The camera play has been asking for, and for how long, against CAMERA_COMMIT.
-var _camera_wanted := 1
-var _camera_wanted_for := 0.0
 ## The tick the last frame was drawn at, which is what the camerawork is stepped
 ## by. Not the same as the tick the match has reached: the picture can be
 ## standing still, stepping a tick at a time, or somewhere in the recording.
@@ -624,9 +596,9 @@ func _start_match(seed_value: int) -> void:
 		_scoreboard.away_name = away.short_name
 		_scoreboard.home_kit = _kits[0][0]
 		_scoreboard.away_kit = _kits[1][0]
-	# A new match kicks off from the centre spot, so the halfway camera takes it.
+	# A new match kicks off from the centre spot, and the camera starts on it.
 	if _camera != null:
-		_cut_to(1)
+		_place_camera()
 	_history.clear()
 	_frames.clear()
 	_scrubbing = false
@@ -706,7 +678,7 @@ func _build_world() -> void:
 
 	_camera = Camera3D.new()
 	add_child(_camera)
-	_cut_to(1)
+	_place_camera()
 
 	_build_stands()
 	_build_crowd()
@@ -2045,9 +2017,9 @@ func _run_seek() -> void:
 		_overlay.pinned = _pin_held
 	_seek_is_rewind = false
 	_pin_held = -1
-	# The camera put where the ball is rather than left chasing it across the
-	# ninety seconds it has just skipped.
-	_cut_to(_camera_shot)
+	# The camera put on the ball rather than left chasing it across the ninety
+	# seconds it has just skipped.
+	_place_camera()
 
 
 ## The command that re-simulates this moment. The flags matter: the compressed
@@ -3079,62 +3051,20 @@ func _bob_crowd() -> void:
 		mm.set_instance_transform(i, Transform3D(Basis(), home[i] + Vector3(0.0, bob, 0.0)))
 
 
-## One frame of camerawork: decide whether the shot still holds, then pan.
+## One frame of camerawork: pan toward the ball.
 func _work_camera(ball_pos: Vector3, sim_dt: float) -> void:
-	_camera_held += sim_dt
-	var wanted := _shot_for(ball_pos.x)
-	if wanted == _camera_wanted:
-		_camera_wanted_for += sim_dt
-	else:
-		_camera_wanted = wanted
-		_camera_wanted_for = 0.0
-	# Play at the far end is the one case worth cutting on sight. The live camera
-	# is then behind play by the length of the pitch, and every second it holds is
-	# a second of watching an attack side-on from eighty metres away.
-	var far_end := absi(wanted - _camera_shot) == 2
-	var settled := _camera_held >= CAMERA_MIN_SHOT and _camera_wanted_for >= CAMERA_COMMIT
-	if wanted != _camera_shot and (settled or far_end):
-		_cut_to(wanted)
-	else:
-		_pan_to(ball_pos, sim_dt)
+	_pan_to(ball_pos, sim_dt)
 	_apply_camera()
 
 
-## Which camera has the angle, given where play is.
-##
-## The hysteresis widens the live camera's own territory and nothing else. Doing
-## it the obvious way — one threshold, moved in when a penalty-area camera is
-## live — also moves the boundary of the camera at the *other* end, so a left-box
-## camera would hand straight over to the right-box one with play still in
-## midfield.
-func _shot_for(ball_x: float) -> int:
-	var right := CAMERA_SWITCH_X - (CAMERA_SWITCH_HYSTERESIS if _camera_shot == 2 else 0.0)
-	var left := -CAMERA_SWITCH_X + (CAMERA_SWITCH_HYSTERESIS if _camera_shot == 0 else 0.0)
-	if ball_x > right:
-		return 2
-	if ball_x < left:
-		return 0
-	return 1
-
-
-## Takes the shot, and starts it already framed on the ball. Panning in from
-## wherever the last camera happened to be pointed would spend the first second
-## of every cut looking at the wrong part of the pitch.
-func _cut_to(shot: int) -> void:
-	_camera_shot = shot
-	_camera_held = 0.0
-	_camera_wanted = shot
-	_camera_wanted_for = 0.0
+## Stands the camera on the halfway line, off the near touchline, already framed
+## on the ball. Called once a match and after a seek: panning in from wherever
+## it was last pointed would spend the first second looking at the wrong part of
+## the pitch.
+func _place_camera() -> void:
 	_camera_aim = _aim_for(_curr.ball_pos)
-	var x := 0.0
-	if shot == 0:
-		x = -CAMERA_SIDE_X
-	elif shot == 2:
-		x = CAMERA_SIDE_X
-	# All three stand off the same touchline, at the same height and the same
-	# distance back, so a cut moves along the stand and never across the pitch.
 	var elevation := deg_to_rad(_elevation_deg)
-	_camera.position = Vector3(x, _range * sin(elevation), _range * cos(elevation))
+	_camera.position = Vector3(0.0, _range * sin(elevation), _range * cos(elevation))
 
 
 ## Chases the aim point toward the ball with a time constant rather than
@@ -3160,15 +3090,16 @@ func _pan_to(ball_pos: Vector3, sim_dt: float) -> void:
 ## far corner: the camera holds and lets it run into the top of frame rather than
 ## chasing it up and losing the horizon.
 const CAMERA_TILT_LIMIT := 17.0
-## The same idea along the pitch. Centring the aim on a ball in the six-yard box
-## puts the goal line a third of the way across the frame and gives the other
-## third to the stand behind it. Stopping the pan short holds the goal near the
-## edge of frame, which is where a television camera keeps it and how a viewer
-## reads the width of the box.
-const CAMERA_PAN_LIMIT := 38.0
+## The same idea along the pitch, and a much looser one. It was thirty-eight,
+## which held the goal at the edge of frame with the wide lens; with the lens
+## tightening into the box that stop left a ball near the goal line pinned at
+## the edge of the picture, the camera visibly unable to follow. Forty-six lets
+## the pan run to the six-yard box and stops only short of the corner flag, so
+## the stand behind the goal never takes more than the end of the frame.
+const CAMERA_PAN_LIMIT := 46.0
 
 
-## The point on the grass a camera tries to hold, which is the ball flattened
+## The point on the grass the camera tries to hold, which is the ball flattened
 ## onto the pitch and kept inside the part of it worth looking at. Flattened,
 ## because tracking a lofted ball in three dimensions tips the camera up into the
 ## empty sky above the far stand every time one is cleared. Kept inside, because
@@ -3182,17 +3113,27 @@ func _aim_for(ball_pos: Vector3) -> Vector3:
 	)
 
 
-## Points the live camera at the aim point and zooms it so that CAMERA_FRAME_WIDTH
-## metres span the frame *there*. Godot's `fov` is vertical, so the aspect ratio
-## comes into it — and because the fit is redone every frame, a resize or a jump
-## to full screen is already handled.
+## Points the camera at the aim point and zooms it so that CAMERA_FRAME_WIDTH
+## metres span the frame *there* — or would, at CAMERA_ZOOM_FOLLOW of one; the
+## range the lens is solved for is blended between the range to the aim point
+## and the range to the centre spot. Godot's `fov` is vertical, so the aspect
+## ratio comes into it — and because the fit is redone every frame, a resize or
+## a jump to full screen is already handled.
 func _apply_camera() -> void:
 	_camera.look_at(_camera_aim, Vector3.UP)
+	_camera.rotate_object_local(Vector3.RIGHT, -deg_to_rad(CAMERA_TILT_DOWN_DEG))
 	var size := get_viewport().get_visible_rect().size
 	var aspect: float = size.x / size.y if size.y > 0.0 else 16.0 / 9.0
-	var vertical := _frame_width / aspect
+	var box_edge := _pitch.half_length - _pitch.penalty_depth
+	var into_box := clampf(
+		(absf(_camera_aim.x) - (box_edge - CAMERA_BOX_ZOOM_RUN_IN)) / CAMERA_BOX_ZOOM_RUN_IN,
+		0.0, 1.0
+	)
+	var vertical := _frame_width * lerpf(1.0, CAMERA_BOX_ZOOM, smoothstep(0.0, 1.0, into_box)) / aspect
 	var range_to_aim := maxf(_camera.position.distance_to(_camera_aim), 1.0)
-	var fov := rad_to_deg(2.0 * atan(vertical * 0.5 / range_to_aim))
+	var range_to_centre := maxf(_camera.position.length(), 1.0)
+	var solved_range := lerpf(range_to_centre, range_to_aim, CAMERA_ZOOM_FOLLOW)
+	var fov := rad_to_deg(2.0 * atan(vertical * 0.5 / solved_range))
 	_camera.fov = clampf(fov, CAMERA_FOV_MIN, CAMERA_FOV_MAX)
 
 
