@@ -2227,6 +2227,9 @@ func _pose(node: Node3D, index: int, clock: float) -> void:
 	var t: float = _quantise(_anim_phase(node, anim))
 	var span: float = ANIM_SECONDS.get(anim, 1.0)
 	var u: float = clampf(t / span, 0.0, 1.0)
+	if anim == SimConsts.Anim.KICK_LIGHT or anim == SimConsts.Anim.KICK_HARD \
+			or anim == SimConsts.Anim.VOLLEY:
+		u = _kick_phase(index, t, span)
 
 	var yaw: float = -_facing(index) + PI * 0.5
 	_orient(node, yaw, 0.0, 0.0)
@@ -2240,6 +2243,31 @@ func _pose(node: Node3D, index: int, clock: float) -> void:
 	SimCharacterModel.set_expression(
 		node, SimAppearance.face_for_anim(anim, _curr.player_stamina[index])
 	)
+
+
+## Where a kick is, phased to the strike tick the snapshot carries
+## (`SimSnapshot.player_strike`): negative through the backswing, -1 at the
+## plant and 0 at the strike, then 0 to 1 over the follow-through's span.
+## The sim plays the kick anim from the plant (`SimDecision.wind_up`) and
+## re-plays it at the strike, so the elapsed time `t` is the time since the
+## plant while the strike is still to come, and the strike tick is the one
+## clock both halves are read against. A kick with no wind-up is all
+## follow-through, as before.
+func _kick_phase(index: int, t: float, span: float) -> float:
+	var strike: int = _curr.player_strike[index]
+	var now: float = lerpf(float(_prev.tick), float(_curr.tick), _alpha)
+	var remaining: float = (float(strike) - now) * SimConsts.DT
+	if remaining > 0.0:
+		var total: float = t + remaining
+		if total < 1e-3:
+			return 0.0
+		return -clampf(remaining / total, 0.0, 1.0)
+	var since: float = -remaining
+	# A strike older than the anim is not this anim's: a kick pose that was
+	# started by something else is timed by its own clock.
+	if since > t + 0.1:
+		since = t
+	return clampf(_quantise(since) / span, 0.0, 1.0)
 
 
 ## Every named state on top of the gait: the ones that are a function of the
@@ -2533,13 +2561,32 @@ static func pose_gait(node: Node3D, speed: float, phase: float, turn: float, acr
 	node.position.y = absf(swing) * GAIT_BOB - amplitude * planted * planted * GAIT_DIP
 
 
-## The follow-through, not the strike: the sim plays this *after* the ball has
-## gone, so the leg starts extended and relaxes out of it. Mirrored onto the
-## foot the sim struck it with: the opposite arm comes forward with the leg.
+## The kick, in two halves about the strike. `u` below zero is the backswing
+## (`_kick_phase`): the plant foot down and the weight back on it, the
+## kicking leg drawn behind him and its knee folded, the opposite arm
+## forward, deepest at the strike. From zero the follow-through: the leg
+## extended through the ball and relaxing out of it. Mirrored onto the foot
+## the sim struck it with. No squash and stretch.
 static func _pose_kick(node: Node3D, u: float, force: float, foot: int) -> void:
-	var swing: float = lerpf(1.0, 0.2, u) * force
 	var k := _side(foot)
 	var s := _side(SimAttributes.other_foot(foot))
+	if u < 0.0:
+		# -1 at the plant, 0 at the strike: the leg is drawn back over the
+		# first two thirds and held there, the wind-up the owner watches.
+		var draw: float = smoothstep(0.0, 0.7, 1.0 + u) * force
+		_rotate(node, "Hip" + k, 0.85 * draw)
+		_rotate(node, "Knee" + k, 1.1 * draw)
+		_rotate(node, "Ankle" + k, 0.3 * draw)
+		# The standing leg takes him: straight, a little back at the hip.
+		_rotate(node, "Hip" + s, 0.15 * draw)
+		_rotate(node, "Knee" + s, 0.2 * draw)
+		_rotate(node, "Shoulder" + s, -0.9 * draw)
+		_rotate(node, "Shoulder" + k, 0.45 * draw)
+		_rotate(node, "ElbowL", -0.35)
+		_rotate(node, "ElbowR", -0.35)
+		_lean(node, 0.12 * draw)
+		return
+	var swing: float = lerpf(1.0, 0.2, u) * force
 	_rotate(node, "Hip" + k, -1.15 * swing)
 	_rotate(node, "Knee" + k, 0.12)
 	_rotate(node, "Hip" + s, 0.3 * swing)
@@ -2566,6 +2613,9 @@ static func _out(foot: int) -> float:
 ## body leans away to let it. Contact is the first frame, like the kick, and
 ## the leg comes down out of it. The opposite arm is out high for balance.
 static func _pose_volley(node: Node3D, u: float, foot: int) -> void:
+	if u < 0.0:
+		_pose_kick(node, u, 1.2, foot)
+		return
 	var swing: float = lerpf(1.0, 0.15, smoothstep(0.0, 1.0, u))
 	var k := _side(foot)
 	var s := _side(SimAttributes.other_foot(foot))

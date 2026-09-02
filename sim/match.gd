@@ -708,6 +708,7 @@ func write_snapshot(snap: SimSnapshot) -> void:
 		snap.player_foot[i] = p.anim_foot
 		snap.player_shielding[i] = 1 if p.shielding else 0
 		snap.player_on_pitch[i] = 1 if p.on_pitch else 0
+		snap.player_strike[i] = p.strike_at if p.strike_at >= 0 else p.struck_tick
 	snap.score[0] = ctx.score[0]
 	snap.score[1] = ctx.score[1]
 	snap.attack_x[0] = ctx.pitch.attack_dir(0)

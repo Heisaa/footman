@@ -32,6 +32,10 @@ var player_foot := PackedInt32Array()
 ## goes out behind him over whatever gait he is in.
 var player_shielding := PackedInt32Array()
 var player_on_pitch := PackedInt32Array()
+## The tick his strike goes, or went: `SimPlayer.strike_at` while he is
+## winding up, his last footed strike's tick otherwise. The view phases the
+## kick on it -- the backswing up to it, the follow-through after.
+var player_strike := PackedInt32Array()
 
 var score := PackedInt32Array([0, 0])
 ## Which way each team is attacking, so the presentation can label the ends.
@@ -61,6 +65,7 @@ func resize(n: int) -> void:
 	player_foot.resize(n)
 	player_shielding.resize(n)
 	player_on_pitch.resize(n)
+	player_strike.resize(n)
 
 
 func copy_from(other: SimSnapshot) -> void:
@@ -83,6 +88,7 @@ func copy_from(other: SimSnapshot) -> void:
 	player_foot = other.player_foot.duplicate()
 	player_shielding = other.player_shielding.duplicate()
 	player_on_pitch = other.player_on_pitch.duplicate()
+	player_strike = other.player_strike.duplicate()
 	score = other.score.duplicate()
 	attack_x = other.attack_x.duplicate()
 	half_length = other.half_length
