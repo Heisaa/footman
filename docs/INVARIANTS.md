@@ -241,6 +241,24 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   one without the other is the drift below, and it was measured the day the
   facing charge went in alone: 0.44 said against 82% cut out.
 
+- **The strike has a tick, and the readers read it.** A shot, a lofted
+  ball, a cross, a pass to feet and every kicked restart are two-phase since
+  2026-09-02: the decision plants him (`SimDecision.wind_up`) and the ball
+  leaves at `SimPlayer.strike_at`, `SimTouch.windup_for` seconds later. That
+  is one state on the body -- `strike_at` and `strike_act`, fired by
+  `tick_windups`, held through `commit_move`'s planted mode -- never a timer
+  per act, and nothing else may start a strike or decide again for a man in
+  it. Everything that used to pretend a backlift reads the real one: the
+  block's window is the wind-up plus the flight (`block_chance`, thrown on
+  the plant and re-timed at the strike, never rolled twice), the keeper's
+  clock runs through it (`SimKeeper.REACTION_SET`), and the lane charges it
+  as the head start every defender gets (`_cut_chance`'s `head_start`,
+  `_pass_success`'s `windup`). The price and the act read one function: a
+  window priced from a wind-up the strike does not take, or taken from one
+  the price did not charge, is the drift above over again. A first-time
+  strike has no wind-up, on purpose: its backlift was the flight, which
+  `readiness` already counts.
+
 - **The bent lane is the chord plus an offset, and nothing tighter.**
   `_cut_chance` and `_near_segment` price a curled ball by shifting the path
   `4*bow*u*(1-u)` sideways at each defender's station; the station and the local

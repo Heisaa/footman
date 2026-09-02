@@ -37,6 +37,7 @@ re-watch of the attack (the order, below), expecting rework.
 | Receive on the half-turn — hips opened while the ball travels | built — a look the body holds while he walks onto the ball or waits for it, and a sprint onto it keeps the hips on the run; a tight receiver closes on the ball instead | `SimMovement._orient_receiver`, `SimPlayer.look_target` |
 | The layoff — first-time ball back to the man facing play | built | `SimTouch.redirect_share` |
 | A setting touch out of the feet before the long ball or the shot | built | `SimDecision._add_set_touch` |
+| The planted foot — a wind-up before the strike, the ball leaving at the strike tick (53) | built 2026-09-02 — a shot, a lofted ball, a cross, a pass to feet and every kicked restart are two-phase: the decision plants him and the ball leaves `SimTouch.windup_for` seconds later, about 0.45 s for a long ball or a hard shot, 0.15 for a rolled pass, none first-time. The body is committed on its feet for it and carried to where the ball will be; a challenge inside it rushes the strike or takes the ball; the block, the keeper and the lane read the real backlift; the kick is posed backswing then follow-through about the one tick | `SimDecision.wind_up`, `fire`, `SimPlayer.strike_at`, `SimTouch.windup_for` |
 | Body facing priced into the strike, and the turn before you can hit it | built | `SimTouch.facing_penalty` for the aim, `strike_scale` for the range |
 | A stronger foot, and a ball shown onto the weaker one | built — the other axis of the same body model, charged through the same two functions | `SimTouch.foot_cost`, `foot_choice` |
 | Bend on a struck ball, the way the foot that struck it sends it | built — signed by the foot on every solved ball, and since the bent lane (2026-09-01) *meant*: the driven pass and the shot price a bend round a defender, trivela included | `SimTouch.curl_for` |
@@ -2156,6 +2157,59 @@ pass to quickly -- a receiving structure in the final third against a box
 that is now defended is the missing half. Not tuned (§11.1.1). The manager's
 tempo, when the manager decides it, is a bias on `SimTactics.tempo`, the
 centre the phases spread around, and nothing in `SimTempo` changes for it.
+
+**Built 2026-09-02: the planted foot (53), at the owner's call** (*longer
+passes, crosses, corners and harder shots are done by planting a foot while
+swinging the leg back; right now it is too instant, mechanically and in the
+animation*). Every strike was instant -- `_execute` to `SimTouch.apply` in
+one tick -- and two things pretended a backlift: `BLOCK_READ`, a quarter of
+a second the block model gave itself, and `readiness`, the beat before the
+strike. Now the strike has a tick. `SimTouch.windup_for` is the one
+function: about 0.45 s for a long ball or a hard shot, 0.15 for a rolled
+pass, driven and lofted balls between, and none for a first-time strike,
+whose backlift was the flight `readiness` already counts. The decision
+plants him (`SimDecision.wind_up`): `SimPlayer.strike_at` and `strike_act`
+are the one state, the body is committed on its feet through
+`commit_move`'s planted mode and carried to stand behind where the ball is
+forecast to be, and `tick_windups` fires the strike from the ball where it
+is then. No steering and no second decision reach him. A kicked restart is
+the same: the taker plans the kick at the ball and `SimSetPiece.release`
+strikes it at the end of the wind-up, dead until then. A challenge landing
+inside it is the existing contest: the man who holds it off gets the strike
+away rushed, the share of the swing he had left priced through
+`aim_sigma` as the hardest first-time ball and through `strike_scale` as
+no backlift; the man who loses it loses the strike. The readers read the
+real backlift: the block's window is the wind-up plus the flight, thrown on
+the plant along the forecast line and re-timed at the strike without a
+second roll; the keeper sets on the plant and his reaction clock runs
+through it, floored at `REACTION_SET`; the lane charges it as the head
+start every defender gets and the lead point leads by it. The kick is posed
+in two halves about the one tick the snapshot carries: the backswing over
+the wind-up -- plant foot down, weight back, leg drawn, opposite arm
+forward -- and the follow-through after. `test_windup` places the four
+cases. **Ten minutes of seed 7:** 15 wind-ups, mean 0.26 s -- ground pass
+13 at 0.25, through ball 1 at 0.22, shot 1 at 0.43 -- one rushed, one
+cancelled. **n=160 against the step-in table:** `shot-edge` goals 15% to
+8%, `none` 10% to 16%, the shot at 2.27 s to 2.52; `long-range` goals 17%
+to 13%, saved 18% to 7%, `none` 12% to 27%, the shot at 2.18 s to 2.55 --
+the shot from range is priced with the bodies' window now and taken less;
+`fk-shot` goals 22% to 27%, saved 31% to 25%, blocked 9% to 7%, inside two
+standard errors and the wall reads no window; `corner-right` goals 8% to
+4%, the rest unmoved; `cross-right` `lost` 67% to 55%, crosses 0.01 to 0.06
+a trial and `drop m` 1.8 to 12.5, which is the instrument: the runner heads
+the cross at 2.3 m before it descends through `DROP_HEIGHT`, and the drop is
+then measured where the headed ball comes down -- probed, seven of nine
+crosses were met by the man they were for; `volley` blocked 12% to 6%, lost
+14% to 22%; `through-ball` lost 44% to 33%, `none` 11% to 18%. Blocks did
+not rise: a block needs a body in front of a strike and the rows' shots are
+mostly taken with none, so the window has nothing to open. Corners did not
+rise for the same reason. Seconds to the shot rose by about a wind-up on
+every shooting row, and the touch gap (`gap s`) by 0.1-1.3 s. Goals fell on
+four rows and rose on one. Not tuned (§11.1.1). The missing mechanics that
+would answer the moves: a defender who steps *onto the line* of a wound-up
+shot rather than throwing himself (the block reads the backlift; the body
+does not step first), and a runner served *because* the crosser is winding
+up -- the box run is timed to the decision, not to the plant.
 
 **Where 5 leaves the corner count.** Still not back: 0-1 over twenty
 fragments, about 0.3 a team a match. The block gives the defence a way to put
