@@ -549,6 +549,9 @@ const HOLD_AHEAD := SimTouch.DRIBBLE_AHEAD_FLOOR
 ## from now" means for a man at pace, and it is bounded below by the ordinary
 ## probe distance so a walking carrier still looks further than his own boot.
 const CARRY_HORIZON_SECONDS := 1.2
+## The share of the dribbling tax a carry pays with nobody near. See
+## `_add_dribbles`.
+const CARRY_SKILL_FLOOR := 0.25
 const CLOSE_CONTROL_FAR := 22.0
 const CLOSE_CONTROL_NEAR := 6.0
 const CLOSE_CONTROL_TOUCH := 1.6
@@ -4071,6 +4074,15 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 	var attack := ctx.pitch.attack_dir(player.team)
 	var press: float = lerpf(1.0, 0.55, clampf(ctx.pressure_on(player), 0.0, 1.6) / 1.6)
 	var skill: float = lerpf(0.62, 1.0, player.attrs.dribbling)
+	# Dribbling is what keeps the ball under a man in a challenge; in open
+	# grass a heavy touch runs a metre further and costs nothing. Charged flat,
+	# every carry by an ordinary dribbler paid seventeen points whether or not
+	# anybody was near -- measured over eight seeds, the carry was priced
+	# 0.50-0.60 and kept 79%, while the pass beside it was priced 0.80 and kept
+	# 78%. The tax follows the man on him; `CARRY_SKILL_FLOOR` of it always.
+	var pressed: float = clampf(ctx.pressure_on(player) + ctx.challenge_on(player), 0.0, 1.0)
+	var open_skill: float = lerpf(1.0, skill, maxf(pressed, CARRY_SKILL_FLOOR))
+	var chal_id: int = challenger.id if challenger != null else -1
 	# Having just won the ball is the worst moment to try to beat a man: the one
 	# you took it from is turning back onto you and his nearest support is still
 	# in the pocket. Play it, do not carry it.
@@ -4171,13 +4183,25 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 		# priced with -- who owns that grass at the moment it matters, rather than
 		# who is standing nearest to it now.
 		var when := SimValueField.time_to_arrive(player, landing, 0.0)
-		var success := ctx.value.control_at_time(ctx, landing, player.team, when)
+		# A carrier arrives at his own touch with the ball, so the contest for
+		# the landing is the one a ball to feet is priced with: an opponent
+		# takes it only by getting in front of it and planting, and drawing
+		# level is arriving second (`AIMED_STEP_IN`). The neutral race charged
+		# every body half a second behind the play a third of the grass, which
+		# on a two-metre touch was men six metres off who could not reach the
+		# ball at all: `ctrl` read 0.81 for a free man with nine metres of
+		# grass in front of him. And the challenger is priced once, in
+		# `_escape_value` -- the burst's convention, which the ordinary carry
+		# had missed: he was charged there, here and in the lane, three times
+		# for the one race (`docs/INVARIANTS.md`, "Price the man an act is
+		# about once").
+		var success := ctx.value.control_at_pass(ctx, landing, player.team, when, player.id, chal_id)
 		# Working the ball back across himself is a touch he is far less likely to
 		# get right, and the probe set is the only place the engine can express
 		# that as a *choice*. The race in `_escape_value` already charges him for
 		# the momentum he has to shed to get there; this is the separate question
 		# of whether the ball goes where he meant it to.
-		success *= skill * press * escape * SimTouch.facing_control(player, dir)
+		success *= open_skill * press * escape * SimTouch.facing_control(player, dir)
 		# And it is only a carry if the ball is still on the field afterwards.
 		#
 		# Priced on what he *wanted* to do, not on what the touchline has already
@@ -4208,7 +4232,7 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 		# It costs nothing on the carry that stays under his sole: the lane is two
 		# metres long, and `_lane_survival` only counts opponents between the ends
 		# of it.
-		success *= _lane_survival(ctx, player, ctx.ball.ground_pos(), landing, when)
+		success *= _lane_survival(ctx, player, ctx.ball.ground_pos(), landing, when, 0.0, chal_id)
 		var c_xt := ctx.value.xt_at(player.team, target, ctx.pitch)
 		var c_focus := tactics.focus_at(target.z, ctx.pitch)
 		# Near goal the carry is worth the shot it carries toward, not the
@@ -4250,12 +4274,12 @@ static func _add_dribbles(ctx: SimContext, player: SimPlayer, uncontrolled: bool
 		})
 		if debug_parts:
 			_candidates[_candidates.size() - 1]["parts"] = {
-				"ctrl": ctx.value.control_at_time(ctx, landing, player.team, when),
+				"ctrl": ctx.value.control_at_pass(ctx, landing, player.team, when, player.id, chal_id),
 				"escape": escape,
-				"skill_press": skill * press,
+				"skill_press": open_skill * press,
 				"face": SimTouch.facing_control(player, dir),
 				"in_play": _in_play_odds(ctx, player, dir, wanted),
-				"lane": _lane_survival(ctx, player, ctx.ball.ground_pos(), landing, when),
+				"lane": _lane_survival(ctx, player, ctx.ball.ground_pos(), landing, when, 0.0, chal_id),
 			}
 		_keep_factors()
 
