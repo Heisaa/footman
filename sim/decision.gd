@@ -918,7 +918,7 @@ static func _add_shot(ctx: SimContext, player: SimPlayer, first_time: bool) -> v
 	if not first_time and readiness(ctx, player) < SET_STRIKE_FLOOR:
 		return
 	var aim := _pick_shot_aim(ctx, player, goal)
-	var quality := expected_goals(ctx, player, from, aim)
+	var quality := expected_goals(ctx, player, from, aim, first_time)
 	# Not every sight of goal is a shot, and the floor is here to keep a hopeless
 	# attempt out of the softmax rather than to decide anything: a candidate
 	# nobody would ever take still widens the spread of scores, and the spread is
@@ -948,7 +948,7 @@ static func _add_shot(ctx: SimContext, player: SimPlayer, first_time: bool) -> v
 	# is whether, never which way. A variant *inside* the shot candidate, the
 	# curled driven ball's shape, and the improvement is an integer -- a blocker
 	# out of the corridor -- so there is no tuned threshold to argue with.
-	var power := clampf(0.5 + distance / 40.0, 0.45, 1.0)
+	var power := shot_power(distance)
 	var curl := 0.0
 	var trivela := false
 	var straight_blockers := _shot_blockers(ctx, player, from, aim)
@@ -1065,7 +1065,16 @@ static func _pick_shot_aim(ctx: SimContext, player: SimPlayer, goal: Vector3) ->
 
 ## The engine's own estimate of shot quality. It informs the choice; the actual
 ## outcome is resolved physically by the flight of the ball and the keeper.
-static func expected_goals(ctx: SimContext, player: SimPlayer, from: Vector3, aim: Vector3) -> float:
+## The power a shot from this range is struck with, 0..1 over the shot
+## speed range: one function for the candidate and the wind-up priced on it.
+static func shot_power(distance: float) -> float:
+	return clampf(0.5 + distance / 40.0, 0.45, 1.0)
+
+
+## `first_time` is a strike at an arriving ball, which has no wind-up for
+## the bodies in front of it to read.
+static func expected_goals(ctx: SimContext, player: SimPlayer, from: Vector3, aim: Vector3,
+		first_time := false) -> float:
 	var goal := ctx.pitch.target_goal(player.team)
 	var dx := absf(goal.x - from.x)
 	var dz := absf(from.z)
@@ -1111,7 +1120,10 @@ static func expected_goals(ctx: SimContext, player: SimPlayer, from: Vector3, ai
 	# the strike on the backlift, and the chance is the act's own
 	# (`block_chance`, one function for the price and the block); beyond it a
 	# body in the corridor sticks a leg out after his reaction, the old count.
-	base *= SimDuel.block_survival(ctx, player, from, aim, SHOT_PRICED_SPEED)
+	# The backlift is their window: `SimTouch.windup_for`, the same function
+	# `wind_up` plants him with.
+	base *= SimDuel.block_survival(ctx, player, from, aim, SHOT_PRICED_SPEED,
+		SimTouch.windup_for(SimTelemetry.Touch.SHOT, d, shot_power(d), first_time))
 	base *= pow(0.72, float(_shot_blockers(ctx, player, from, aim)))
 	return clampf(base, 0.002, 0.92)
 
@@ -1280,7 +1292,11 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 			var pace := arrival_pace(ctx, raw_distance, player.team)
 			var travel := ctx.ballistics.ground_travel_time(
 				raw_distance, ctx.ballistics.ground_pass_speed(raw_distance, pace, ctx.env), ctx.env)
-			var lead := _keep_in_play(ctx, _lead_point(ctx, mate, believed, travel))
+			# The wind-up before the strike: the ball is struck that much
+			# later, so the receiver is led by it and the lane charges it.
+			var windup := SimTouch.windup_for(SimTelemetry.Touch.GROUND_PASS, raw_distance,
+				0.0, uncontrolled)
+			var lead := _keep_in_play(ctx, _lead_point(ctx, mate, believed, travel + windup))
 			# A ground pass does not go in behind. `_lead_point` follows a
 			# committed run wherever it goes, and a run in behind took the
 			# ordinary pass past the line with it: the same ball as the through
@@ -1320,7 +1336,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 			# a sprinting receiver at 0.39 to 0.73 while 88 to 100% arrived.
 			var run_gap := SimConsts.horizontal_length(lead - believed)
 			var there_first: bool = SimValueField.time_to_arrive(mate, lead, mate.reaction) \
-				+ THERE_FIRST_MARGIN < travel
+				+ THERE_FIRST_MARGIN < travel + windup
 			var into_space := run_gap > 2.0 and not there_first
 			# The ball to feet, aimed off the marker: a step to the free side.
 			if not into_space:
@@ -1332,7 +1348,8 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 						lead_distance = SimConsts.horizontal_length(lead - from)
 						travel = ctx.ballistics.ground_travel_time(
 							lead_distance, ctx.ballistics.ground_pass_speed(lead_distance, pace, ctx.env), ctx.env)
-			var success := _pass_success(ctx, player, from, lead, travel, mate, into_space)
+			var success := _pass_success(ctx, player, from, lead, travel, mate, into_space,
+				false, 0.0, windup)
 			if flagged:
 				success *= OFFSIDE_DISCOUNT
 			# The layoff. `off_balance` prices deciding while the ball still moves,
@@ -1430,6 +1447,8 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				var d_pace: float = minf(pace * DRIVEN_PACE, 12.0)
 				var d_speed := ctx.ballistics.ground_pass_speed(lead_distance, d_pace, ctx.env)
 				var d_travel := ctx.ballistics.ground_travel_time(lead_distance, d_speed, ctx.env)
+				var d_windup := SimTouch.windup_for(SimTelemetry.Touch.GROUND_PASS, lead_distance,
+					1.0, uncontrolled)
 				# The bend. Every driven ball carries its foot's bend as shape
 				# (`SimTouch.pass_shape_curl`), so the plain driven candidate is
 				# priced on that bowed path and not on the chord -- the ball the
@@ -1453,8 +1472,9 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 					var b := SimBallistics.curl_bow(meant, d_speed, lead_distance,
 						SimBallistics.BEND_BOW_SHARE)
 					var lane_straight := _lane_survival(ctx, player, from, lead, d_travel,
-						lane_tail, -1, bow)
-					var lane_bent := _lane_survival(ctx, player, from, lead, d_travel, lane_tail, -1, b)
+						lane_tail, -1, bow, d_windup)
+					var lane_bent := _lane_survival(ctx, player, from, lead, d_travel, lane_tail, -1, b,
+						d_windup)
 					var straight_buy := maxf(lerpf(lane_straight, 1.0, DRIVEN_LANE), 0.001)
 					if lane_bent >= lane_straight + CURL_MIN:
 						curl = meant
@@ -1471,7 +1491,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 						# foot bends and open on the other, the outside of the
 						# boot is the fallback -- flipped sign, control taxed.
 						var lane_flip := _lane_survival(ctx, player, from, lead, d_travel,
-							lane_tail, -1, -b)
+							lane_tail, -1, -b, d_windup)
 						if lane_flip >= lane_straight + CURL_MIN:
 							curl = -meant
 							bow = -b
@@ -1481,7 +1501,7 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 								lerpf(lane_flip, 1.0, DRIVEN_LANE) / straight_buy
 								* TRIVELA_CONTROL)
 				var d_success := _pass_success(ctx, player, from, lead, d_travel, mate,
-					into_space, true, bow)
+					into_space, true, bow, d_windup)
 				if trivela:
 					d_success *= TRIVELA_CONTROL
 				if flagged:
@@ -1611,13 +1631,15 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				var t_pace := behind_pace(ctx, t_distance, mate)
 				var t_speed := ctx.ballistics.ground_pass_speed(t_distance, t_pace, ctx.env)
 				var t_travel := ctx.ballistics.ground_travel_time(t_distance, t_speed, ctx.env)
+				var t_windup := SimTouch.windup_for(SimTelemetry.Touch.THROUGH_BALL, t_distance,
+					0.0, uncontrolled)
 				# A ball the runner beats to the spot is not a ball he chases.
 				# `BEHIND_ARRIVE` slows the strike so a chasing man can close on
 				# it, and on an aim clamped inside the meeting point that
 				# slowness is the ball that crawls into his back (owner,
 				# 2026-09-01). When he is there first by a stride it is struck
 				# as a pass to feet at the spot instead.
-				if SimValueField.reach_in(mate, target - believed, t_travel) \
+				if SimValueField.reach_in(mate, target - believed, t_travel + t_windup) \
 						- SimConsts.horizontal_length(target - believed) > BEHIND_EARLY:
 					# Firm, not fired: capped at the runner's own top speed. The
 					# uncapped arrival read 11-12 m/s and the owner called it
@@ -1631,7 +1653,8 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 				# playing in behind, and no through ball was ever chosen in a
 				# match: 274 of them generated on one ten-minute seed, the best
 				# at a 0.39 chance of arriving, and not one selected.
-				var t_success := _pass_success(ctx, player, from, target, t_travel, mate, true)
+				var t_success := _pass_success(ctx, player, from, target, t_travel, mate, true,
+					false, 0.0, t_windup)
 				# Offside is judged where the *receiver* stands when the ball is
 				# struck, not where it is going -- that is the entire point of a
 				# through ball, and testing the target instead flagged every one
@@ -1705,9 +1728,12 @@ static func _add_passes(ctx: SimContext, player: SimPlayer, uncontrolled: bool, 
 			# `_lead_point` falls back to the same dead reckoning when he has no
 			# destination, so the man who has committed to nothing is unaffected
 			# and this only moves the ball that was worth moving.
-			var lofted_target := _keep_in_play(ctx, _lead_point(ctx, mate, believed, flight))
+			var l_windup := SimTouch.windup_for(SimTelemetry.Touch.LOFTED_PASS, raw_distance,
+				0.0, uncontrolled)
+			var lofted_target := _keep_in_play(ctx, _lead_point(ctx, mate, believed, flight + l_windup))
 			lofted_target.y = 0.0
-			var lofted_success := _lofted_success(ctx, player, lofted_target, flight, mate)
+			var lofted_success := _lofted_success(ctx, player, lofted_target, flight, mate,
+				Action.LOFTED_PASS, l_windup)
 			if flagged:
 				lofted_success *= OFFSIDE_DISCOUNT
 			# The lofted ball over the top is the other act whose value is the line
@@ -1947,7 +1973,9 @@ static func _emit_pullback(ctx: SimContext, player: SimPlayer, uncontrolled: boo
 	var off_balance: float = 1.0
 	if uncontrolled:
 		off_balance = lerpf(0.3, 0.7, player.attrs.first_touch * player.attrs.technique)
-	var success := _pass_success(ctx, player, from, point, best_travel, mate, true)
+	var success := _pass_success(ctx, player, from, point, best_travel, mate, true, false, 0.0,
+		SimTouch.windup_for(SimTelemetry.Touch.GROUND_PASS,
+			SimConsts.horizontal_length(point - from), 0.0, uncontrolled))
 	if flagged:
 		success *= OFFSIDE_DISCOUNT
 	# What it is worth is what *his* shot is worth, not what the grass is. A point
@@ -2112,8 +2140,9 @@ static func _add_crosses(ctx: SimContext, player: SimPlayer, uncontrolled: bool)
 		return
 
 	var mate: SimPlayer = ctx.players[best_mate]
-	var success := _lofted_success(ctx, player, best_point, best_flight, mate, Action.CROSS)
 	var distance := SimConsts.horizontal_length(best_point - from)
+	var success := _lofted_success(ctx, player, best_point, best_flight, mate, Action.CROSS,
+		SimTouch.windup_for(SimTelemetry.Touch.CROSS, distance, 0.0, uncontrolled))
 	var best_xt := ctx.value.xt_at(player.team, best_point, ctx.pitch)
 	var focus := tactics.focus_at(best_point.z, ctx.pitch)
 	var pattern := SimPatterns.pass_bias(ctx, player, best_mate, best_point)
@@ -2625,7 +2654,9 @@ static func _clear_ahead(ctx: SimContext, team: int, point: Vector3, goal: Vecto
 const THERE_FIRST_MARGIN := 0.35
 
 
-static func _pass_success(ctx: SimContext, player: SimPlayer, from: Vector3, to: Vector3, travel: float, receiver: SimPlayer, into_space: bool = false, driven: bool = false, bow: float = 0.0) -> float:
+## `windup` is the strike's wind-up (`SimTouch.windup_for`): the ball lands
+## that much later, and every man in the lane has it as a head start.
+static func _pass_success(ctx: SimContext, player: SimPlayer, from: Vector3, to: Vector3, travel: float, receiver: SimPlayer, into_space: bool = false, driven: bool = false, bow: float = 0.0, windup: float = 0.0) -> float:
 	# Three separate questions, and conflating them is how an engine talks
 	# itself into forty-metre passes: who owns that space, can this particular
 	# receiver be there when the ball is, and does the ball survive the journey.
@@ -2643,7 +2674,7 @@ static func _pass_success(ctx: SimContext, player: SimPlayer, from: Vector3, to:
 	# the arriving ball first", and the engine's own resolution rule
 	# (`SimDuel._act`) answers only the second.
 	var space := ctx.value.control_at_pass(
-		ctx, to, player.team, travel, receiver.id, player.id, into_space)
+		ctx, to, player.team, travel + windup, receiver.id, player.id, into_space)
 	# A ball into space has two contests in it and is only as good as the weaker.
 	#
 	# The line above asks whether he wins the race to the grass. It cannot ask
@@ -2685,7 +2716,7 @@ static func _pass_success(ctx: SimContext, player: SimPlayer, from: Vector3, to:
 	# reach, and that is a stride or two whatever the ball is doing.
 	if into_space:
 		space = minf(space, ctx.value.control_at_pass(
-			ctx, receiver.pos, player.team, minf(travel, ESCAPE_WINDOW),
+			ctx, receiver.pos, player.team, minf(travel + windup, ESCAPE_WINDOW),
 			receiver.id, player.id, false))
 	# Whether the receiver is there when it is -- and only for a ball to feet.
 	#
@@ -2711,10 +2742,10 @@ static func _pass_success(ctx: SimContext, player: SimPlayer, from: Vector3, to:
 	var in_time := 1.0
 	if not into_space:
 		var receiver_time := SimValueField.time_to_arrive(receiver, to, receiver.reaction)
-		in_time = _in_time(travel + 0.3 - receiver_time,
+		in_time = _in_time(travel + windup + 0.3 - receiver_time,
 			SimConsts.horizontal_length(to - receiver.pos))
 	var lane := _lane_survival(ctx, player, from, to, travel,
-		LANE_TAIL if into_space else FEET_TAIL, -1, bow)
+		LANE_TAIL if into_space else FEET_TAIL, -1, bow, windup)
 	# The driven ball is airborne over the middle of its journey, and that is the
 	# whole football reason for hitting one (`docs/THE_FOOTBALL.md` 26). A leg put
 	# in the lane takes a rolled ball and misses a driven one, so the interception
@@ -2908,10 +2939,11 @@ const SPACE_TOLERANCE := 1.8
 const AERIAL_TOLERANCE := 1.8
 
 
-static func _lofted_success(ctx: SimContext, player: SimPlayer, to: Vector3, flight: float, receiver: SimPlayer, kind: int = Action.LOFTED_PASS) -> float:
+## `windup` is the strike's wind-up: the ball comes down that much later.
+static func _lofted_success(ctx: SimContext, player: SimPlayer, to: Vector3, flight: float, receiver: SimPlayer, kind: int = Action.LOFTED_PASS, windup: float = 0.0) -> float:
 	# A ball in the air cannot be cut out along the ground, but it is harder to
 	# control and easier to attack in the air.
-	var arrival := ctx.value.control_at_time(ctx, to, player.team, flight, player.id)
+	var arrival := ctx.value.control_at_time(ctx, to, player.team, flight + windup, player.id)
 	var aerial: float = lerpf(0.55, 0.95, (receiver.attrs.heading + receiver.attrs.jumping) * 0.5)
 	var distance := SimConsts.horizontal_length(to - ctx.ball.pos)
 	# The skill the ball is *struck* with. `SimTouch.lofted_pass` hits a cross with
@@ -2940,7 +2972,7 @@ static func _lofted_success(ctx: SimContext, player: SimPlayer, to: Vector3, fli
 	# goes and the engine now knows that honestly, which is what makes this
 	# answerable at all -- before `./run.sh strike` the model thought the scatter
 	# was a quarter of its real size, so there was nothing to scatter *to*.
-	var lands := lerpf(_scattered(ctx, player, to, flight, distance, skill), arrival, struck)
+	var lands := lerpf(_scattered(ctx, player, to, flight + windup, distance, skill), arrival, struck)
 	# Reported as the share of the aim point's worth that survives the scatter, so
 	# the `struck` column still says how well the ball was hit and the five factors
 	# still multiply out to the number the softmax was handed.
@@ -3011,7 +3043,9 @@ const LANE_TAIL := 6.0
 ## `bow` is the mid-chord offset of a curled ball's path in metres, signed
 ## positive toward the passer's left -- `SimBallistics.curl_bow`'s convention.
 ## Zero is the straight ball every caller priced before the bend existed.
-static func _lane_survival(ctx: SimContext, player: SimPlayer, from: Vector3, to: Vector3, travel: float, tail: float = 0.0, ignore_id: int = -1, bow: float = 0.0) -> float:
+## `head_start` is the strike's wind-up: seconds every man in the lane has
+## before the ball leaves.
+static func _lane_survival(ctx: SimContext, player: SimPlayer, from: Vector3, to: Vector3, travel: float, tail: float = 0.0, ignore_id: int = -1, bow: float = 0.0, head_start: float = 0.0) -> float:
 	var survival := 1.0
 	var seg := SimConsts.horizontal(to - from)
 	var length: float = maxf(seg.length(), 0.1)
@@ -3021,15 +3055,17 @@ static func _lane_survival(ctx: SimContext, player: SimPlayer, from: Vector3, to
 		var o := ctx.players[oid]
 		if not o.on_pitch or o.id == ignore_id:
 			continue
-		survival *= 1.0 - _cut_chance(ctx, player, o, o.pos, from, dir, length, journey, travel, bow)
+		survival *= 1.0 - _cut_chance(ctx, player, o, o.pos, from, dir, length, journey, travel, bow, head_start)
 	return clampf(survival, 0.0, 1.0)
 
 
 ## One opponent's chance of cutting the ball out, standing at `at` -- which is
 ## his position now for every caller but `_add_opening`, which asks about where
 ## he will be after the carrier has moved him.
+## `head_start` is the wind-up before the strike: the same window the
+## contact rule gives him, since the ball is not struck until it ends.
 static func _cut_chance(ctx: SimContext, passer: SimPlayer, o: SimPlayer, at: Vector3, from: Vector3, dir: Vector3,
-		length: float, journey: float, travel: float, bow: float = 0.0) -> float:
+		length: float, journey: float, travel: float, bow: float = 0.0, head_start: float = 0.0) -> float:
 	var rel := SimConsts.horizontal(at - from)
 	var along: float = rel.dot(dir)
 	if along <= 0.5 or along >= journey:
@@ -3070,7 +3106,7 @@ static func _cut_chance(ctx: SimContext, passer: SimPlayer, o: SimPlayer, at: Ve
 		u = along / length
 		path_side = -4.0 * bow * u * (1.0 - u)
 		point = from + dir * along + lat_dir * path_side
-	var ball_time := travel * (along / length)
+	var ball_time := head_start + travel * (along / length)
 	# When does the ball get there, and when could they?
 	#
 	# "Could they" is not "could they stand on that spot". A defender a metre
@@ -6483,6 +6519,12 @@ static func wind_up(ctx: SimContext, player: SimPlayer, c: Dictionary, seconds: 
 	player.commit_move(v, seconds, false, 0.0, true)
 	var kind := _strike_kind(c)
 	var distance := SimConsts.horizontal_length(_strike_target(c) - at)
+	if kind == SimTelemetry.Touch.SHOT:
+		# The bodies in front of the strike read the backlift and throw
+		# themselves now, on the line the ball is forecast to leave on.
+		SimDuel.commit_blocks(ctx, player, at, line.normalized(),
+			SimTouch.shot_speed(player, float(c.get("power", 0.5)), _strike_target(c) - at),
+			at.y, 0.0, seconds)
 	var power := float(c.get("power", 1.0 if bool(c.get("driven", false)) else 0.0))
 	player.play_anim(SimTouch.windup_anim(kind, distance, power), seconds + 0.25)
 	tally_windup += 1

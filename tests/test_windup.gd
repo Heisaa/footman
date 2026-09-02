@@ -10,6 +10,7 @@ func run() -> void:
 	_the_long_ball_waits_for_the_swing()
 	_the_first_time_strike_goes_at_once()
 	_a_challenge_inside_it_rushes_the_strike()
+	_the_readers_read_the_backlift()
 
 
 static func _settled_match() -> SimMatch:
@@ -182,3 +183,51 @@ func _a_challenge_inside_it_rushes_the_strike() -> void:
 	SimDecision.cancel_windup(holder)
 	check_equal(holder.strike_at, -1, "a challenge that takes the ball cancels the strike")
 	check_equal(holder.commit_ticks, 0, "and releases the body")
+
+
+## The block's window is the wind-up plus the flight, and the lane charges
+## the same seconds as the defender's head start; a first-time strike gives
+## neither of them anything.
+func _the_readers_read_the_backlift() -> void:
+	var m := _settled_match()
+	var ctx := m.ctx
+	if ctx.possession_player < 0:
+		return
+	var holder := ctx.players[ctx.possession_player]
+	var mate: SimPlayer = null
+	for id in ctx.teammate_ids(holder.team):
+		var q := ctx.players[id]
+		if q.id != holder.id and not q.is_keeper and q.on_pitch:
+			mate = q
+			break
+	_place(ctx, holder, mate, 0.0)
+	var dir := Vector3(ctx.pitch.attack_dir(holder.team), 0.0, 0.0)
+	var from := ctx.ball.pos
+	# A defender four metres along the line and two off it, facing the striker.
+	var o: SimPlayer = null
+	for id in ctx.opponent_ids(holder.team):
+		var q := ctx.players[id]
+		if not q.is_keeper and q.on_pitch:
+			o = q
+			break
+	o.pos = from + dir * 4.0 + Vector3(0.0, 0.0, 2.0)
+	o.vel = Vector3.ZERO
+	o.facing = atan2(-dir.z, -dir.x)
+	o.recovery_ticks = 0
+	SimPerception.update(ctx)
+	var read := SimDuel.block_chance(ctx, o, holder, from, dir, 22.0, 0.0, 0.0, 0.45)
+	var unread := SimDuel.block_chance(ctx, o, holder, from, dir, 22.0, 0.0, 0.0, 0.0)
+	check_greater(read, unread + 0.05, "a body two metres off the line gets there on the backlift and not off a first-time strike")
+	# Priced and thrown from the same window: the survival `expected_goals`
+	# charges for a wound-up shot is lower than for a first-time one.
+	var aim := Vector3(ctx.pitch.target_goal(holder.team).x, 0.9, 0.0)
+	var wound := SimDuel.block_survival(ctx, holder, from, aim, 22.0, 0.45)
+	var instant := SimDuel.block_survival(ctx, holder, from, aim, 22.0, 0.0)
+	check_less(wound, instant, "and the price reads the same window")
+	# The lane: the same man a metre off a pass's line, with and without the head start.
+	o.pos = from + dir * 6.0 + Vector3(0.0, 0.0, 1.6)
+	var to := from + dir * 20.0
+	var length := 20.0
+	var with_start := SimDecision._cut_chance(ctx, holder, o, o.pos, from, dir, length, length - 2.0, 1.4, 0.0, 0.3)
+	var without := SimDecision._cut_chance(ctx, holder, o, o.pos, from, dir, length, length - 2.0, 1.4, 0.0, 0.0)
+	check_greater(with_start, without, "the lane charges the wind-up as the defender's head start")

@@ -165,15 +165,18 @@ var ball_seen_tick := -1
 ## the chase assignment: a man who has just been beaten is not the one who
 ## should be leading the press back.
 var dispossessed_tick := -100000
-## The block: a body thrown at a shot. Committed once at the strike by
-## `SimDuel.commit_blocks` -- the lunge runs to `block_until`, the ball reaches
-## his station at `block_tick`, `block_point` is where on its line he throws
-## himself, `block_shot` is the strike it was committed to, and `block_hit` is
-## whether the one roll said he gets something on it.
+## The block: a body thrown at a shot. Committed once by
+## `SimDuel.commit_blocks`, on the shooter's plant when there is one and at
+## the strike when there is not -- the lunge runs to `block_until`, the ball
+## reaches his station at `block_tick`, `block_point` is where on its line he
+## throws himself, `block_since` is the tick he was committed and
+## `block_shooter` the man whose strike it is for, and `block_hit` is whether
+## the one roll said he gets something on it.
 var block_until := -1
 var block_tick := -1
 var block_point := Vector3.ZERO
-var block_shot := -1
+var block_since := -1
+var block_shooter := -1
 var block_hit := false
 ## The committed move: a body off its feet. Entered through `commit_move` by
 ## the slide (`SimDuel.commit_blocks`), the dive (`SimKeeper._dive`), the leap

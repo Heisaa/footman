@@ -248,10 +248,11 @@ static func in_reach_arc(p: SimPlayer, ball_pos: Vector3) -> bool:
 ## this the ordinary contact rule has him: the ball arrives after his reaction
 ## has run (`_ready_for`), and he sticks a leg out like at any pass.
 const BLOCK_RANGE := 6.0
-## The anticipation, in seconds: a defender in the striker's face moves on the
-## backlift, not on the strike. A shot at 25 m/s is past a man four metres away
-## in 0.16 s and no reaction reaches it; the read is the whole mechanic.
-const BLOCK_READ := 0.25
+## The anticipation is the backlift itself: a defender in the striker's face
+## moves on the plant (`SimDecision.wind_up`), not on the strike. A shot at
+## 25 m/s is past a man four metres away in 0.16 s and no reaction reaches
+## it; the wind-up he watched is his window, and a first-time strike gives
+## him none.
 ## What a body thrown sideways covers from where he stands, in metres -- a leg
 ## flung out, a torso turned across the ball -- and what the lunge adds per
 ## second of window.
@@ -285,8 +286,11 @@ const WALL_STOPS := 0.9
 ## as bodies in the corridor. One function for the price and the act
 ## (`docs/INVARIANTS.md`, the contact rule and the lane model read the same
 ## body).
+## `windup` is the backlift he gets to read, in seconds: the strike's
+## wind-up at the plant, nothing at a strike without one.
 static func block_chance(ctx: SimContext, o: SimPlayer, shooter: SimPlayer, from: Vector3,
-		dir: Vector3, speed: float, launch_y: float = 0.0, climb: float = 0.0) -> float:
+		dir: Vector3, speed: float, launch_y: float = 0.0, climb: float = 0.0,
+		windup: float = 0.0) -> float:
 	if not o.on_pitch or o.is_keeper or o.recovery_ticks > 0 or o.team == shooter.team:
 		return 0.0
 	var rel := SimConsts.horizontal(o.pos - from)
@@ -308,7 +312,7 @@ static func block_chance(ctx: SimContext, o: SimPlayer, shooter: SimPlayer, from
 	# He has to have the striker in his eyes to read the backlift.
 	if not SimPerception.saw_recently(ctx, o, shooter):
 		return 0.0
-	var window: float = t + BLOCK_READ
+	var window: float = t + windup
 	# The way he is already moving, toward or away from the line.
 	var toward := Vector3(-dir.z, 0.0, dir.x)
 	if rel.dot(toward) > 0.0:
@@ -326,7 +330,7 @@ static func block_chance(ctx: SimContext, o: SimPlayer, shooter: SimPlayer, from
 ## The share of a shot from `from` at `aim` that gets past every body in lunge
 ## range. What `SimDecision.expected_goals` charges for the near bodies.
 static func block_survival(ctx: SimContext, shooter: SimPlayer, from: Vector3, aim: Vector3,
-		speed: float) -> float:
+		speed: float, windup: float = 0.0) -> float:
 	var dir := SimConsts.horizontal(aim - from)
 	var d := dir.length()
 	if d < 1e-3:
@@ -334,54 +338,64 @@ static func block_survival(ctx: SimContext, shooter: SimPlayer, from: Vector3, a
 	dir /= d
 	var survival := 1.0
 	for oid in ctx.opponent_ids(shooter.team):
-		var chance := block_chance(ctx, ctx.players[oid], shooter, from, dir, speed)
+		var chance := block_chance(ctx, ctx.players[oid], shooter, from, dir, speed, 0.0, 0.0, windup)
 		if chance > 0.0:
 			survival *= 1.0 - chance
 	return survival
 
 
-## The strike has been made: every defender in lunge range throws himself at
-## it, and one roll each says whether he gets there. Decided here and taken
-## when the ball arrives, the keeper's own pattern -- a per-tick roll is a roll
-## until it succeeds (`docs/INVARIANTS.md`).
-static func commit_blocks(ctx: SimContext, shooter: SimPlayer) -> void:
-	var ball := ctx.ball
-	var dir := SimConsts.horizontal(ball.vel)
-	var speed := dir.length()
+## The bodies in front of a strike throw themselves at it, once. On the
+## shooter's plant (`SimDecision.wind_up`), with the wind-up as their window
+## and the line the ball is forecast to leave on; at the strike, the men
+## thrown on the plant are re-timed onto the ball's real line without a
+## second roll, and anyone else in range gets no read at all -- a first-time
+## strike is the whole of what he sees. One roll each, taken when the ball
+## arrives, the keeper's own pattern -- a per-tick roll is a roll until it
+## succeeds (`docs/INVARIANTS.md`).
+static func commit_blocks(ctx: SimContext, shooter: SimPlayer, from: Vector3, dir: Vector3,
+		speed: float, launch_y: float, climb: float, windup: float) -> void:
 	if speed < 1.0:
 		return
-	dir /= speed
-	var from := ball.pos
-	# The nearest body in front of the strike, on the shot's own record, so the
-	# instruments can say whether a block share is geometry or the model.
-	var near_along := INF
-	var near_lat := 0.0
-	var near_saw := false
-	var near_d2 := INF
+	if windup <= 0.0:
+		# The nearest body in front of the strike, on the shot's own record,
+		# so the instruments can say whether a block share is geometry or the
+		# model.
+		var near_along := INF
+		var near_lat := 0.0
+		var near_saw := false
+		var near_d2 := INF
+		for oid in ctx.opponent_ids(shooter.team):
+			var o := ctx.players[oid]
+			if o.on_pitch and not o.is_keeper:
+				var rel := SimConsts.horizontal(o.pos - from)
+				var along: float = rel.dot(dir)
+				if along > 0.8 and rel.length_squared() < near_d2:
+					near_d2 = rel.length_squared()
+					near_along = along
+					near_lat = absf(rel.x * dir.z - rel.z * dir.x)
+					near_saw = SimPerception.saw_recently(ctx, o, shooter)
+		if not ctx.active_shot.is_empty() and not is_inf(near_along):
+			ctx.active_shot["near_along"] = near_along
+			ctx.active_shot["near_lat"] = near_lat
+			ctx.active_shot["near_saw"] = near_saw
 	for oid in ctx.opponent_ids(shooter.team):
 		var o := ctx.players[oid]
-		if o.on_pitch and not o.is_keeper:
-			var rel := SimConsts.horizontal(o.pos - from)
-			var along: float = rel.dot(dir)
-			if along > 0.8 and rel.length_squared() < near_d2:
-				near_d2 = rel.length_squared()
-				near_along = along
-				near_lat = absf(rel.x * dir.z - rel.z * dir.x)
-				near_saw = SimPerception.saw_recently(ctx, o, shooter)
-	if not ctx.active_shot.is_empty() and not is_inf(near_along):
-		ctx.active_shot["near_along"] = near_along
-		ctx.active_shot["near_lat"] = near_lat
-		ctx.active_shot["near_saw"] = near_saw
-	for oid in ctx.opponent_ids(shooter.team):
-		var o := ctx.players[oid]
-		var chance := block_chance(ctx, o, shooter, from, dir, speed, ball.pos.y, ball.vel.y)
-		if chance <= 0.0:
-			continue
 		var rel := SimConsts.horizontal(o.pos - from)
 		var along: float = rel.dot(dir)
 		var t: float = along / speed
-		var arrive := ctx.tick_index + int(ceil(t * float(SimConsts.TICK_HZ)))
-		o.block_shot = ball.last_touch_tick
+		if o.block_since >= 0 and o.block_shooter == shooter.id:
+			# Thrown on the plant: re-timed onto the ball as struck.
+			if along > 0.3:
+				o.block_tick = ctx.tick_index + int(ceil(t * float(SimConsts.TICK_HZ)))
+				o.block_point = Vector3(from.x + dir.x * along, 0.0, from.z + dir.z * along)
+			continue
+		var chance := block_chance(ctx, o, shooter, from, dir, speed, launch_y, climb, windup)
+		if chance <= 0.0:
+			continue
+		var window: float = maxf(t + windup, SimConsts.DT)
+		var arrive := ctx.tick_index + int(ceil(window * float(SimConsts.TICK_HZ)))
+		o.block_since = ctx.tick_index
+		o.block_shooter = shooter.id
 		o.block_tick = arrive
 		o.block_until = arrive + int(round(BLOCK_THROUGH * float(SimConsts.TICK_HZ)))
 		o.block_point = Vector3(from.x + dir.x * along, 0.0, from.z + dir.z * along)
@@ -392,41 +406,46 @@ static func commit_blocks(ctx: SimContext, shooter: SimPlayer) -> void:
 		# be thrown. Whether he gets there was rolled above.
 		var to := SimConsts.horizontal(o.block_point - o.pos)
 		var d := to.length()
-		var window: float = maxf(t, SimConsts.DT)
 		var need: float = maxf(d - BLOCK_REACH * 0.5, 0.0)
 		var pace: float = need / window + 0.5 * SimPlayer.SLIDE_DECEL * window
 		pace = clampf(pace, maxf(o.vel.dot(to) / maxf(d, 1e-3), 0.0), o.max_speed() * LUNGE_PACE)
-		o.commit_move(to / maxf(d, 1e-3) * pace, t + BLOCK_THROUGH, false,
+		o.commit_move(to / maxf(d, 1e-3) * pace, window + BLOCK_THROUGH, false,
 			ctx.rng.range_float(BLOCK_DOWN_MIN, BLOCK_DOWN_MAX))
-		o.play_anim(SimConsts.Anim.SLIDE, t + BLOCK_READ + 0.3)
+		o.play_anim(SimConsts.Anim.SLIDE, window + 0.3)
 		ctx.log_event(SimTelemetry.Ev.BLOCK_LUNGE, {
 			"p": o.id,
 			"team": o.team,
 			"chance": chance,
 			"hit": o.block_hit,
+			"windup": windup,
 		})
 
 
-## Takes the blocks committed at the strike, on the tick the ball reaches each
-## man. The ball must still be the shot he threw himself at.
+## Takes the blocks committed to a strike, on the tick the ball reaches each
+## man. The ball must be that strike: struck by the man he was thrown at,
+## since he was thrown, and touched by nobody since. A man thrown on a plant
+## whose strike never came stays on the floor and takes nothing.
 static func _resolve_blocks(ctx: SimContext) -> void:
 	var ball := ctx.ball
 	for o in ctx.players:
-		if o.block_shot < 0:
+		if o.block_since < 0:
 			continue
-		if o.block_shot != ball.last_touch_tick or not o.on_pitch:
-			o.block_shot = -1
+		if not o.on_pitch:
+			o.block_since = -1
 			continue
 		if ctx.tick_index < o.block_tick:
 			continue
-		o.block_shot = -1
+		var struck: bool = ball.last_touch_player == o.block_shooter \
+			and ball.last_touch_kind == SimTelemetry.Touch.SHOT \
+			and ball.last_touch_tick >= o.block_since
+		o.block_since = -1
 		# On the floor either way: the slide he committed to has that.
-		if not o.block_hit:
+		if not struck or not o.block_hit:
 			continue
 		SimTouch.block(ctx, o)
 		# One block per shot: the ball is a different ball now.
 		for other in ctx.players:
-			other.block_shot = -1
+			other.block_since = -1
 		return
 
 
@@ -455,7 +474,7 @@ static func resolve_contacts(ctx: SimContext) -> void:
 			continue
 		if p.is_keeper:
 			continue  # The keeper module owns its own contact rules.
-		if p.block_shot >= 0:
+		if p.block_since >= 0:
 			continue  # Thrown at the shot; `_resolve_blocks` has him.
 		if p.escorting:
 			continue  # Walking it out; the whole point is not to touch it.

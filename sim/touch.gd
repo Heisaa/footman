@@ -1454,15 +1454,21 @@ const VOLLEY_POWER := 1.12
 static var volleys_struck := 0
 
 
+## The pace a shot leaves the boot at, before the error: the power over the
+## shot range, and the body behind it. Nobody strikes one hard off his back
+## foot -- the same reach the passes are clamped to, applied to the one number
+## a shot is made of, so a man with the goal behind him gets a scuffed poke at
+## it and has to turn to hit it properly. `SimDecision.expected_goals` prices
+## the same factor, and the block thrown on the plant reads this pace.
+static func shot_speed(player: SimPlayer, power: float, line: Vector3) -> float:
+	var speed: float = lerpf(SimConsts.SHOT_SPEED_MIN, SimConsts.SHOT_SPEED_MAX,
+		clampf(power * lerpf(0.65, 1.0, player.attrs.power), 0.0, 1.0))
+	return speed * strike_scale(player, line)
+
+
 static func shot(ctx: SimContext, player: SimPlayer, aim_point: Vector3, power: float, first_time: bool, chance_quality: float, chip: bool = false, curl_mean: float = NAN, trivela: bool = false) -> void:
 	var line := aim_point - ctx.ball.pos
-	var speed: float = lerpf(SimConsts.SHOT_SPEED_MIN, SimConsts.SHOT_SPEED_MAX, clampf(power * lerpf(0.65, 1.0, player.attrs.power), 0.0, 1.0))
-	# Nobody strikes one hard off his back foot. The same reach the passes are
-	# clamped to, applied to the one number a shot is made of -- so a man with the
-	# goal behind him gets a scuffed poke at it and has to turn to hit it properly.
-	# `SimDecision.expected_goals` prices the same factor, so the shot the engine
-	# takes is the shot it scored.
-	speed *= strike_scale(player, line)
+	var speed := shot_speed(player, power, line)
 	var distance := SimConsts.horizontal_length(line)
 	# The unmeant default, or the bend the decision priced. A meant mean comes
 	# in technique-scaled, so only the noise is scaled here -- one charge, the
@@ -1552,9 +1558,11 @@ static func _log_shot(ctx: SimContext, player: SimPlayer, from: Vector3, aim_poi
 	ctx.log_event(SimTelemetry.Ev.SHOT, record)
 	ctx.active_shot = record
 	ctx.active_shot_tick = ctx.tick_index
-	# And the bodies in front of it throw themselves at it, now, on the
-	# backlift: `SimDuel.BLOCK_READ`.
-	SimDuel.commit_blocks(ctx, player)
+	# And the bodies in front of it: the men thrown on the plant are re-timed
+	# onto the ball as struck, and a strike with no wind-up gives the rest no
+	# read at all.
+	SimDuel.commit_blocks(ctx, player, from, SimConsts.horizontal(ctx.ball.vel).normalized(),
+		SimConsts.horizontal_length(ctx.ball.vel), from.y, ctx.ball.vel.y, 0.0)
 
 
 ## What a first touch is going to be, before it is played: the direction he can

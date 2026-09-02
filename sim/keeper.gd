@@ -9,6 +9,10 @@ extends RefCounted
 ## Reaction time distribution, in seconds.
 const REACTION_MEAN := 0.20
 const REACTION_SD := 0.04
+## What a keeper who watched the backlift still needs: his clock started on
+## the plant (`SimPlayer.struck_windup`), and a set keeper still has to read
+## the ball off the boot.
+const REACTION_SET := 0.10
 ## How far a keeper can reach from a standing start, and after a full dive.
 const REACH_STANDING := 1.35
 const REACH_DIVING := 3.4
@@ -304,12 +308,32 @@ static func _position(ctx: SimContext, k: SimPlayer) -> void:
 		k.steer_to(ctx.pitch.clamp_to_pitch(meet, 0.3), INF)
 		return
 
+	# Set on the plant: an opponent winding up a strike inside range
+	# (`SimPlayer.strike_at`) is a ball about to come, and a keeper still
+	# walking when it does is beaten by his own feet. He stands, on the ball,
+	# until it is struck, and dives on the strike.
+	if _strike_coming(ctx, k):
+		k.look_target = ctx.ball.ground_pos()
+		k.desired_vel = Vector3.ZERO
+		return
+
 	# A man who can shoot: come off the line at him. The arc above is a
 	# resting depth; this is the depth at which his reach covers the goal as
 	# the shooter sees it.
 	var narrowed := _narrowed_station(ctx, k, hold_at)
 	k.look_target = ctx.ball.ground_pos()
 	k.steer_to(ctx.pitch.clamp_to_pitch(narrowed, 0.3), k.max_speed() * 0.7)
+
+
+## An opponent in his wind-up inside `NARROW_RANGE` of this goal.
+static func _strike_coming(ctx: SimContext, k: SimPlayer) -> bool:
+	if SimConsts.horizontal_length(ctx.ball.pos - ctx.pitch.own_goal(k.team)) > NARROW_RANGE:
+		return false
+	for oid in ctx.opponent_ids(k.team):
+		var o := ctx.players[oid]
+		if o.strike_at >= 0 and o.on_pitch:
+			return true
+	return false
 
 
 ## Narrowing the angle. With the ball at an opponent's feet inside
@@ -495,6 +519,13 @@ static func _shot_response(ctx: SimContext, k: SimPlayer) -> void:
 		# A new attempt on goal. Sample a reaction time, scaled by reflexes.
 		var reaction: float = maxf(ctx.rng.gauss_clamped(REACTION_MEAN, REACTION_SD, 2.5), 0.06)
 		reaction *= lerpf(1.35, 0.72, k.attrs.reflexes)
+		# The backlift he watched: the clock ran through the wind-up, and
+		# the dive goes on the strike. A first-time strike he reads from the
+		# boot.
+		var striker_id := ctx.ball.last_touch_player
+		if striker_id >= 0 and striker_id < ctx.players.size():
+			reaction = maxf(reaction - ctx.players[striker_id].struck_windup,
+				minf(reaction, REACTION_SET))
 		state = {
 			"shot": shot_id,
 			"react_ticks": int(round(reaction * float(SimConsts.TICK_HZ))),
