@@ -134,8 +134,8 @@ with a ball in the air. The fourth act is not touching it at all.
 | Fouls and cards, and a red that removes a man | built | `SimReferee` |
 | Added time from stoppages | built | `SimReferee.add_stoppage` |
 | Opponents out of the area at a goal kick | built | `SimSetPiece._out_of_penalty_area` |
-| A restart the side reorganises around | partial — positions and a delay; routines are not authored | |
-| A wall at a free kick | absent | |
+| A restart the side reorganises around | partial — positions and a delay, and one corner routine (2026-09-02): a named post, two runners sent to the posts a second before the kick, the ball aimed at the man; the delivery lands 5-13 m off the post at that range (**29**), so the rows did not improve | `SimSetPiece._corner_choose` |
+| A wall at a free kick | built 2026-09-02 — two to five of the nearest defenders on the 9.15 m across the line to the near post, facing the ball; a standing body that jumps in the block model; the taker goes round it | `SimSetPiece._wall_spots`, `SimDuel.WALL_STOPS` |
 | Advantage | absent — `SimReferee`'s header comment claims it; it is not in the file | |
 | Substitutions, injuries | absent | |
 
@@ -1901,6 +1901,24 @@ instead of being hooked clear from the byline. Twenty fragments: 39 cadences
 of it, about four seconds of escorting; the ball went out of play 44 times
 before and 49 after on the same seeds. Rare and cheap, as its row said.
 
+**Built 2026-09-02, item 8: the wall, and one corner routine.** A direct
+free kick inside `WALL_RANGE` and in front of goal puts the nearest two to
+five defenders shoulder to shoulder on the law's 9.15 m across the line to
+the near post (`_wall_spots`), looking at the ball; `SimDuel.block_chance`
+reads `in_wall` as a standing body that jumps -- `WALL_BODY` either side,
+`WALL_JUMP` high, `WALL_STOPS` of what comes through -- with no read and no
+lunge; the taker aims round it to the keeper's side. `fk-shot` at n=160:
+goals **21% to 5%**, blocked 0% to 24%, saved 24% to 12%; `fk-wide`
+unmoved. The corner routine (`_corner_choose`, `_corner_plant`): a post is
+named at the restart, the two attackers the spots put deepest are sent to
+the posts a `CORNER_HOLD` before the kick and steered there over the dead
+ball, and the delivery is aimed at the named post and the man going to it.
+Watched with a probe, the ball came down 5-13 m from the post -- the
+delivery's range error at 31-39 m, which is **29**'s recorded bound and a
+tuning-freeze decision -- so the runners had nothing to attack: `corner-right`
+7% to 4% goals, `corner-left` 11% to 2%, `none` up, at n=160 (four points of
+error). Authored, and not yet paying: the routine waits on the delivery.
+
 **Built 2026-09-02, item 7: the link players (30).** The pocket between the
 opponents' lines was only an *offer* (`_pocket_point`, a lift on a space
 probe), taken or not by the softmax and mostly not; now it is the station.
@@ -2129,8 +2147,9 @@ not a finding; it is the list working.
   every time, by everyone (**28**) — but check the open question at the end of the
   order before treating it as a fault.
 - A cross arrives and nobody makes the run to the near or far post (**29**) — a
-  corner comes down **seven to nine metres** from the nearest of ours, and a wide
-  free kick produces no shot at all.
+  corner has two men running to the posts now (2026-09-02) and still comes
+  down six to seven metres from the nearest of ours, because the ball lands
+  5-13 m off the post it was aimed at.
 - The two centre-backs four metres in front of a shot from the edge of the box
   throw themselves at it, one in ten, and the shooter mostly carries into them
   instead: built 2026-09-02, watch whether the lunge reads as one.

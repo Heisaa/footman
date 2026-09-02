@@ -254,6 +254,7 @@ static func corner(ctx: SimContext, team: int, side: float) -> void:
 	var spot := Vector3(goal.x - signf(goal.x) * 0.3, SimConsts.BALL_RADIUS, side * (ctx.pitch.half_width - 0.3))
 	_begin(ctx, Kind.CORNER, team, spot)
 	_corner_spots(ctx, team, spot)
+	_corner_choose(ctx, team, spot)
 
 
 static func free_kick(ctx: SimContext, team: int, at: Vector3, indirect: bool) -> void:
@@ -266,6 +267,78 @@ static func free_kick(ctx: SimContext, team: int, at: Vector3, indirect: bool) -
 	_default_spots(ctx, spot, team, WALL_DISTANCE, true, true)
 	if SimConsts.horizontal_length(ctx.pitch.target_goal(team) - spot) < FK_DELIVERY_RANGE:
 		_load_box(ctx, team, spot)
+	if not indirect:
+		_wall_spots(ctx, team, spot)
+
+
+## The wall. A direct free kick inside `WALL_RANGE` and in front of the goal
+## gets a wall: the nearest outfielders of the defending side, `WALL_MEN` of
+## them by distance, shoulder to shoulder on the law's 9.15 m, across the line
+## from the ball to the near post so the wall takes that side and the keeper
+## the other. `SimDuel.block_chance` reads `in_wall`: a standing body that
+## jumps, at the wall's distance, with no read and no lunge. Before it, a free
+## kick from twenty-one metres scored 21% with nobody in front of it.
+const WALL_RANGE := 32.0
+const WALL_MEN := [5, 4, 3, 2]
+const WALL_MEN_AT := [18.0, 24.0, 28.0, 32.0]
+const WALL_GAP := 0.6
+## How far outside the near post the wall's outer man stands.
+const WALL_OVERLAP := 0.7
+
+static var _wall_ids := PackedInt32Array()
+
+
+static func _wall_spots(ctx: SimContext, team: int, spot: Vector3) -> void:
+	var goal := ctx.pitch.target_goal(team)
+	var to_goal := SimConsts.horizontal(goal - spot)
+	var distance := to_goal.length()
+	if distance > WALL_RANGE or distance < 3.0:
+		return
+	# In front of the goal: inside the angle a shot has.
+	var dx: float = absf(goal.x - spot.x)
+	if absf(spot.z) > dx * 1.4 + 4.0:
+		return
+	var men := 0
+	for i in WALL_MEN.size():
+		if distance <= WALL_MEN_AT[i]:
+			men = WALL_MEN[i]
+			break
+	if men == 0:
+		return
+	var them := SimConsts.other_team(team)
+	# The near post, and the line from the ball to it: the wall stands across
+	# it, `WALL_DISTANCE` out, its outer man a little outside the post's line.
+	var near_z: float = signf(spot.z) * ctx.pitch.goal_half_width if absf(spot.z) > 0.3 else ctx.pitch.goal_half_width
+	var post := Vector3(goal.x, 0.0, near_z)
+	var to_post := SimConsts.horizontal(post - spot).normalized()
+	var centre := spot + to_post * WALL_DISTANCE
+	var across := Vector3(-to_post.z, 0.0, to_post.x)
+	# Which way along `across` is "outside" the post: away from the goal's centre.
+	if across.dot(Vector3(0.0, 0.0, near_z)) < 0.0:
+		across = -across
+	# Nearest defenders to the ball take the wall.
+	var order: Array[SimPlayer] = []
+	for pid in ctx.team_players[them]:
+		var d := ctx.players[pid]
+		if d.on_pitch and not d.is_keeper:
+			order.append(d)
+	order.sort_custom(func(a: SimPlayer, b: SimPlayer) -> bool:
+		return a.dist_sq_to(spot) < b.dist_sq_to(spot))
+	_wall_ids.clear()
+	for i in mini(men, order.size()):
+		var d := order[i]
+		var offset: float = WALL_OVERLAP - float(i) * WALL_GAP
+		ctx.restart_spots[d.id] = ctx.pitch.clamp_to_pitch(centre + across * offset, 0.3)
+		d.in_wall = true
+		_wall_ids.append(d.id)
+
+
+## Every wall stands down: after the kick, and at any new restart.
+static func _clear_wall(ctx: SimContext) -> void:
+	for pid in _wall_ids:
+		if pid >= 0 and pid < ctx.players.size():
+			ctx.players[pid].in_wall = false
+	_wall_ids.clear()
 
 
 ## How far from goal a free kick is one the side loads the box for, and how many
@@ -352,6 +425,9 @@ static func _begin(ctx: SimContext, kind: int, team: int, spot: Vector3) -> void
 	ctx.restart_hold = 0
 	ctx.restart_taker = -1
 	ctx.restart_spots.clear()
+	_clear_wall(ctx)
+	_corner_target = Vector3.INF
+	_corner_planted = false
 	ctx.ball.reset(spot)
 	ctx.ball.last_touch_team = team
 	ctx.ball.last_touch_player = -1
@@ -601,6 +677,8 @@ static func update(ctx: SimContext) -> void:
 			# so the same reorganisation has to be covered at a hurry instead.
 			var pace: float = lerpf(0.75, 1.0, clampf((ctx.config.clock_rate - 1.0) / 9.0, 0.0, 1.0))
 			p.steer_to(ctx.restart_spots[p.id], p.max_speed() * pace)
+			if p.in_wall:
+				p.look_target = ctx.restart_pos
 		else:
 			p.desired_vel = Vector3.ZERO
 
@@ -618,6 +696,29 @@ static func update(ctx: SimContext) -> void:
 	var ready := taker.dist_to(ctx.restart_pos) <= SimConsts.CONTROL_RANGE
 	if ready:
 		ctx.restart_hold += 1
+	# The corner routine: as the taker comes to the flag the runs go, and he
+	# strikes it a moment later so they arrive with the ball. Off his distance
+	# rather than off `ready`: a corner taker stops a stride short and is taken
+	# by the timeout, so `ready` never came. The movement ladder does not run
+	# over a dead ball, so the runners are steered from here until it does.
+	if ctx.restart_kind == Kind.CORNER:
+		# Or off the clock, a hold before the wait runs out, for a taker who
+		# never came within the lead.
+		var timeout := _compress(ctx, MAX_WAIT, MAX_WAIT_FLOOR)
+		var hold := _compress(ctx, CORNER_HOLD, CORNER_HOLD_FLOOR)
+		if not _corner_planted and (taker.dist_to(ctx.restart_pos) <= CORNER_RUN_LEAD \
+				or ctx.restart_ticks >= timeout - hold):
+			_corner_plant(ctx)
+			_corner_hold_from = ctx.restart_ticks
+		if _corner_planted:
+			for pid in _corner_runners:
+				if pid >= 0 and pid < ctx.players.size():
+					var runner := ctx.players[pid]
+					var point := SimOffBall.destination_for(ctx, runner)
+					if not is_inf(point.x):
+						runner.steer_to(point, runner.max_speed() * 0.9, 0.6)
+			if ctx.restart_ticks - _corner_hold_from < _compress(ctx, CORNER_HOLD, CORNER_HOLD_FLOOR):
+				return
 		if ctx.restart_kind == Kind.THROW_IN:
 			# He has the ball in his hands from the moment he reaches it, and the
 			# wind-up is what makes the throw read as a throw rather than as a
@@ -679,6 +780,9 @@ static func _take(ctx: SimContext, taker: SimPlayer) -> void:
 	ctx.restart_kind = -1
 	ctx.restart_taker = -1
 	ctx.restart_spots.clear()
+	# The wall has done its job the tick the ball is struck (`commit_blocks`
+	# runs inside the strike); from here they are footballers again.
+	_clear_wall(ctx)
 
 
 static func _take_kickoff(ctx: SimContext, taker: SimPlayer) -> void:
@@ -777,11 +881,86 @@ static func _take_goal_kick(ctx: SimContext, taker: SimPlayer) -> void:
 			SimTouch.ground_pass(ctx, taker, mate.pos, 4.0, mate.id)
 
 
+## One corner routine, so a corner is not whatever the box happens to do. The
+## delivery names a post; the two men the spots put deepest for it are sent
+## to that post and the other as the ball is struck (`SimOffBall.plant`, a
+## `BOX` run), so the ball and the runs are aimed at the same point and the
+## man arrives rather than stands. Near post `CORNER_NEAR_SHARE` of the time,
+## far post the rest.
+const CORNER_NEAR_SHARE := 0.6
+const CORNER_NEAR := Vector3(-5.5, 0.0, 3.2)
+const CORNER_FAR := Vector3(-6.5, 0.0, -4.0)
+const CORNER_RUN_SECONDS := 3.0
+## How long the taker stands over the ball once he has it, in ticks, while the
+## runs go: a run started at the strike arrived a second after a 1.35 s
+## flight had come down (the ball 6.5 m from the nearest of ours).
+const CORNER_HOLD := SimConsts.TICK_HZ
+const CORNER_HOLD_FLOOR := 45
+## And how near the flag the taker is when they go.
+const CORNER_RUN_LEAD := 2.0
+
+static var _corner_hold_from := 0
+
+static var _corner_target := Vector3.INF
+static var _corner_other := Vector3.INF
+static var _corner_runners := PackedInt32Array()
+static var _corner_planted := false
+
+
+## Chooses the routine at the restart: which post, and which two go.
+static func _corner_choose(ctx: SimContext, team: int, spot: Vector3) -> void:
+	var goal := ctx.pitch.target_goal(team)
+	var dir := ctx.pitch.attack_dir(team)
+	var side: float = signf(spot.z) if absf(spot.z) > 1e-3 else 1.0
+	var near_post := goal + Vector3(CORNER_NEAR.x * dir, 0.0, CORNER_NEAR.z * side)
+	var far_post := goal + Vector3(CORNER_FAR.x * dir, 0.0, CORNER_FAR.z * side)
+	var to_near := ctx.rng.chance(CORNER_NEAR_SHARE)
+	_corner_target = near_post if to_near else far_post
+	_corner_other = far_post if to_near else near_post
+	_corner_planted = false
+	# The runners: the two attackers the spots put deepest in the box.
+	var runners: Array[SimPlayer] = []
+	for pid in ctx.team_players[team]:
+		var p := ctx.players[pid]
+		if p.is_keeper or not p.on_pitch or p.id == ctx.restart_taker:
+			continue
+		if not ctx.restart_spots.has(p.id):
+			continue
+		if SimConsts.horizontal_length(goal - ctx.restart_spots[p.id]) > 20.0:
+			continue
+		runners.append(p)
+	runners.sort_custom(func(a: SimPlayer, b: SimPlayer) -> bool:
+		return SimConsts.horizontal_length(goal - ctx.restart_spots[a.id]) \
+			> SimConsts.horizontal_length(goal - ctx.restart_spots[b.id]))
+	_corner_runners.clear()
+	for i in mini(2, runners.size()):
+		_corner_runners.append(runners[i].id)
+
+
+## Sends the routine's runners, once.
+static func _corner_plant(ctx: SimContext) -> void:
+	if _corner_planted or is_inf(_corner_target.x):
+		return
+	_corner_planted = true
+	var points := [_corner_target, _corner_other]
+	for i in _corner_runners.size():
+		var pid := _corner_runners[i]
+		if pid >= 0 and pid < ctx.players.size():
+			SimOffBall.plant(ctx, ctx.players[pid], SimOffBall.BOX, points[i], CORNER_RUN_SECONDS)
+
+
 static func _take_corner(ctx: SimContext, taker: SimPlayer) -> void:
-	var goal := ctx.pitch.target_goal(taker.team)
-	var dir := ctx.pitch.attack_dir(taker.team)
-	var aim := goal + Vector3(-6.5 * dir, 2.1, ctx.rng.range_float(-3.0, 3.0))
-	var mate := ctx.nearest_to(Vector3(aim.x, 0.0, aim.z), taker.team, taker.id)
+	if is_inf(_corner_target.x):
+		_corner_choose(ctx, taker.team, ctx.restart_pos)
+	_corner_plant(ctx)
+	var target := _corner_target
+	var aim := Vector3(target.x, 2.1, target.z + ctx.rng.range_float(-0.8, 0.8))
+	var mate: SimPlayer = null
+	if _corner_runners.size() > 0 and _corner_runners[0] < ctx.players.size():
+		mate = ctx.players[_corner_runners[0]]
+	if mate == null:
+		mate = ctx.nearest_to(target, taker.team, taker.id)
+	_corner_target = Vector3.INF
 	# The swing is the taker's foot, and it used to be the flag he stood at:
 	# `-signf(taker.pos.z)`, which reads the same for both ends of the pitch while
 	# the goal being attacked does not. One team's corners from a given corner
@@ -805,7 +984,13 @@ static func _take_free_kick(ctx: SimContext, taker: SimPlayer) -> void:
 	var distance := SimConsts.horizontal_length(goal - ctx.restart_pos)
 	var direct_allowed := ctx.restart_kind == Kind.FREE_KICK
 	if direct_allowed and distance < 30.0 and ctx.rng.chance(0.6):
-		var aim := Vector3(goal.x, ctx.rng.range_float(0.6, 2.0), ctx.rng.range_float(-1.0, 1.0) * (ctx.pitch.goal_half_width - 0.5))
+		var z: float = ctx.rng.range_float(-1.0, 1.0) * (ctx.pitch.goal_half_width - 0.5)
+		if not _wall_ids.is_empty():
+			# Round the wall: the side the keeper has, not the one the wall
+			# stands across. The wall covers the near post.
+			var near_z: float = signf(ctx.restart_pos.z) if absf(ctx.restart_pos.z) > 0.3 else 1.0
+			z = -near_z * (ctx.pitch.goal_half_width - 0.5) * ctx.rng.range_float(0.45, 1.0)
+		var aim := Vector3(goal.x, ctx.rng.range_float(0.6, 2.0), z)
 		SimTouch.shot(ctx, taker, aim, 0.8, false, 0.08)
 		return
 	if distance < 42.0:

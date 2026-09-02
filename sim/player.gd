@@ -179,6 +179,9 @@ var block_hit := false
 ## body is between the ball and the man who wants it, and he does not touch
 ## it. `SimDuel.resolve_contacts` leaves him out while it is set.
 var escorting := false
+## Standing in a wall at a free kick (`SimSetPiece._wall_spots`): a body that
+## does not lunge and does not duck, and the block model reads it as such.
+var in_wall := false
 ## Whether this player's last touch was a settling one -- he put the ball down in
 ## front of himself and is not going anywhere with it until he decides again.
 ##

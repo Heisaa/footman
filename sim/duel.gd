@@ -262,6 +262,13 @@ const BLOCK_FALLOFF := 0.7
 ## got there. In seconds; his own `recovery_ticks` brake.
 const BLOCK_DOWN_MIN := 0.3
 const BLOCK_DOWN_MAX := 0.5
+## The wall. How far in front of the ball a wall man still counts as one, the
+## half-width of the body he puts in the way, how high he gets, and what a ball
+## into that gets stopped by.
+const WALL_ALONG := 12.0
+const WALL_BODY := 0.5
+const WALL_JUMP := 2.3
+const WALL_STOPS := 0.9
 
 
 ## The chance this defender blocks a ball struck from `from` along `dir` at
@@ -276,12 +283,18 @@ static func block_chance(ctx: SimContext, o: SimPlayer, shooter: SimPlayer, from
 		return 0.0
 	var rel := SimConsts.horizontal(o.pos - from)
 	var along: float = rel.dot(dir)
-	if along < 0.8 or along > BLOCK_RANGE:
-		return 0.0
 	var lateral: float = absf(rel.x * dir.z - rel.z * dir.x)
 	var t: float = along / maxf(speed, 1.0)
 	# Where the ball is when it gets to him: a rising drive clears a body.
 	var y: float = launch_y + climb * t - 0.5 * SimConsts.GRAVITY * t * t
+	# A man in a wall: a standing body that jumps, at the wall's distance. No
+	# read, no lunge; the ball goes through his metre or it does not.
+	if o.in_wall:
+		if along < 0.8 or along > WALL_ALONG or lateral > WALL_BODY or y > WALL_JUMP:
+			return 0.0
+		return WALL_STOPS
+	if along < 0.8 or along > BLOCK_RANGE:
+		return 0.0
 	if y > BLOCK_HEIGHT:
 		return 0.0
 	# He has to have the striker in his eyes to read the backlift.
