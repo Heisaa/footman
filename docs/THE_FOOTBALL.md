@@ -85,6 +85,7 @@ re-watch of the attack (the order, below), expecting rework.
 | Hold a defensive line, with offside off it | built | `SimReferee.offside_line` |
 | Clear under pressure | built | `_add_clear` |
 | Block a shot | built — a body in front of the strike throws itself on the backlift, one roll at the strike, taken when the ball arrives; the price and the act are one function | `SimDuel.commit_blocks`, `block_chance` |
+| A committed move does not steer | built 2026-09-02 — one state on the body for the slide, the dive and the leap for a header, read by `locomote` before any steering: in the air the body keeps the velocity it left the ground with and lands with a third of it, on the ground it slides one way and slows; released onto the floor. The block's lunge is paced to have a leg at the point when the ball is, the dive is thrown as far as his reach toward where the ball comes closest, the leap is the fall from the height over his head. Rows unmoved (`shot-edge`, `1v1-clear`, `curl-blocked`) | `SimPlayer.commit_move`, `SimDuel.commit_blocks`, `SimKeeper._dive`, `SimAerial._leap` |
 | Cover a beaten teammate | built — one man a side, latched for the carry, fills the space goal-side of the carrier who has just gone past one of ours; about a dozen a match | `SimMovement._pick_cover`, `Errand.COVER` |
 | Jockey, delay, show him wide | built — the chaser who has arrived goal-side stands off a stride and a half, holds his hips on the carrier, shuffles under the strafe cap, and stands a little inside the line to goal so the easy way is the touchline; the challenge is still the duel's commit roll | `SimMovement._jockey_point`, `Errand.JOCKEY` |
 | Escort a dying ball over the line | built — a ball the forecast has going out off their touch is walked out: body between it and the man, no touch of his own; rare, a few seconds a match | `SimMovement._escort_wanted`, `Errand.ESCORT` |
@@ -181,7 +182,6 @@ When one is built its row above changes and its entry here goes.
 | **43** | A goal kick is nine passes in his own half and then a turnover | `SimSetPiece._take_goal_kick`, `SimMovement` |
 | **44** | A striker and a centre-back are the same speed | `SimRole._WEIGHTS`, `SimAttributes` |
 | **50** | Corners at 0.4-0.5 a team against a floor of 0.5: nobody puts the ball behind | `SimDuel`, `SimKeeper` |
-| **52** | A committed move can still steer: a slide changes direction mid-slide, a keeper turns in the air | `SimPlayer.locomote`, `SimDuel.commit_blocks`, `SimKeeper` |
 
 **5 is the largest hole.** The engine reaches the penalty area about four times as
 often as football does and nothing much resists once it is there. What is left of
@@ -1150,21 +1150,6 @@ it needs a defender who blocks or deflects behind, a keeper who parries wide,
 and neither act is built. No attacking mechanic can move this number and none
 should try (`PLAN.md` §11.4). It comes back with **5**, whose entry already says
 so; this one exists so the defensive pass starts with the figure in hand.
-
-**52 is the owner's, 2026-09-02, watching the block land (`M`).** A defender who
-slides at a shot can change direction during the slide, and a keeper who has
-left the ground for a ball can change direction in the air; the owner expects
-other committal moves to allow the same. The body is locomoted every tick by
-`SimPlayer.locomote` from a fresh `desired_vel`, and nothing in it knows that
-a man is off his feet: the block's lunge is a `move_target` with the ordinary
-steering under it, the dive is `play_anim` over a keeper still steered to the
-ball, the jump for a header is a reach test with no flight. The rule the owner
-named: **in the air the body follows its ballistic trajectory; in a slide it
-is locked in one direction until he stands up.** The general form is a
-committed-move state on the body -- entered by the slide, the dive, the jump
-and the fall, with its own velocity law and a duration, released into
-`recovery_ticks` -- read by `locomote` before any steering. Not built; noted
-so the next committal act is built onto it rather than beside it.
 
 **The arithmetic is confirmed and it was not what was deciding the row**, which
 is worth writing down because it nearly went in as a fix. Probed tick by tick,

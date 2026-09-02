@@ -238,6 +238,23 @@ static func play(ctx: SimContext, player: SimPlayer) -> void:
 	if not is_aerial(ctx):
 		_play_off_the_body(ctx, player)
 		return
+	var ball_y := ctx.ball.pos.y
+	_head(ctx, player)
+	_leap(ctx, player, ball_y)
+
+
+## The leap. A ball above his standing reach was met off the ground, and a
+## body in the air keeps the velocity it left the ground with until it lands
+## (`SimPlayer.commit_move`): the height over his head is what he jumped, and
+## the way down takes what gravity says.
+static func _leap(ctx: SimContext, player: SimPlayer, ball_y: float) -> void:
+	var rise: float = ball_y - SimConsts.HEAD_REACH_HEIGHT
+	if rise <= 0.0:
+		return
+	player.commit_move(player.vel, sqrt(2.0 * rise / SimConsts.GRAVITY), true, 0.0)
+
+
+static func _head(ctx: SimContext, player: SimPlayer) -> void:
 	var goal := ctx.pitch.target_goal(player.team)
 	if player.dist_to(goal) <= HEADER_SHOT_RANGE:
 		var aim := _goal_aim(ctx, player, goal)

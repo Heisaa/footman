@@ -14,6 +14,12 @@ const REACH_STANDING := 1.35
 const REACH_DIVING := 3.4
 ## Time a full dive takes to extend.
 const DIVE_TIME := 0.55
+## The shortest flight a dive is, in seconds; how long he is down after one
+## that caught it or missed (a parry has its own); and the most a body can be
+## thrown at, in m/s.
+const DIVE_MIN := 0.2
+const DIVE_DOWN := 0.3
+const DIVE_PACE := 8.0
 ## Distance from the line the keeper holds, per metre of ball distance.
 const DEPTH_PER_METRE := 0.17
 const DEPTH_MAX := 13.0
@@ -519,6 +525,7 @@ static func _shot_response(ctx: SimContext, k: SimPlayer) -> void:
 	var approach := _closest_approach(ctx, k, crossing["index"])
 	var margin: float = approach.x
 	var dive_time: float = approach.y
+	var at: Vector3 = ctx.trajectory_now().points[int(approach.z)]
 
 	# Reach envelope: an ellipsoid that grows over the dive duration, sized by
 	# height and agility.
@@ -532,6 +539,7 @@ static func _shot_response(ctx: SimContext, k: SimPlayer) -> void:
 		reach *= PARRY_DOWN_REACH
 
 	state["resolved"] = true
+	_dive(ctx, k, at, dive_time, reach)
 	if margin > reach:
 		# Beaten. The keeper still dives, which is what the player sees.
 		_record_facing(ctx, k, margin, reach, false, false)
@@ -574,6 +582,22 @@ static func _shot_response(ctx: SimContext, k: SimPlayer) -> void:
 	state["caught"] = can_catch
 	state["closeness"] = closeness
 	state["save_tick"] = ctx.tick_index + int(round(dive_time * float(SimConsts.TICK_HZ)))
+
+
+## The dive: the body thrown at the ball (`SimPlayer.commit_move`), as far as
+## his reach, timed to be there when it is, and nothing turns it in the air.
+## Whether he gets a hand to it was decided before he left the ground; this is
+## only the flight. A keeper already on the floor does not leave it again.
+static func _dive(ctx: SimContext, k: SimPlayer, at: Vector3, dive_time: float, reach: float) -> void:
+	if k.recovery_ticks > 0:
+		return
+	var to := SimConsts.horizontal(at - k.pos)
+	var d := to.length()
+	var flight: float = maxf(dive_time, DIVE_MIN)
+	var v := Vector3.ZERO
+	if d > 1e-3:
+		v = to / d * minf(minf(d, reach) / flight, DIVE_PACE)
+	k.commit_move(v, flight, true, DIVE_DOWN)
 
 
 ## Records which of the save model's two stages resolved a shot, on the shot's
@@ -710,13 +734,14 @@ const VERTICAL_REACH_RATIO := 1.45
 
 
 ## Closest approach of the ball to the keeper before it crosses the line, as
-## (distance, time). Distance is measured in the keeper's own reach space, so a
-## ball at head height is further away than one at the same lateral offset along
-## the ground.
-static func _closest_approach(ctx: SimContext, k: SimPlayer, crossing_index: int) -> Vector2:
+## (distance, time, forecast index). Distance is measured in the keeper's own
+## reach space, so a ball at head height is further away than one at the same
+## lateral offset along the ground.
+static func _closest_approach(ctx: SimContext, k: SimPlayer, crossing_index: int) -> Vector3:
 	var traj := ctx.trajectory_now()
 	var best := INF
 	var best_time := 0.0
+	var best_i := 0
 	var limit: int = mini(crossing_index + 1, traj.count)
 	for i in limit:
 		var p := traj.points[i]
@@ -728,9 +753,10 @@ static func _closest_approach(ctx: SimContext, k: SimPlayer, crossing_index: int
 		if d < best:
 			best = d
 			best_time = traj.time_of_index(i)
+			best_i = i
 	if is_inf(best):
-		return Vector2(99.0, 0.0)
-	return Vector2(best, best_time)
+		return Vector3(99.0, 0.0, 0.0)
+	return Vector3(best, best_time, float(best_i))
 
 
 ## Where and when the ball would cross the plane of this keeper's goal line, if

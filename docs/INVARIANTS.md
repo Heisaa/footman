@@ -478,6 +478,16 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   The strike's run-up is the pace *along* the hips (`SimTouch.drive_of`), one
   helper for `momentum_of` and `strike_scale` so the two cannot drift.
 
+- **A body off its feet is not steered, and one state says so.** The block's
+  lunge was a `move_target` under the ordinary steering, the dive was an
+  animation over a keeper still walked to his station, and the owner watched a
+  slide change direction and a keeper turn in the air. `SimPlayer.commit_move`
+  is the one entry -- the slide, the dive, the leap -- and `locomote` reads
+  `commit_ticks` before anything else; it holds `recovery_ticks` for the whole
+  of it, so every reader that skips a man on the floor skips a man in the air.
+  Do not add a per-act freeze beside it, and do not have an act steer a body
+  it has thrown: what steering a committed man wants is thrown away.
+
 - **`TURN_COMMIT` needs its `TURN_PIVOT` guard or locomotion deadlocks**, and
   silently. A stationary man facing the wrong way may not accelerate until he has
   turned; `vel` is `new_dir * cur_speed`, so a speed of zero cannot express a

@@ -21,6 +21,7 @@ func run() -> void:
 	_a_sprint_slaves_the_body()
 	_a_side_on_start_costs_the_hips()
 	_slaving_is_latched()
+	_a_committed_move_does_not_steer()
 
 
 func _reaches_top_speed() -> void:
@@ -251,3 +252,25 @@ func _slaving_is_latched() -> void:
 		last = p.facing
 	check_less(flips, 1, "the body turns one way, never back and forth")
 	check_near(angle_difference(p.facing, 0.0), 0.0, 0.05, "and ends on the run")
+
+
+## `docs/THE_FOOTBALL.md` 52: a slide holds its line and a body in the air
+## keeps its velocity, whatever either is asked, until he is down.
+func _a_committed_move_does_not_steer() -> void:
+	var p := make_player()
+	p.commit_move(Vector3(6.0, 0.0, 0.0), 0.3, false, 0.2)
+	for i in 18:
+		p.steer_to(Vector3(p.pos.x, 0.0, p.pos.z + 10.0))
+		p.locomote(SimConsts.DT)
+	check_near(p.pos.z, 0.0, 1e-6, "a slide holds its line whatever he is asked")
+	check_greater(p.pos.x, 1.0, "and covers ground along it")
+	check_less(p.speed(), 6.0, "slowing as it goes")
+	check(p.recovery_ticks > 0, "and leaves him on the floor")
+	var q := make_player()
+	q.commit_move(Vector3(3.0, 0.0, 0.0), 0.3, true, 0.0)
+	for i in 17:
+		q.steer_to(Vector3(q.pos.x - 10.0, 0.0, q.pos.z))
+		q.locomote(SimConsts.DT)
+	check_near(q.speed(), 3.0, 1e-6, "in the air the body keeps its velocity")
+	q.locomote(SimConsts.DT)
+	check_less(q.speed(), 3.0, "and loses most of it on landing")

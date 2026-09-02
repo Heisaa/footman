@@ -175,6 +175,19 @@ var block_tick := -1
 var block_point := Vector3.ZERO
 var block_shot := -1
 var block_hit := false
+## The committed move: a body off its feet. Entered through `commit_move` by
+## the slide (`SimDuel.commit_blocks`), the dive (`SimKeeper._dive`) and the
+## leap for a header (`SimAerial._leap`); the fall is `recovery_ticks` on its
+## own. `locomote` reads it before any steering: in the air the body keeps the
+## velocity it left the ground with, on the ground it slides one way and slows
+## at `SLIDE_DECEL`, and nothing turns it until it is over. It is released into
+## `recovery_ticks`, the floor. `docs/THE_FOOTBALL.md` 52.
+var commit_ticks := 0
+var commit_airborne := false
+## What a body keeps of its speed when it lands.
+const LAND_KEEP := 0.35
+## How fast a sliding body slows, in m/s^2.
+const SLIDE_DECEL := 5.0
 ## Escorting a dying ball over the line (`SimMovement._escort_wanted`): his
 ## body is between the ball and the man who wants it, and he does not touch
 ## it. `SimDuel.resolve_contacts` leaves him out while it is set.
@@ -348,6 +361,21 @@ func steer_to(target: Vector3, speed_cap: float = INF, deadband: float = 0.4) ->
 	desired_vel = Vector3(dx * scale, 0.0, dz * scale)
 
 
+## Throws the body: `v` for `seconds`, in the air or along the ground, and
+## then `down_seconds` on the floor. No steering reaches him until he is up.
+func commit_move(v: Vector3, seconds: float, airborne: bool, down_seconds: float) -> void:
+	commit_ticks = maxi(int(ceil(seconds * float(SimConsts.TICK_HZ))), 1)
+	commit_airborne = airborne
+	vel = Vector3(v.x, 0.0, v.z)
+	desired_vel = Vector3.ZERO
+	look_target = Vector3.INF
+	body_slaved = true
+	# A slide goes feet first; a body in the air keeps the hips it left with.
+	if not airborne and vel.length_squared() > 1e-4:
+		facing = atan2(vel.z, vel.x)
+	recovery_ticks = maxi(recovery_ticks, commit_ticks + int(round(down_seconds * float(SimConsts.TICK_HZ))))
+
+
 ## Integrates locomotion for one step. Turn-rate limiting comes first, so a
 ## player cannot instantly reverse at speed.
 func locomote(dt: float) -> void:
@@ -357,6 +385,17 @@ func locomote(dt: float) -> void:
 	if _caps_countdown <= 0:
 		_caps_countdown = 6
 		refresh_caps()
+	if commit_ticks > 0:
+		# Off his feet: the move he committed to, and nothing he is asked.
+		commit_ticks -= 1
+		recovery_ticks = maxi(recovery_ticks - 1, 0)
+		if not commit_airborne:
+			vel = vel.move_toward(Vector3.ZERO, SLIDE_DECEL * dt)
+		pos += vel * dt
+		distance_run += vel.length() * dt
+		if commit_ticks == 0 and commit_airborne:
+			vel *= LAND_KEEP
+		return
 	if recovery_ticks > 0:
 		recovery_ticks -= 1
 		vel = vel.move_toward(Vector3.ZERO, max_decel() * RECOVERY_BRAKE * dt)

@@ -682,13 +682,10 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 	var is_primary := role == CHASE_PRIMARY
 	var is_support := role == CHASE_SUPPORT
 
-	# A body already thrown at a shot finishes the throw. Shorter than a
-	# cadence, so `commit_blocks` set the first target itself; this holds it.
+	# A body thrown at a shot is committed (`SimPlayer.commit_move`); nothing
+	# here steers it. Named for the instruments.
 	if ctx.tick_index < p.block_until:
 		p.errand = Errand.BLOCK
-		p.move_target = p.block_point
-		p.move_speed_cap = p.max_speed()
-		p.move_deadband = 0.15
 		return
 
 	if is_primary:

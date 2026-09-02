@@ -258,10 +258,13 @@ const BLOCK_HEIGHT := 1.6
 ## edge of his cover.
 const BLOCK_COMMIT := 0.85
 const BLOCK_FALLOFF := 0.7
-## How long he is on the floor for after throwing himself, whether or not he
-## got there. In seconds; his own `recovery_ticks` brake.
+## How long the slide carries past the ball's arrival, then how long he is on
+## the floor after it, whether or not he got there. In seconds.
+const BLOCK_THROUGH := 0.15
 const BLOCK_DOWN_MIN := 0.3
 const BLOCK_DOWN_MAX := 0.5
+## What a body can be thrown at, as a share of the man's top speed.
+const LUNGE_PACE := 1.2
 ## The wall. How far in front of the ball a wall man still counts as one, the
 ## half-width of the body he puts in the way, how high he gets, and what a ball
 ## into that gets stopped by.
@@ -375,15 +378,21 @@ static func commit_blocks(ctx: SimContext, shooter: SimPlayer) -> void:
 		var arrive := ctx.tick_index + int(ceil(t * float(SimConsts.TICK_HZ)))
 		o.block_shot = ball.last_touch_tick
 		o.block_tick = arrive
-		o.block_until = arrive + int(round(0.15 * float(SimConsts.TICK_HZ)))
+		o.block_until = arrive + int(round(BLOCK_THROUGH * float(SimConsts.TICK_HZ)))
 		o.block_point = Vector3(from.x + dir.x * along, 0.0, from.z + dir.z * along)
 		o.block_hit = ctx.rng.chance(chance)
-		# He goes now, not on the movement cadence: the whole act is shorter
-		# than one.
-		o.move_target = o.block_point
-		o.move_speed_cap = o.max_speed()
-		o.move_deadband = 0.15
-		o.look_target = Vector3.INF
+		# He throws himself now, not on the movement cadence, and in one
+		# direction (`SimPlayer.commit_move`): paced to have a leg at the point
+		# when the ball is, slowing as a slide does, at no more than a body can
+		# be thrown. Whether he gets there was rolled above.
+		var to := SimConsts.horizontal(o.block_point - o.pos)
+		var d := to.length()
+		var window: float = maxf(t, SimConsts.DT)
+		var need: float = maxf(d - BLOCK_REACH * 0.5, 0.0)
+		var pace: float = need / window + 0.5 * SimPlayer.SLIDE_DECEL * window
+		pace = clampf(pace, maxf(o.vel.dot(to) / maxf(d, 1e-3), 0.0), o.max_speed() * LUNGE_PACE)
+		o.commit_move(to / maxf(d, 1e-3) * pace, t + BLOCK_THROUGH, false,
+			ctx.rng.range_float(BLOCK_DOWN_MIN, BLOCK_DOWN_MAX))
 		o.play_anim(SimConsts.Anim.SLIDE, t + BLOCK_READ + 0.3)
 		ctx.log_event(SimTelemetry.Ev.BLOCK_LUNGE, {
 			"p": o.id,
@@ -406,9 +415,7 @@ static func _resolve_blocks(ctx: SimContext) -> void:
 		if ctx.tick_index < o.block_tick:
 			continue
 		o.block_shot = -1
-		# On the floor either way.
-		o.recovery_ticks = maxi(o.recovery_ticks,
-			int(ctx.rng.range_float(BLOCK_DOWN_MIN, BLOCK_DOWN_MAX) * float(SimConsts.TICK_HZ)))
+		# On the floor either way: the slide he committed to has that.
 		if not o.block_hit:
 			continue
 		SimTouch.block(ctx, o)
