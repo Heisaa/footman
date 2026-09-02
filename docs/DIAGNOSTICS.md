@@ -259,6 +259,10 @@ over. **So the numbers and the eye are looking at the same football and can
 disagree usefully** — which is the whole point, and is not true of any other pair
 of instruments here.
 
+- **Every row says what is supposed to happen.** `SimScenario.expect` is one
+  line of football the eye can check, required of every row and written before
+  it is first run; `view3d --scenario` shows it under the scoreboard, the table
+  prints it under each row's title. A new scenario without one does not compile.
 - **The six outcome columns are one vocabulary for every scenario**, deliberately:
   `goal saved off blocked lost none`, shares that sum to 100. A per-scenario
   outcome set would be a new table to learn each time. `goal + saved` is the shot

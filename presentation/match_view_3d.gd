@@ -582,10 +582,12 @@ func _start_match(seed_value: int) -> void:
 		var tour := (" (%d/%d, N next, R again)" % [_scenario_index + 1,
 			SimScenarios.all().size()]) if _scenario_cycle else ""
 		print("scenario %s%s, seed %d: %s" % [_scenario.name, tour, seed_value, _scenario.title])
+		print("  expect: %s" % _scenario.expect)
 		if _scoreboard != null:
 			_scoreboard.subtitle = _scenario.name.to_upper() + (
 				"  %d/%d" % [_scenario_index + 1, SimScenarios.all().size()]
 				if _scenario_cycle else "")
+			_scoreboard.note = _scenario.expect
 	_build_ground()
 	_build_players()
 	if _scoreboard != null:

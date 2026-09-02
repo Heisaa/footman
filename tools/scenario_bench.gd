@@ -89,6 +89,7 @@ static func run(flags: Dictionary) -> void:
 	print("  a row that moved by less than that has not moved. --trials N for more.")
 	for s in list:
 		print("  %-16s %.0f s  %s" % [s.name, s.seconds, s.title])
+		print("  %-16s       expect: %s" % ["", s.expect])
 	if flags.has("acts"):
 		_acts(list, trials, quality)
 	if flags.has("trace"):

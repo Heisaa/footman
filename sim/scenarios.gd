@@ -7,6 +7,13 @@ extends RefCounted
 ## the same thing or the two halves cannot argue. Add one when there is a
 ## question about a moment that a whole match answers too slowly.
 ##
+## **Every row says what is supposed to happen** (`expect`, the third argument
+## of every constructor here, required): one line of football the eye can check
+## against the screen, written before the row is first run. `view3d --scenario`
+## shows it under the scoreboard and `./run.sh scenario` prints it, so a watcher
+## knows what a trial was meant to look like without opening this file. Keep
+## it to the football -- what the men should do -- not to a number.
+##
 ## **The one-on-one first** (owner, 2026-08-23). It is four variants rather than
 ## one because "one-on-one" is not one situation -- a keeper set on his line and
 ## a keeper committed to closing are opposite problems, a striker with a man on
@@ -106,6 +113,7 @@ static func names() -> PackedStringArray:
 ## with it.
 static func one_v_one_clear() -> SimScenario:
 	return _one_v_one("1v1-clear", "clean through the middle, keeper on his line",
+		"Runs on, picks a corner and scores past a keeper set on his line.",
 		30.0, 0.0, 1.0, 60.0, 6.0)
 
 
@@ -114,6 +122,7 @@ static func one_v_one_clear() -> SimScenario:
 ## (`SimDecision._add_chip`, `_round_the_keeper`).
 static func one_v_one_onrushing() -> SimScenario:
 	return _one_v_one("1v1-onrushing", "through, and the keeper has left his line",
+		"Chips him or goes round him. A shot into his body is the failure.",
 		26.0, -6.0, 11.0, 60.0, 5.0)
 
 
@@ -121,6 +130,7 @@ static func one_v_one_onrushing() -> SimScenario:
 ## time he arrives and the ball across is a real option.
 static func one_v_one_angle() -> SimScenario:
 	return _one_v_one("1v1-angle", "in behind down the right channel, support coming inside",
+		"Squares it to the man coming inside, or goes for the near post.",
 		24.0, 17.0, 2.0, 60.0, 4.0)
 
 
@@ -128,6 +138,7 @@ static func one_v_one_angle() -> SimScenario:
 ## are.
 static func one_v_one_chased() -> SimScenario:
 	return _one_v_one("1v1-chased", "away down the left with a defender on his shoulder",
+		"Keeps the ball on the far side of the man and gets the shot away first.",
 		32.0, -14.0, 1.0, 2.5, 7.0)
 
 
@@ -143,11 +154,12 @@ static func one_v_one_chased() -> SimScenario:
 ## shot. A one-on-one is a man who has *just* gone through, with the ground
 ## between him and the keeper still to be covered and men coming back at him,
 ## and that is what `from_goal` and `line_gap` together make.
-static func _one_v_one(name: String, title: String, from_goal: float, across: float,
-		keeper_out: float, trail: float, line_gap: float) -> SimScenario:
+static func _one_v_one(name: String, title: String, expect: String, from_goal: float,
+		across: float, keeper_out: float, trail: float, line_gap: float) -> SimScenario:
 	var s := SimScenario.new()
 	s.name = name
 	s.title = title
+	s.expect = expect
 	# Long enough to cover the ground. He has twenty-odd metres to run before
 	# there is anything to decide, and a clock that stopped before he got there
 	# would be measuring its own length.
@@ -273,16 +285,19 @@ static func _nearest_outfielder(ctx: SimContext, team: int, to: Vector3) -> SimP
 ## them.
 static func cross_early() -> SimScenario:
 	return _cross("cross-early", "the early ball, hit from the edge of the final third",
+		"Crosses early, before the line drops, and a runner meets it as it comes down.",
 		24.0, 26.0)
 
 
 static func cross_right() -> SimScenario:
 	return _cross("cross-right", "wide on the right in the final third, box to be attacked",
+		"Runs are made, the cross goes in off his right foot, and somebody attacks it.",
 		30.0, 26.0)
 
 
 static func cross_left() -> SimScenario:
 	return _cross("cross-left", "the same ball from the left, which is a different foot",
+		"The same ball from the left, whipped in off the left foot or wrapped in with the right.",
 		30.0, -26.0)
 
 
@@ -294,6 +309,7 @@ static func cross_left() -> SimScenario:
 ## separate a delivery nobody attacks from a delivery that is wrong.
 static func cross_loaded() -> SimScenario:
 	return _cross("cross-loaded", "the same ball, into a box already being attacked",
+		"One of the three arriving is found and finishes in one touch.",
 		30.0, 26.0, 3)
 
 
@@ -301,6 +317,7 @@ static func cross_loaded() -> SimScenario:
 ## the face is the other one.
 static func cross_byline() -> SimScenario:
 	return _cross("cross-byline", "to the byline, where the pull-back is on",
+		"Reaches the line and cuts it back to a man arriving for the shot.",
 		46.0, 20.0)
 
 
@@ -312,6 +329,7 @@ static func cross_byline() -> SimScenario:
 ## row for.
 static func cross_deep() -> SimScenario:
 	return _cross("cross-deep", "beside the goal line, the ball across the face",
+		"Plays it across the face of goal for a man running in at the far post.",
 		49.0, 27.0, 0, true)
 
 
@@ -323,6 +341,7 @@ static func cross_deep() -> SimScenario:
 ## otherwise, which is the whole point of the act.
 static func cross_pullback() -> SimScenario:
 	return _cross("cross-pullback", "on the goal line, cut back to men arriving",
+		"Pulls it back along the floor to a man running on; struck first time.",
 		50.0, 18.0, 2, true)
 
 
@@ -347,7 +366,8 @@ static func cross_pullback() -> SimScenario:
 ## the ball. Whether the engine's own runs are timed is `cross-loaded`'s question
 ## and **29**'s; this row is about what happens when they are.
 static func cross_open() -> SimScenario:
-	var s := _make("cross-open", "a cross already in the air, an empty box, nobody defending", 5.0,
+	var s := _make("cross-open", "a cross already in the air, an empty box, nobody defending",
+		"Met in one touch, header or volley, and it goes in. Anything else is the finish's fault.", 5.0,
 		func(sc: SimScenario, ctx: SimContext) -> void:
 			var team := sc.attacking_team
 			var dir := ctx.pitch.attack_dir(team)
@@ -412,11 +432,12 @@ static func cross_open() -> SimScenario:
 ## `turned` is whether the crosser is running at the goal line or has got there
 ## and turned infield -- a man beside the byline still running forward is out of
 ## play in half a second, and the row would be measuring its own placement.
-static func _cross(name: String, title: String, along: float, across: float,
-		arriving := 0, turned := false, unopposed := false) -> SimScenario:
+static func _cross(name: String, title: String, expect: String, along: float,
+		across: float, arriving := 0, turned := false, unopposed := false) -> SimScenario:
 	var s := SimScenario.new()
 	s.name = name
 	s.title = title
+	s.expect = expect
 	s.seconds = 7.0
 	s.attacking_team = SimConsts.TEAM_HOME
 	s.place = func(sc: SimScenario, ctx: SimContext) -> void:
@@ -532,18 +553,20 @@ static func _widest(ctx: SimContext, team: int, across: float, ball_at: Vector3)
 ## natural-bend side in both halves: left of travel is `UP.cross(vel)`, which
 ## is -z going +x and +z going -x.
 static func curl_blocked() -> SimScenario:
-	return _curl("curl-blocked", "a leg on the line, the bend side open", false)
+	return _curl("curl-blocked", "a leg on the line, the bend side open",
+		"Bends it infield round the closing leg and it reaches the man.", false)
 
 
 ## The same ball with a second man closing from the natural-bend side: bending
 ## in is bending into his window, and the football answers are the outside of
 ## the boot or not playing it. The trivela tally says which the engine took.
 static func curl_wrong() -> SimScenario:
-	return _curl("curl-wrong", "the same leg, and the bend side closed", true)
+	return _curl("curl-wrong", "the same leg, and the bend side closed",
+		"The bend side is closed: the outside of the boot, or he does not play it.", true)
 
 
-static func _curl(name: String, title: String, second_body: bool) -> SimScenario:
-	return _make(name, title, 5.0,
+static func _curl(name: String, title: String, expect: String, second_body: bool) -> SimScenario:
+	return _make(name, title, expect, 5.0,
 		func(sc: SimScenario, ctx: SimContext) -> void:
 			var team := sc.attacking_team
 			var dir := ctx.pitch.attack_dir(team)
@@ -590,10 +613,12 @@ static func _curl(name: String, title: String, second_body: bool) -> SimScenario
 			ctx.update_possession())
 
 
-static func _make(name: String, title: String, seconds: float, place: Callable) -> SimScenario:
+static func _make(name: String, title: String, expect: String, seconds: float,
+		place: Callable) -> SimScenario:
 	var s := SimScenario.new()
 	s.name = name
 	s.title = title
+	s.expect = expect
 	s.seconds = seconds
 	s.attacking_team = SimConsts.TEAM_HOME
 	s.place = place
@@ -734,7 +759,8 @@ static func _face(p: SimPlayer, at: Vector3) -> void:
 ## question five different ways at once, and each looked like the next one
 ## until it was probed -- the row went 0.0 through balls a trial to 1.6.
 static func through_ball() -> SimScenario:
-	return _make("through-ball", "midfielder on the ball, forwards ahead, a line to play past", 7.0,
+	return _make("through-ball", "midfielder on the ball, forwards ahead, a line to play past",
+		"Slipped between the centre-backs to a runner who stays onside and goes through.", 7.0,
 		func(sc: SimScenario, ctx: SimContext) -> void:
 			var team := sc.attacking_team
 			var dir := ctx.pitch.attack_dir(team)
@@ -813,7 +839,8 @@ static func through_ball() -> SimScenario:
 ## onside, moving. What the row measures is whether the line steps and whether
 ## the runner is caught: `--acts` prints offsides per trial.
 static func offside_trap() -> SimScenario:
-	return _make("offside-trap", "the ball played back in front of a line that steps up", 6.0,
+	return _make("offside-trap", "the ball played back in front of a line that steps up",
+		"The line steps up as the ball goes back; the through ball is refused or the runner is flagged.", 6.0,
 		func(sc: SimScenario, ctx: SimContext) -> void:
 			var team := sc.attacking_team
 			var them := SimConsts.other_team(team)
@@ -880,7 +907,8 @@ const SWITCH_WIDTH := 20.0
 
 
 static func switch_play() -> SimScenario:
-	return _make("switch", "ball held on the left, the right wide man free", 7.0,
+	return _make("switch", "ball held on the left, the right wide man free",
+		"One long diagonal to the free man on the right, taken down and carried on.", 7.0,
 		func(sc: SimScenario, ctx: SimContext) -> void:
 			var team := sc.attacking_team
 			var dir := ctx.pitch.attack_dir(team)
@@ -905,7 +933,8 @@ static func switch_play() -> SimScenario:
 ## the commonest thing a defence does with the ball and nothing else here asks
 ## whether the engine can do it.
 static func build_up() -> SimScenario:
-	return _make("build-up", "centre-back on it in his own third, pressed", 7.0,
+	return _make("build-up", "centre-back on it in his own third, pressed",
+		"Plays through the press with short passes and reaches the middle third with the ball.", 7.0,
 		func(sc: SimScenario, ctx: SimContext) -> void:
 			var team := sc.attacking_team
 			var dir := ctx.pitch.attack_dir(team)
@@ -935,7 +964,8 @@ static func build_up() -> SimScenario:
 ## half-turn is `SimMovement._orient_receiver`, and neither has ever been watched
 ## in the one situation they exist for.
 static func pocket() -> SimScenario:
-	return _make("pocket", "receiving between the lines, back to goal, marked", 6.0,
+	return _make("pocket", "receiving between the lines, back to goal, marked",
+		"Receives on the half-turn and goes forward, or lays it off first time. No turn into the marker.", 6.0,
 		func(sc: SimScenario, ctx: SimContext) -> void:
 			var team := sc.attacking_team
 			var dir := ctx.pitch.attack_dir(team)
@@ -960,8 +990,15 @@ static func pocket() -> SimScenario:
 ## A shot from here is a real football option and so is the ball wide; what this
 ## row is for is the third case, the man who does neither because the lane is
 ## blocked and there is nothing else priced.
+##
+## Since the block landed he carries into the two men instead. Probed
+## (`tools/_shot_edge_probe.gd`): the shot is 0.03 and gone inside a quarter
+## second, a yard sideways opens nothing against two lunges 5 m apart, and the
+## carry is credited with the shot past them at a success the row's own shares
+## bear out. The defenders let him; that is the row's question now.
 static func shot_edge() -> SimScenario:
-	return _make("shot-edge", "at the top of the box, bodies in front", 5.0,
+	return _make("shot-edge", "at the top of the box, bodies in front",
+		"Shifts it a yard and shoots through the gap, or plays wide. Not a carry into two men.", 5.0,
 		func(sc: SimScenario, ctx: SimContext) -> void:
 			var team := sc.attacking_team
 			var dir := ctx.pitch.attack_dir(team)
@@ -986,7 +1023,8 @@ static func shot_edge() -> SimScenario:
 ## ball is put in flight rather than crossed so the row is about the strike and
 ## not about the delivery, which `cross-*` already asks.
 static func volley() -> SimScenario:
-	return _make("volley", "a ball dropping to him in the box", 5.0,
+	return _make("volley", "a ball dropping to him in the box",
+		"Struck first time as it drops, on target. Not taken down and carried.", 5.0,
 		func(sc: SimScenario, ctx: SimContext) -> void:
 			var team := sc.attacking_team
 			var dir := ctx.pitch.attack_dir(team)
@@ -1010,7 +1048,8 @@ static func volley() -> SimScenario:
 ## of what decides it and is fitted to the compressed clock, so a zero here is a
 ## fact about the format as much as about the striker.
 static func long_range() -> SimScenario:
-	return _make("long-range", "twenty-eight metres, square on, space in front", 6.0,
+	return _make("long-range", "twenty-eight metres, square on, space in front",
+		"Hits it from range with the space in front of him, on target.", 6.0,
 		func(sc: SimScenario, ctx: SimContext) -> void:
 			var team := sc.attacking_team
 			var dir := ctx.pitch.attack_dir(team)
@@ -1047,7 +1086,8 @@ static func long_range() -> SimScenario:
 ## Pace, the turn and `SimDuel` decide this and nothing else does. It is the
 ## cleanest test on this page of whether a foot race looks like a foot race.
 static func race_behind() -> SimScenario:
-	return _make("race", "a ball knocked in behind, striker and defender level", 6.0,
+	return _make("race", "a ball knocked in behind, striker and defender level",
+		"A foot race won by pace; the faster man reaches it a stride ahead and keeps it.", 6.0,
 		func(sc: SimScenario, ctx: SimContext) -> void:
 			var team := sc.attacking_team
 			var dir := ctx.pitch.attack_dir(team)
@@ -1078,7 +1118,8 @@ static func race_behind() -> SimScenario:
 ## The aerial duel, the header and the knock-down all exist; 22 headers in a
 ## match produced none at goal (**29**), and this is where that is watchable.
 static func aerial_duel() -> SimScenario:
-	return _make("aerial", "a long ball dropping between striker and centre-back", 6.0,
+	return _make("aerial", "a long ball dropping between striker and centre-back",
+		"Both go up; the header is won cleanly, a knock-down or a clearance. No bounce between them.", 6.0,
 		func(sc: SimScenario, ctx: SimContext) -> void:
 			var team := sc.attacking_team
 			var dir := ctx.pitch.attack_dir(team)
@@ -1103,7 +1144,8 @@ static func aerial_duel() -> SimScenario:
 ## whether the ball can be *held* until help arrives, which is the whole point of
 ## the act.
 static func hold_up() -> SimScenario:
-	return _make("hold-up", "back to goal, marked tight, runners coming from deep", 6.0,
+	return _make("hold-up", "back to goal, marked tight, runners coming from deep",
+		"Shields it with his back to goal until a runner arrives, then lays it off.", 6.0,
 		func(sc: SimScenario, ctx: SimContext) -> void:
 			var team := sc.attacking_team
 			var dir := ctx.pitch.attack_dir(team)
@@ -1132,7 +1174,8 @@ static func hold_up() -> SimScenario:
 ## running into a defender is the softmax declining it. This row is where that
 ## claim can be checked rather than repeated.
 static func take_on() -> SimScenario:
-	return _make("take-on", "wide man against the full-back, final third", 6.0,
+	return _make("take-on", "wide man against the full-back, final third",
+		"Knocks it past the full-back on the outside and races him, or cuts inside.", 6.0,
 		func(sc: SimScenario, ctx: SimContext) -> void:
 			var team := sc.attacking_team
 			var dir := ctx.pitch.attack_dir(team)
@@ -1169,6 +1212,7 @@ static func take_on() -> SimScenario:
 ## scoring the wait.
 static func corner_right() -> SimScenario:
 	return _restart("corner-right", "a corner from the right",
+		"A ball to the near or far post and a header on it; the defence heads it clear or behind.",
 		func(ctx: SimContext, team: int) -> Vector3:
 			return _corner_spot(ctx, team, 1.0),
 		func(ctx: SimContext, team: int) -> void:
@@ -1177,6 +1221,7 @@ static func corner_right() -> SimScenario:
 
 static func corner_left() -> SimScenario:
 	return _restart("corner-left", "the same corner from the left",
+		"The same corner from the left, bending the other way.",
 		func(ctx: SimContext, team: int) -> Vector3:
 			return _corner_spot(ctx, team, -1.0),
 		func(ctx: SimContext, team: int) -> void:
@@ -1191,6 +1236,7 @@ static func _corner_spot(ctx: SimContext, team: int, side: float) -> Vector3:
 ## Twenty-one metres out and central, which is a shot.
 static func free_kick_shot() -> SimScenario:
 	return _restart("fk-shot", "free kick, twenty-one metres, central",
+		"Over or round the wall, on target.",
 		func(ctx: SimContext, team: int) -> Vector3:
 			return Vector3((ctx.pitch.half_length - 21.0) * ctx.pitch.attack_dir(team), 0.0, -1.0),
 		func(ctx: SimContext, team: int) -> void:
@@ -1201,6 +1247,7 @@ static func free_kick_shot() -> SimScenario:
 ## Wide and deep enough that the ball into the box is the act, not the shot.
 static func free_kick_wide() -> SimScenario:
 	return _restart("fk-wide", "free kick wide, a ball into the box",
+		"A ball into the box, met with a header.",
 		func(ctx: SimContext, team: int) -> Vector3:
 			return Vector3((ctx.pitch.half_length - 30.0) * ctx.pitch.attack_dir(team), 0.0, 24.0),
 		func(ctx: SimContext, team: int) -> void:
@@ -1210,6 +1257,7 @@ static func free_kick_wide() -> SimScenario:
 
 static func penalty() -> SimScenario:
 	return _restart("penalty", "a penalty",
+		"Placed past the keeper; scored most times.",
 		func(ctx: SimContext, team: int) -> Vector3:
 			return ctx.pitch.penalty_spot(team),
 		func(ctx: SimContext, team: int) -> void:
@@ -1219,6 +1267,7 @@ static func penalty() -> SimScenario:
 ## A throw in the final third, which is the one restart the engine takes most of.
 static func throw_final_third() -> SimScenario:
 	return _restart("throw-in", "a throw-in in the final third",
+		"Thrown to feet and kept. Possession, not a clearance.",
 		func(ctx: SimContext, team: int) -> Vector3:
 			return Vector3((ctx.pitch.half_length - 24.0) * ctx.pitch.attack_dir(team), 0.0,
 				ctx.pitch.half_width),
@@ -1233,6 +1282,7 @@ static func throw_final_third() -> SimScenario:
 ## `SimScenario.escape_x`.
 static func goal_kick() -> SimScenario:
 	return _restart("goal-kick", "a goal kick, played out",
+		"Played short and out through the press to the middle third.",
 		func(ctx: SimContext, team: int) -> Vector3:
 			return ctx.pitch.own_goal(team) + Vector3(-signf(ctx.pitch.own_goal(team).x) * 5.5, 0.0, 0.0),
 		func(ctx: SimContext, team: int) -> void:
@@ -1254,11 +1304,11 @@ static func goal_kick() -> SimScenario:
 ## `escape_frac` is `SimScenario.escape_x` as a share of the half length, set
 ## here because the pitch is not to hand where a scenario is built. Zero for the
 ## rows that have no such line, which is all of them but `goal-kick`.
-static func _restart(name: String, title: String, about: Callable, begin: Callable,
-		escape_frac := 0.0) -> SimScenario:
+static func _restart(name: String, title: String, expect: String, about: Callable,
+		begin: Callable, escape_frac := 0.0) -> SimScenario:
 	# Sixteen seconds: a corner or a free kick waits for everyone to be set
 	# and two more for the signal, which is most of twelve.
-	return _make(name, title, 16.0, func(sc: SimScenario, ctx: SimContext) -> void:
+	return _make(name, title, expect, 16.0, func(sc: SimScenario, ctx: SimContext) -> void:
 		var team := sc.attacking_team
 		sc.settle(ctx, about.call(ctx, team), _furthest_forward(ctx, team))
 		begin.call(ctx, team)

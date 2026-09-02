@@ -44,6 +44,9 @@ const RESOLUTIONS := ["goal", "saved", "off", "blocked", "lost", "none"]
 var name := ""
 ## One line a human reads before looking at it.
 var title := ""
+## What is supposed to happen, in one line of football the eye can check.
+## Required of every row; `SimScenarios` says how to write one.
+var expect := ""
 ## How long the trial is given, in simulated seconds, before it is called
 ## unresolved. Long enough for the situation to play out and no longer: a
 ## scenario that runs on becomes an ordinary match with a strange kick-off.

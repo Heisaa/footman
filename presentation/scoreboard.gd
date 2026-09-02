@@ -69,6 +69,9 @@ var prompt := ""
 ## The set situation on screen, named. Drawn in the prompt's slot on a paper
 ## chip; the full-time prompt, when it comes, takes the slot over.
 var subtitle := ""
+## What the set situation is supposed to look like, on a second chip under the
+## first. Hidden with it when the full-time prompt takes the slot.
+var note := ""
 
 var _font: Font
 var _clock := 0.0
@@ -229,6 +232,17 @@ func _draw_prompt(board: Rect2) -> void:
 	_panel(chip.grow(BORDER * 0.5).abs(), SimPalette.INK, SimPalette.INK, SHADOW)
 	_panel(chip, fill, SimPalette.INK, Vector2.ZERO)
 	_text(chip, text, PROMPT_SIZE, SimPalette.INK, fill)
+	if prompt != "" or note == "":
+		return
+	var note_width := _font.get_string_size(
+		note, HORIZONTAL_ALIGNMENT_LEFT, -1, PROMPT_SIZE
+	).x + PROMPT_PAD * 2.0
+	var second := Rect2(
+		Vector2(board.position.x, chip.end.y + PROMPT_GAP), Vector2(note_width, PROMPT_HEIGHT)
+	)
+	_panel(second.grow(BORDER * 0.5).abs(), SimPalette.INK, SimPalette.INK, SHADOW)
+	_panel(second, SimPalette.PAPER, SimPalette.INK, Vector2.ZERO)
+	_text(second, note, PROMPT_SIZE, SimPalette.INK, SimPalette.PAPER)
 
 
 func _panel(rect: Rect2, fill: Color, border: Color, offset: Vector2) -> void:
