@@ -4893,6 +4893,7 @@ static func _new_mechanics() -> void:
 	print("  cuts tried %4d   beat his man %4d   and was fouled %4d" % [
 		SimDecision.tally_feint, SimDecision.tally_beat, SimDecision.tally_beat_foul])
 	print("  chips                   %4d" % SimTouch.chips_played)
+	print("  covers for a beaten man %4d" % SimMovement.covers_taken)
 	print("  driven ground passes    %4d" % SimTouch.driven_played)
 	print("  volleys                 %4d" % SimTouch.volleys_struck)
 	# Does the foot reach the strike. `mean across` at zero would mean every ball

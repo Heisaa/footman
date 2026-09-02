@@ -234,11 +234,12 @@ enum Errand {
 	ASCENT,    ## the value field's local gradient moved him
 	MARK,      ## goal-side of an opponent
 	BLOCK,     ## thrown at a shot (`SimDuel.commit_blocks`)
+	COVER,     ## filling the space a beaten teammate lost (`_pick_cover`)
 }
 
 const ERRAND_NAMES := [
 	"station", "chase", "press", "pattern", "shoulder", "offer", "support",
-	"drift", "ascent", "mark", "block",
+	"drift", "ascent", "mark", "block", "cover",
 ]
 
 
@@ -250,6 +251,8 @@ static func reset() -> void:
 	_chase_time = PackedFloat32Array()
 	_press_side = PackedFloat32Array()
 	_contest_latch = PackedInt32Array()
+	_cover = PackedInt32Array([-1, -1])
+	covers_taken = 0
 
 
 static func update(ctx: SimContext) -> void:
@@ -450,6 +453,7 @@ static func _assign_chasers(ctx: SimContext) -> void:
 			_chase_role[carrier] = CHASE_PRIMARY
 		if loose:
 			_add_nearby_chaser(ctx, team, receiver, ball_ground)
+		_pick_cover(ctx, team)
 	# A man who is not a support presser has no side to close. Cleared here so
 	# that the next press he is given picks one afresh, rather than inheriting
 	# whichever side he happened to be on in some earlier phase.
@@ -797,6 +801,12 @@ static func _recompute_target(ctx: SimContext, p: SimPlayer) -> void:
 			if meet_kind == SimOffBall.SHOW or meet_kind == SimOffBall.SPACE:
 				SimOffBall.meet_ease[1] += 1
 		p.move_deadband = 0.25
+		return
+	if _cover.size() == 2 and _cover[p.team] == p.id:
+		p.errand = Errand.COVER
+		p.move_target = cover_point(ctx, p.team)
+		p.move_speed_cap = p.max_speed() * 0.92
+		p.move_deadband = 0.8
 		return
 	if is_support:
 		p.errand = Errand.PRESS
@@ -1258,6 +1268,116 @@ static func _contest_pace(ctx: SimContext, p: SimPlayer) -> float:
 
 ## Support pressers close the passing lane behind the ball rather than piling in
 ## on it. Convergence on the ball is exactly the failure mode to avoid.
+## Cover: when a man is beaten, somebody fills the space he lost. The chase
+## ranking already penalises the beaten man (`BEATEN_PENALTY`); that chooses
+## who presses next, and nobody stood in the lane he had been standing in. One
+## man a side, latched for the length of the carry -- a cover recomputed every
+## refresh from whoever is nearest is two men swapping the errand every third
+## of a second. The point is `COVER_DEPTH` goal-side of the carrier, and it
+## moves at his pace: this is about this pass, like the chase, and `Holding
+## the shape` reads it under its own name.
+const COVER_RANGE := 30.0
+const COVER_DEPTH := 5.0
+## A teammate this close to the carrier and this far behind him is beaten;
+## 0 is directly behind, 1 square in front.
+const COVER_BEATEN_RANGE := 4.5
+const COVER_BEATEN_BEHIND := 0.35
+## How far a man will come to cover.
+const COVER_REACH := 14.0
+
+## Who is covering, per team; -1 for nobody.
+static var _cover := PackedInt32Array([-1, -1])
+## How many times a cover was taken up, whole match. Read by `diagnose`.
+static var covers_taken := 0
+
+
+## The opponent carrying the ball with one of ours beaten on him, or null.
+static func _beaten_on(ctx: SimContext, team: int) -> SimPlayer:
+	var holder := ctx.ball.last_touch_player
+	if holder < 0 or holder >= ctx.players.size():
+		return null
+	var c := ctx.players[holder]
+	if c.team == team or c.is_keeper or not c.on_pitch:
+		return null
+	var at := ctx.ball.ground_pos()
+	if c.dist_to(at) > SimTouch.DRIBBLE_AHEAD_MAX:
+		return null
+	if SimConsts.horizontal_length(ctx.pitch.own_goal(team) - at) > COVER_RANGE:
+		return null
+	var heading := SimConsts.horizontal(c.vel)
+	var running := heading.length() >= RECOVERY_MIN_CARRIER_SPEED
+	if running:
+		heading = heading.normalized()
+	for pid in ctx.team_players[team]:
+		var d := ctx.players[pid]
+		if not d.on_pitch or d.is_keeper:
+			continue
+		var to := SimConsts.horizontal(d.pos - c.pos)
+		var dist := to.length()
+		if dist > COVER_BEATEN_RANGE or dist < 1e-3:
+			continue
+		if ctx.tick_index - d.dispossessed_tick < BEATEN_TICKS:
+			return c
+		if running and 0.5 * ((to / dist).dot(heading) + 1.0) < COVER_BEATEN_BEHIND:
+			return c
+	return null
+
+
+## Where the cover stands: goal-side of the carrier.
+static func cover_point(ctx: SimContext, team: int) -> Vector3:
+	var at := ctx.ball.ground_pos()
+	var to_goal := SimConsts.horizontal(ctx.pitch.own_goal(team) - at)
+	var d: float = maxf(to_goal.length(), 0.1)
+	return ctx.pitch.clamp_to_pitch(at + to_goal / d * minf(COVER_DEPTH, d * 0.6), 0.5)
+
+
+## Chooses or keeps the cover man for `team`. Latched: the man already
+## covering keeps it while the carrier is still beating somebody and he is
+## still eligible.
+static func _pick_cover(ctx: SimContext, team: int) -> void:
+	if _cover.size() != 2:
+		_cover = PackedInt32Array([-1, -1])
+	var carrier := _beaten_on(ctx, team)
+	if carrier == null:
+		_cover[team] = -1
+		return
+	var point := cover_point(ctx, team)
+	var current: int = _cover[team]
+	if current >= 0 and _cover_eligible(ctx, ctx.players[current], carrier, point):
+		return
+	var best := -1
+	var best_d2 := COVER_REACH * COVER_REACH
+	for pid in ctx.team_players[team]:
+		var d := ctx.players[pid]
+		if not _cover_eligible(ctx, d, carrier, point):
+			continue
+		var d2 := d.dist_sq_to(point)
+		if d2 < best_d2:
+			best_d2 = d2
+			best = pid
+	if best >= 0 and best != current:
+		covers_taken += 1
+	_cover[team] = best
+
+
+static func _cover_eligible(ctx: SimContext, d: SimPlayer, carrier: SimPlayer, point: Vector3) -> bool:
+	if not d.on_pitch or d.is_keeper or d.recovery_ticks > 0:
+		return false
+	if d.id < _chase_role.size() and _chase_role[d.id] == CHASE_PRIMARY:
+		return false
+	# Not the beaten man himself: he is behind the play.
+	if ctx.tick_index - d.dispossessed_tick < BEATEN_TICKS:
+		return false
+	if d.dist_to(carrier.pos) <= COVER_BEATEN_RANGE:
+		var heading := SimConsts.horizontal(carrier.vel)
+		if heading.length() >= RECOVERY_MIN_CARRIER_SPEED:
+			var to := SimConsts.horizontal(d.pos - carrier.pos)
+			var dist: float = maxf(to.length(), 1e-3)
+			if 0.5 * ((to / dist).dot(heading.normalized()) + 1.0) < COVER_BEATEN_BEHIND:
+				return false
+	return d.dist_to(point) <= COVER_REACH
+
+
 ## Defending the penalty area. Inside `BOX_DEFEND_RANGE` of his own goal the
 ## man closing the ball does it from goal-side, `LANE_STANDOFF` in front of
 ## it, and the second man drops onto the line of the shot instead of five

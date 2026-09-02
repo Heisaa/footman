@@ -85,7 +85,7 @@ re-watch of the attack (the order, below), expecting rework.
 | Hold a defensive line, with offside off it | built | `SimReferee.offside_line` |
 | Clear under pressure | built | `_add_clear` |
 | Block a shot | built — a body in front of the strike throws itself on the backlift, one roll at the strike, taken when the ball arrives; the price and the act are one function | `SimDuel.commit_blocks`, `block_chance` |
-| Cover a beaten teammate | partial — he is penalised in the chase ranking; nobody covers the space he lost | |
+| Cover a beaten teammate | built — one man a side, latched for the carry, fills the space goal-side of the carrier who has just gone past one of ours; about a dozen a match | `SimMovement._pick_cover`, `Errand.COVER` |
 | Jockey, delay, show him wide | absent — he either goes for it or holds station. The body frame is in, so a jockey is now an arm that looks at the carrier and shuffles side-on under the strafe cap; held for the defensive pass | |
 | Escort a dying ball over the line | absent — shielding's cheapest special case | |
 | Spring an offside trap | absent — the line exists; stepping up as an act does not | |
@@ -1880,6 +1880,24 @@ fragments: the keeper stood **3.4 m off his line at the strike against 4.1**.
 (n=40, eight points of error): nothing the eye should read as a change yet,
 and the one-on-one answers gated on a keeper who never left his line are now
 gated on one who does.
+
+**Built 2026-09-02: cover.** A beaten man was only penalised in the chase
+ranking, which chooses who presses next and leaves the lane he had stood in
+empty. `_pick_cover` names one man a side -- the nearest eligible to a point
+`COVER_DEPTH` goal-side of a carrier who has one of ours behind him or has
+just taken it off him -- and latches him for the carry, because a cover
+recomputed every refresh from whoever is nearest is two men trading the
+errand three times a second. The point moves at the carrier's pace and says
+so under its own name in `Holding the shape` (target 4.4 m/s on the seed that
+had one, 0% of samples: it is rare and brief, as it should be). Twenty
+fragments: **28 covers taken**, about a dozen a match. `take-on` 72% lost
+before and after; `race` and `1v1-clear` inside the error.
+
+**Where 5 leaves the corner count.** Still not back: 0-1 over twenty
+fragments, about 0.3 a team a match. The block gives the defence a way to put
+the ball behind and it did once; the parry that goes wide is **3**, next, and
+the clearing header under a cross is the other half. Reported as a result,
+not a target.
 **And the pass ends with a re-watch of the attack.** Every attacking row marked
 built was judged, by eye and by number, against a defence that cannot jockey,
 block or defend its box; a judgment made against no resistance is provisional.
@@ -1954,15 +1972,17 @@ not a finding; it is the list working.
   corner comes down **seven to nine metres** from the nearest of ours, and a wide
   free kick produces no shot at all.
 - The two centre-backs four metres in front of a shot from the edge of the box
-  block one in twenty-five of them (**5**).
+  throw themselves at it, one in ten, and the shooter mostly carries into them
+  instead: built 2026-09-02, watch whether the lunge reads as one.
 - A ball is headed in the box and goes anywhere but at goal (**29**).
 - Play crabs across the middle third with no one between the lines to give it
   forward (**30**).
-- A shot from twelve yards with a defender beside it goes in cleanly — nobody
-  blocks.
+- A shot from twelve yards with a defender beside it: he blocks now if he was
+  in front of it and saw it coming; beside it he still does not.
 - Attacks walk into the six-yard box.
 - A keeper parries straight back out and it happens again immediately.
-- The ball almost never goes behind for a corner (**5**).
+- The ball almost never goes behind for a corner (**5** is in; the parry
+  wide, **3**, and the clearing header are what is left).
 - A free kick on the edge of the box is possible but rare; the cynical foul is
   absent.
 - **The last ten minutes look like the first ten**, whatever the score (**34**).
