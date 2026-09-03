@@ -1091,12 +1091,16 @@ static func expected_goals(ctx: SimContext, player: SimPlayer, from: Vector3, ai
 	base *= lerpf(0.55, 1.35, player.attrs.finishing)
 	base *= lerpf(1.0, 0.35, clampf(ctx.pressure_on(player), 0.0, 1.5) / 1.5)
 	base *= lerpf(0.8, 1.05, player.attrs.composure)
-	# And whether there is a shot there at all from where his body is pointing.
+	# The backlift: `SimTouch.windup_for`, the same function `wind_up` plants
+	# him with. The block reads it as its window and the body as its turn.
+	var windup := SimTouch.windup_for(SimTelemetry.Touch.SHOT, d, shot_power(d), first_time)
+	# And whether there is a shot there at all from where his body is pointing
+	# -- after the run-up has turned him onto the line (`faced_line`).
 	# `SimTouch.shot` scales the strike by the same number, so the chance the
 	# engine prices and the ball it then hits are the same event: a man with the
 	# goal over his shoulder gets a scuffed poke, and the way to a real shot is to
 	# turn first.
-	base *= SimTouch.strike_scale(player, aim - from)
+	base *= SimTouch.strike_scale(player, SimTouch.faced_line(player, aim - from, windup))
 	# The two things the model was blind to, and only those two
 	# (`docs/THE_FOOTBALL.md` 2). The trap this proposal names is double-counting:
 	# `aim_sigma` prices skill, pressure, speed, distance, composure, facing and
@@ -1120,10 +1124,7 @@ static func expected_goals(ctx: SimContext, player: SimPlayer, from: Vector3, ai
 	# the strike on the backlift, and the chance is the act's own
 	# (`block_chance`, one function for the price and the block); beyond it a
 	# body in the corridor sticks a leg out after his reaction, the old count.
-	# The backlift is their window: `SimTouch.windup_for`, the same function
-	# `wind_up` plants him with.
-	base *= SimDuel.block_survival(ctx, player, from, aim, SHOT_PRICED_SPEED,
-		SimTouch.windup_for(SimTelemetry.Touch.SHOT, d, shot_power(d), first_time))
+	base *= SimDuel.block_survival(ctx, player, from, aim, SHOT_PRICED_SPEED, windup)
 	base *= pow(0.72, float(_shot_blockers(ctx, player, from, aim)))
 	return clampf(base, 0.002, 0.92)
 
@@ -2767,8 +2768,10 @@ static func _pass_success(ctx: SimContext, player: SimPlayer, from: Vector3, to:
 	var tolerance := pass_tolerance(distance) * (SPACE_TOLERANCE if into_space else 1.0)
 	# A ball into space is aimed at grass and a ball to feet is aimed at a man, so
 	# only the first of them can be the wrong *length*. See `SimTouch.LONG_NONE`.
+	# On the body the wind-up leaves him with, not the one he has now
+	# (`SimTouch.faced_line`): the run-up turns him onto the line.
 	var struck := SimTouch.execution_accuracy(ctx, player, player.attrs.passing, distance,
-		SimTouch.GROUND_AIM_BASE, tolerance, to - from,
+		SimTouch.GROUND_AIM_BASE, tolerance, SimTouch.faced_line(player, to - from, windup),
 		SimTouch.LONG_GROUND if into_space else SimTouch.LONG_NONE)
 	# A ball along the floor has no `control` term. See `receiver_touch`: whether
 	# the man takes it cleanly is not whether the ball reaches him, and it is
@@ -2957,7 +2960,7 @@ static func _lofted_success(ctx: SimContext, player: SimPlayer, to: Vector3, fli
 	var whip := SimTouch.cross_whip_share(distance, flight) if kind == Action.CROSS else 1.0
 	var struck := SimTouch.execution_accuracy(ctx, player, skill, distance,
 		SimTouch.AIR_MODEL_AIM_BASE, pass_tolerance(distance) * AERIAL_TOLERANCE,
-		to - ctx.ball.pos,
+		SimTouch.faced_line(player, to - ctx.ball.pos, windup),
 		SimTouch.LONG_AIR_CROSS if kind == Action.CROSS else SimTouch.LONG_AIR, whip)
 	# And where it goes when it does not go there, because a ball in the air that
 	# misses its spot is a loose ball and not a turnover.
@@ -6505,7 +6508,7 @@ static func _strike_target(c: Dictionary) -> Vector3:
 ## dead-ball kick, whose release is `SimSetPiece.release`.
 static func wind_up(ctx: SimContext, player: SimPlayer, c: Dictionary, seconds: float,
 		restart := false) -> void:
-	var ticks := maxi(int(ceil(seconds * float(SimConsts.TICK_HZ))), 1)
+	var ticks := SimTouch.windup_ticks(seconds)
 	seconds = float(ticks) * SimConsts.DT
 	player.strike_at = ctx.tick_index + ticks
 	player.strike_act = {"c": c, "restart": restart, "seconds": seconds, "ticks": ticks,
@@ -6538,7 +6541,13 @@ static func wind_up(ctx: SimContext, player: SimPlayer, c: Dictionary, seconds: 
 			v = disp / (float(run_ticks) * SimConsts.DT)
 	var plant_seconds := float(ticks - run_ticks) * SimConsts.DT
 	player.strike_act["plant_tick"] = ctx.tick_index + run_ticks
+	# The run-up turns the hips onto the line, by the turn the price read
+	# (`SimTouch.windup_turn`), spread over the wind-up and landed on the
+	# strike tick.
+	var turn := SimTouch.windup_turn(player, line, seconds)
 	player.commit_move(v, seconds, false, 0.0, true, plant_seconds)
+	player.plant_face = player.facing + turn
+	player.plant_turn = turn / float(ticks)
 	var kind := _strike_kind(c)
 	var distance := SimConsts.horizontal_length(_strike_target(c) - at)
 	if kind == SimTelemetry.Touch.SHOT:
@@ -6583,6 +6592,8 @@ static func cancel_windup(player: SimPlayer) -> void:
 	if player.commit_planted:
 		player.commit_ticks = 0
 		player.commit_planted = false
+		player.plant_face = INF
+		player.plant_turn = 0.0
 	tally_cancelled += 1
 
 
@@ -6602,8 +6613,14 @@ static func fire(ctx: SimContext, player: SimPlayer, rushed := 0.0) -> void:
 	if player.rushed > 0.0:
 		tally_rushed += 1
 	if player.commit_planted:
+		# The hips land where the price said; a rushed strike goes with the
+		# hips the ticks got him.
+		if player.plant_face != INF and player.rushed <= 0.0:
+			player.facing = player.plant_face
 		player.commit_ticks = 0
 		player.commit_planted = false
+		player.plant_face = INF
+		player.plant_turn = 0.0
 	if bool(act.get("restart", false)):
 		SimSetPiece.release(ctx, player, act["c"])
 	else:

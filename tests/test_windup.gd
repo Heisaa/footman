@@ -11,6 +11,7 @@ func run() -> void:
 	_the_first_time_strike_goes_at_once()
 	_a_challenge_inside_it_rushes_the_strike()
 	_the_readers_read_the_backlift()
+	_the_run_up_turns_the_hips_onto_the_line()
 
 
 static func _settled_match() -> SimMatch:
@@ -235,3 +236,46 @@ func _the_readers_read_the_backlift() -> void:
 	var with_start := SimDecision._cut_chance(ctx, holder, o, o.pos, from, dir, length, length - 2.0, 1.4, 0.0, 0.3)
 	var without := SimDecision._cut_chance(ctx, holder, o, o.pos, from, dir, length, length - 2.0, 1.4, 0.0, 0.0)
 	check_greater(with_start, without, "the lane charges the wind-up as the defender's head start")
+
+
+## The run-up turns the hips onto the strike line by the turn the price read
+## (`SimTouch.windup_turn`): the decision prices the strike on the body the
+## wind-up leaves him with (`faced_line`), and at the strike he has it.
+func _the_run_up_turns_the_hips_onto_the_line() -> void:
+	var m := _settled_match()
+	var ctx := m.ctx
+	if ctx.possession_player < 0:
+		return
+	var holder := ctx.players[ctx.possession_player]
+	var mate: SimPlayer = null
+	for id in ctx.teammate_ids(holder.team):
+		var q := ctx.players[id]
+		if q.id != holder.id and not q.is_keeper and q.on_pitch:
+			mate = q
+			break
+	_place(ctx, holder, mate, 0.0)
+	# Square on to the line: the ball at his feet, the target off his hip.
+	var line := SimConsts.horizontal(mate.pos - ctx.ball.pos)
+	holder.facing = atan2(line.z, line.x) + PI * 0.5
+	var c := _lofted(ctx, mate, false)
+	var seconds := SimDecision.windup_of(ctx, holder, c)
+	var turn := SimTouch.windup_turn(holder, line, seconds)
+	check_between(absf(turn), 0.5, PI * 0.5 + 1e-4, "four tenths of wind-up turns him a good part of the way round")
+	check_less(SimTouch.off_axis(holder, SimTouch.faced_line(holder, line, seconds)),
+		SimTouch.off_axis(holder, line) - 0.05, "and the price reads the body after the turn")
+	check_equal(SimTouch.windup_turn(holder, line, 0.0), 0.0, "a first-time strike turns nothing")
+	var before := holder.facing
+	SimDecision._execute(ctx, holder, c, false)
+	check_near(holder.plant_face, before + turn, 1e-6, "the body is committed to land the turn on the strike")
+	var ticks := holder.strike_at - ctx.tick_index
+	for i in ticks / 2:
+		m.tick()
+	var half: float = absf(angle_difference(before, holder.facing))
+	check_between(half, absf(turn) * 0.3, absf(turn) * 0.7, "half-way through the wind-up he has turned about half of it")
+	for i in ticks:
+		if holder.strike_at < 0:
+			break
+		m.tick()
+	check_equal(holder.strike_at, -1, "the strike went")
+	check_near(absf(angle_difference(before + turn, holder.facing)), 0.0, 1e-4,
+		"and the hips at the strike are the hips the price read")

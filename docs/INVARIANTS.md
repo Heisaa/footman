@@ -248,9 +248,14 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   is one state on the body -- `strike_at` and `strike_act`, fired by
   `tick_windups`, held through `commit_move`'s planted mode -- never a timer
   per act, and nothing else may start a strike or decide again for a man in
-  it. Inside the window the body runs to the spot and then stands
+  it. Inside the window the body runs to the spot, turns his hips onto the
+  line by `SimTouch.windup_turn` and no other rate (`plant_face`,
+  `plant_turn`, landed on the strike tick) and then stands
   (`plant_ticks`); the kick anim starts at the plant, not the decision, so
-  the backswing is posed over a still body. Everything that used to pretend a backlift reads the real one: the
+  the backswing is posed over a still body. The strike is priced on the
+  body after that turn (`SimTouch.faced_line`) and struck with it: a price
+  read on the hips he had at the decision was the ball going where the
+  body did not say. Everything that used to pretend a backlift reads the real one: the
   block's window is the wind-up plus the flight (`block_chance`, thrown on
   the plant and re-timed at the strike, never rolled twice), the keeper's
   clock runs through it (`SimKeeper.REACTION_SET`), and the lane charges it

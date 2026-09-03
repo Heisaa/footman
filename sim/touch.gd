@@ -648,6 +648,39 @@ static func foot_penalty(player: SimPlayer, dir: Vector3) -> float:
 	return 1.0 + FOOT_COST * foot_cost(player, dir)
 
 
+## The ticks a wind-up of `seconds` takes. One rounding for the plant and for
+## the turn it allows, so the two cannot come out a tick apart.
+static func windup_ticks(seconds: float) -> int:
+	return maxi(int(ceil(seconds * float(SimConsts.TICK_HZ) - 1e-6)), 1)
+
+
+## The turn the wind-up gives the hips: signed radians toward `dir`, as far as
+## the hips' rate at the pace he has now gets him over the wind-up. The run-up
+## squares him onto the line, and a short wind-up barely turns him. One
+## function for the price and the act: the decision prices the strike on the
+## body this leaves him with (`faced_line`) and `SimDecision.wind_up` turns him
+## by exactly it, so the body priced and the body that strikes are the same.
+static func windup_turn(player: SimPlayer, dir: Vector3, seconds: float) -> float:
+	var d := SimConsts.horizontal(dir)
+	if seconds <= 0.0 or d.length_squared() < 1e-6:
+		return 0.0
+	var most: float = player.turn_rate(player.speed()) * float(windup_ticks(seconds)) * SimConsts.DT
+	return clampf(angle_difference(player.facing, atan2(d.z, d.x)), -most, most)
+
+
+## The strike line as the body meets it after the wind-up's turn: `dir` brought
+## back toward the facing he has now by `windup_turn`, so the body penalties
+## read the angle he will strike at without a facing threaded through them. A
+## first-time strike (`seconds` 0) is priced on the body as it stands.
+static func faced_line(player: SimPlayer, dir: Vector3, seconds: float) -> Vector3:
+	var turn := windup_turn(player, dir, seconds)
+	if turn == 0.0:
+		return dir
+	var d := SimConsts.horizontal(dir)
+	var a := atan2(d.z, d.x) - turn
+	return Vector3(cos(a), 0.0, sin(a)) * d.length()
+
+
 ## Everything the body costs an action played along `dir`: which way he is
 ## pointing, and which foot it is on.
 ##
