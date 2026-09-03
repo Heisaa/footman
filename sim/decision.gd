@@ -6457,6 +6457,13 @@ const PLANT_REACH := SimConsts.CONTROL_RANGE * 1.6
 ## the ball, a running man keeps his pace, and either goes flat out if that
 ## is what it takes to be stood still on the plant foot before the strike.
 const PLANT_PACE := 2.5
+## Seconds he is stood on the plant foot before the strike when the run gets
+## him there in time: the last stride lands on it and the swing follows.
+const PLANT_HOLD := 0.15
+## The hop through the ball, m/s along the hips at the strike: the
+## follow-through carries him on so he runs out of a strike instead of
+## starting from a standstill. A hard strike's; a light one gets half.
+const STRIKE_CARRY := 2.0
 
 
 ## The seconds of wind-up this candidate takes, or 0 for a strike that goes at
@@ -6534,17 +6541,18 @@ static func wind_up(ctx: SimContext, player: SimPlayer, c: Dictionary, seconds: 
 	var stand := SimConsts.horizontal(at) - line_dir * PLANT_BEHIND + beside
 	var disp := SimConsts.horizontal(stand - player.pos)
 	var dist := disp.length()
-	# He runs to the spot and stands there for the swing: at his pace or a
-	# step's, flat out if that is what leaves him stood before the strike,
-	# and carried the whole way as a strike on the run when nothing does.
+	# He runs to the spot and the last stride lands on the plant foot: paced
+	# to arrive `PLANT_HOLD` before the strike, no slower than a step and no
+	# faster than he can, so a man close to it steps in late and stands for
+	# no longer than the hold; flat out if only that gets him there; carried
+	# the whole way as a strike on the run when nothing does.
 	var cap := player.max_speed()
 	var run_ticks := 0
 	var v := Vector3.ZERO
 	if dist > 0.01:
-		var pace := clampf(SimConsts.horizontal_length(player.vel), PLANT_PACE, cap)
+		var window := maxf(seconds - PLANT_HOLD, SimConsts.DT)
+		var pace := clampf(dist / window, PLANT_PACE, cap)
 		run_ticks = int(ceil(dist / (pace * SimConsts.DT)))
-		if run_ticks >= ticks:
-			run_ticks = int(ceil(dist / (cap * SimConsts.DT)))
 		if run_ticks >= ticks:
 			run_ticks = ticks
 			v = disp / seconds
@@ -6628,6 +6636,7 @@ static func fire(ctx: SimContext, player: SimPlayer, rushed := 0.0) -> void:
 	player.rushed = clampf(rushed, 0.0, 1.0)
 	if player.rushed > 0.0:
 		tally_rushed += 1
+	var stood: bool = player.commit_planted and SimConsts.horizontal_length(player.vel) < STRIKE_CARRY
 	if player.commit_planted:
 		# The hips land where the price said; a rushed strike goes with the
 		# hips the ticks got him.
@@ -6641,6 +6650,11 @@ static func fire(ctx: SimContext, player: SimPlayer, rushed := 0.0) -> void:
 		SimSetPiece.release(ctx, player, act["c"])
 	else:
 		strike(ctx, player, act["c"])
+	# The follow-through carries him: a hop through the ball along the hips
+	# (`STRIKE_CARRY`), after the strike has read the body he struck with.
+	if stood and not player.down:
+		var carry := STRIKE_CARRY if int(act.get("anim", -1)) == SimConsts.Anim.KICK_HARD else STRIKE_CARRY * 0.5
+		player.vel = player.heading_dir() * carry * (1.0 - player.rushed)
 	player.strike_at = -1
 	player.strike_act = {}
 	player.rushed = 0.0

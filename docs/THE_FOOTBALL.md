@@ -2259,6 +2259,27 @@ twists the torso on the hips toward the standing foot's side (`_lean`'s
 `twist`), widest just after contact and easing out. The plant table at
 n=40 sits within its error again. Not tuned.
 
+**Fifth cut, 2026-09-03: the kick as one movement** (owner, with five
+frames of a cross: *look at the angle of the body, how he starts swinging
+back the leg before the foot is planted ... most things look very stiff
+and choppy now*). What the frames have and the kick lacked: the backswing
+is the last stride, the body is angled and leaning away with the arms wide,
+the follow-through carries him on, and nothing stops or holds. Sim: the
+run to the spot is paced to land the last stride on the plant foot
+`PLANT_HOLD` before the strike (a man close to it steps in late), and the
+strike leaves him with a hop through the ball along the hips
+(`STRIKE_CARRY`, half for a light kick, none when rushed or struck on the
+run) so he runs out of it; the kick anim's hold at the strike is now its
+whole span, where two tenths cut the follow-through off with the leg still
+up. View: the kick shape is timed by the strike tick and laid over the
+gait by a weight (`_kick_window`, `_blend`): in over the last stride before
+contact while the sim still shows him running, the leg drawn back over the
+last `KICK_DRAW` and brought through from the top with no hold, the load
+before it -- weight back, knees soft, arms wide, torso back and banked
+away from the ball -- then the leg up across the body and the torso
+turning after contact, fading into the run on. The plant table at n=40
+sits within its error. Not tuned; the owner's eye is the judge of this one.
+
 **Where 5 leaves the corner count.** Still not back: 0-1 over twenty
 fragments, about 0.3 a team a match. The block gives the defence a way to put
 the ball behind and it did once; the parry that goes wide is **3**, next, and

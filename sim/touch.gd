@@ -373,6 +373,11 @@ static func apply(ctx: SimContext, player: SimPlayer, kind: int, vel: Vector3, s
 		elif kind == SimTelemetry.Touch.FIRST_TOUCH:
 			# A cushion is the foot set down, not a follow-through.
 			hold = 0.35
+		elif anim == SimConsts.Anim.KICK_LIGHT or anim == SimConsts.Anim.KICK_HARD:
+			# The follow-through is the view's whole span (`ANIM_SECONDS`) and
+			# it fades into the run on over the end of it; cut at two tenths
+			# the leg was still up when the gait took over.
+			hold = 0.4
 		player.play_anim(anim, hold)
 
 	var data := {
