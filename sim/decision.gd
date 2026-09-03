@@ -6446,6 +6446,10 @@ const PLANT_BEHIND := 0.45
 ## A wind-up at whose end the ball is further than this from him is a ball
 ## he has lost; the strike is cancelled and he goes after it.
 const PLANT_REACH := SimConsts.CONTROL_RANGE * 1.6
+## The slowest he steps to the spot, m/s: a standing man takes a step onto
+## the ball, a running man keeps his pace, and either goes flat out if that
+## is what it takes to be stood still on the plant foot before the strike.
+const PLANT_PACE := 2.5
 
 
 ## The seconds of wind-up this candidate takes, or 0 for a strike that goes at
@@ -6512,11 +6516,29 @@ static func wind_up(ctx: SimContext, player: SimPlayer, c: Dictionary, seconds: 
 	if line.length_squared() < 1e-6:
 		line = SimConsts.horizontal(player.heading_dir())
 	var stand := SimConsts.horizontal(at) - line.normalized() * PLANT_BEHIND
-	var v := SimConsts.horizontal(stand - player.pos) / seconds
+	var disp := SimConsts.horizontal(stand - player.pos)
+	var dist := disp.length()
+	# He runs to the spot and stands there for the swing: at his pace or a
+	# step's, flat out if that is what leaves him stood before the strike,
+	# and carried the whole way as a strike on the run when nothing does.
 	var cap := player.max_speed()
-	if v.length() > cap:
-		v = v.normalized() * cap
-	player.commit_move(v, seconds, false, 0.0, true)
+	var run_ticks := 0
+	var v := Vector3.ZERO
+	if dist > 0.01:
+		var pace := clampf(SimConsts.horizontal_length(player.vel), PLANT_PACE, cap)
+		run_ticks = int(ceil(dist / (pace * SimConsts.DT)))
+		if run_ticks >= ticks:
+			run_ticks = int(ceil(dist / (cap * SimConsts.DT)))
+		if run_ticks >= ticks:
+			run_ticks = ticks
+			v = disp / seconds
+			if v.length() > cap:
+				v = v.normalized() * cap
+		else:
+			v = disp / (float(run_ticks) * SimConsts.DT)
+	var plant_seconds := float(ticks - run_ticks) * SimConsts.DT
+	player.strike_act["plant_tick"] = ctx.tick_index + run_ticks
+	player.commit_move(v, seconds, false, 0.0, true, plant_seconds)
 	var kind := _strike_kind(c)
 	var distance := SimConsts.horizontal_length(_strike_target(c) - at)
 	if kind == SimTelemetry.Touch.SHOT:
@@ -6526,7 +6548,9 @@ static func wind_up(ctx: SimContext, player: SimPlayer, c: Dictionary, seconds: 
 			SimTouch.shot_speed(player, float(c.get("power", 0.5)), _strike_target(c) - at),
 			at.y, 0.0, seconds)
 	var power := float(c.get("power", 1.0 if bool(c.get("driven", false)) else 0.0))
-	player.play_anim(SimTouch.windup_anim(kind, distance, power), seconds + 0.25)
+	player.strike_act["anim"] = SimTouch.windup_anim(kind, distance, power)
+	if run_ticks == 0:
+		_plant_anim(player)
 	tally_windup += 1
 	ctx.log_event(SimTelemetry.Ev.WINDUP, {
 		"p": player.id,
@@ -6536,6 +6560,18 @@ static func wind_up(ctx: SimContext, player: SimPlayer, c: Dictionary, seconds: 
 		"restart": restart,
 		"pos": ctx.ball.ground_pos(),
 	})
+
+
+## The backswing is posed from the plant, not the decision: the kick anim
+## starts when he stands on the plant foot (`strike_act["plant_tick"]`), so
+## the view's `_kick_phase` draws the leg back over the plant and the run to
+## the spot is the gait.
+static func _plant_anim(player: SimPlayer) -> void:
+	if player.strike_act.get("anim_played", false):
+		return
+	player.strike_act["anim_played"] = true
+	player.play_anim(int(player.strike_act["anim"]),
+		float(player.strike_at - player.strike_act["plant_tick"]) * SimConsts.DT + 0.25)
 
 
 ## Lets go of a queued strike: the ball was taken, or the body thrown.
@@ -6601,6 +6637,8 @@ static func tick_windups(ctx: SimContext) -> bool:
 		if lost:
 			cancel_windup(p)
 			continue
+		if ctx.tick_index >= int(p.strike_act.get("plant_tick", 0)):
+			_plant_anim(p)
 		if ctx.tick_index >= p.strike_at:
 			fire(ctx, p, 0.0)
 			return true

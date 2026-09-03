@@ -37,7 +37,7 @@ re-watch of the attack (the order, below), expecting rework.
 | Receive on the half-turn — hips opened while the ball travels | built — a look the body holds while he walks onto the ball or waits for it, and a sprint onto it keeps the hips on the run; a tight receiver closes on the ball instead | `SimMovement._orient_receiver`, `SimPlayer.look_target` |
 | The layoff — first-time ball back to the man facing play | built | `SimTouch.redirect_share` |
 | A setting touch out of the feet before the long ball or the shot | built | `SimDecision._add_set_touch` |
-| The planted foot — a wind-up before the strike, the ball leaving at the strike tick (53) | built 2026-09-02 — a shot, a lofted ball, a cross, a pass to feet and every kicked restart are two-phase: the decision plants him and the ball leaves `SimTouch.windup_for` seconds later, about 0.45 s for a long ball or a hard shot, 0.15 for a rolled pass, none first-time. The body is committed on its feet for it and carried to where the ball will be; a challenge inside it rushes the strike or takes the ball; the block, the keeper and the lane read the real backlift; the kick is posed backswing then follow-through about the one tick | `SimDecision.wind_up`, `fire`, `SimPlayer.strike_at`, `SimTouch.windup_for` |
+| The planted foot — a wind-up before the strike, the ball leaving at the strike tick (53) | built 2026-09-02 — a shot, a lofted ball, a cross, a pass to feet and every kicked restart are two-phase: the decision plants him and the ball leaves `SimTouch.windup_for` seconds later, about 0.45 s for a long ball or a hard shot, 0.15 for a rolled pass, none first-time. The body is committed on its feet for it, runs to where the ball will be and stands on the plant foot for the swing; a challenge inside it rushes the strike or takes the ball; the block, the keeper and the lane read the real backlift; the kick is posed backswing then follow-through about the one tick | `SimDecision.wind_up`, `fire`, `SimPlayer.strike_at`, `SimTouch.windup_for` |
 | Body facing priced into the strike, and the turn before you can hit it | built | `SimTouch.facing_penalty` for the aim, `strike_scale` for the range |
 | A stronger foot, and a ball shown onto the weaker one | built — the other axis of the same body model, charged through the same two functions | `SimTouch.foot_cost`, `foot_choice` |
 | Bend on a struck ball, the way the foot that struck it sends it | built — signed by the foot on every solved ball, and since the bent lane (2026-09-01) *meant*: the driven pass and the shot price a bend round a defender, trivela included | `SimTouch.curl_for` |
@@ -2210,6 +2210,25 @@ would answer the moves: a defender who steps *onto the line* of a wound-up
 shot rather than throwing himself (the block reads the backlift; the body
 does not step first), and a runner served *because* the crosser is winding
 up -- the box run is timed to the decision, not to the plant.
+
+**Second cut, 2026-09-03: stood on the plant foot** (owner: *when the foot
+is planted the player still moves; make him stationary, and have him run
+forward enough towards the ball first*). The first cut gave the body one
+velocity for the whole wind-up, so a man planting was a man gliding onto the
+ball with his leg drawn back. The window is the same and so is everything
+that prices it. Inside it he now runs to the spot -- at his pace or a step's
+(`PLANT_PACE`), flat out if that is what leaves him stood before the strike
+-- and stands there for what is left (`SimPlayer.plant_ticks`); only a ball
+he cannot get in front of in the time is still struck on the run, carried
+the whole way as before. The backswing is posed from the plant, not the
+decision: the kick anim starts when he stands (`strike_act["plant_tick"]`)
+and the run to the spot is the gait. **n=160 against the plant table:**
+`shot-edge` goals 8% to 6%, `none` 16% to 16%, the shot at 2.52 s to 2.71;
+`long-range` goals 13% to 19%, saved 7% to 8%, `none` 27% to 25%, the shot
+at 2.55 s to 2.68; `fk-shot` goals 27% to 25%, saved 25% to 26%, blocked 7%
+to 9%; `cross-right` `lost` 55% to 48%, crosses 0.06 a trial, `drop m` 12.5
+to 15.1. One row moved by two standard errors and the rest by less. Not
+tuned.
 
 **Where 5 leaves the corner count.** Still not back: 0-1 over twenty
 fragments, about 0.3 a team a match. The block gives the defence a way to put

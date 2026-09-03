@@ -248,7 +248,9 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   is one state on the body -- `strike_at` and `strike_act`, fired by
   `tick_windups`, held through `commit_move`'s planted mode -- never a timer
   per act, and nothing else may start a strike or decide again for a man in
-  it. Everything that used to pretend a backlift reads the real one: the
+  it. Inside the window the body runs to the spot and then stands
+  (`plant_ticks`); the kick anim starts at the plant, not the decision, so
+  the backswing is posed over a still body. Everything that used to pretend a backlift reads the real one: the
   block's window is the wind-up plus the flight (`block_chance`, thrown on
   the plant and re-timed at the strike, never rolled twice), the keeper's
   clock runs through it (`SimKeeper.REACTION_SET`), and the lane charges it

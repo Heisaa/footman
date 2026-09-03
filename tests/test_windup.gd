@@ -98,8 +98,11 @@ func _the_long_ball_waits_for_the_swing() -> void:
 	var seen := ctx.telemetry.events.size()
 	var struck_at := -1
 	var from := Vector3.INF
+	var stood := false
 	for i in ticks + 5:
 		m.tick()
+		if holder.strike_at >= 0 and holder.commit_planted and holder.vel.length_squared() < 1e-6:
+			stood = true
 		while seen < ctx.telemetry.events.size():
 			var e: Dictionary = ctx.telemetry.events[seen]
 			seen += 1
@@ -114,6 +117,7 @@ func _the_long_ball_waits_for_the_swing() -> void:
 	check_equal(holder.strike_at, -1, "the state is cleared after the strike")
 	check_less(holder.dist_to(from), SimConsts.CONTROL_RANGE + 0.1,
 		"the body was carried to the ball for the strike")
+	check(stood, "and stood still on the plant foot before it")
 
 
 func _the_first_time_strike_goes_at_once() -> void:
