@@ -2565,8 +2565,10 @@ static func pose_gait(node: Node3D, speed: float, phase: float, turn: float, acr
 ## (`_kick_phase`): the plant foot down and the weight back on it, the
 ## kicking leg drawn behind him and its knee folded, the opposite arm
 ## forward, deepest at the strike. From zero the follow-through: the leg
-## extended through the ball and relaxing out of it. Mirrored onto the foot
-## the sim struck it with. No squash and stretch.
+## extended through the ball and across the body, the torso opening on the
+## hips toward the standing foot's side as the swing carries it round, then
+## relaxing out of it. Mirrored onto the foot the sim struck it with. No
+## squash and stretch.
 static func _pose_kick(node: Node3D, u: float, force: float, foot: int) -> void:
 	var k := _side(foot)
 	var s := _side(SimAttributes.other_foot(foot))
@@ -2587,7 +2589,11 @@ static func _pose_kick(node: Node3D, u: float, force: float, foot: int) -> void:
 		_lean(node, 0.12 * draw)
 		return
 	var swing: float = lerpf(1.0, 0.2, u) * force
-	_rotate(node, "Hip" + k, -1.15 * swing)
+	# The body opens after the ball is gone: quick to its widest, then eases.
+	var open: float = smoothstep(0.0, 0.3, u) * lerpf(1.0, 0.35, u) * force
+	# The kicking leg crosses the body on the way through; `_out` is the
+	# lateral's sign away from it.
+	_rotate(node, "Hip" + k, -1.15 * swing, -_out(foot) * 0.3 * open)
 	_rotate(node, "Knee" + k, 0.12)
 	_rotate(node, "Hip" + s, 0.3 * swing)
 	_rotate(node, "Knee" + s, 0.35 * swing)
@@ -2595,7 +2601,9 @@ static func _pose_kick(node: Node3D, u: float, force: float, foot: int) -> void:
 	_rotate(node, "Shoulder" + k, 0.55 * swing)
 	_rotate(node, "ElbowL", -0.3)
 	_rotate(node, "ElbowR", -0.3)
-	_lean(node, -0.32 * swing)
+	# A right-footed swing opens him to his left: the figure faces +z and a
+	# positive yaw on the spine takes it toward +x, its left.
+	_lean(node, -0.32 * swing, 0.0, _out(foot) * 0.4 * open)
 
 
 ## The joint suffix for a foot.
@@ -3212,11 +3220,12 @@ static func _rotate(node: Node3D, joint: String, angle: float, lateral := 0.0) -
 		j.rotation = Vector3(angle, 0.0, lateral)
 
 
-## Pitches the torso. Positive is forward, over the ball.
-static func _lean(node: Node3D, angle: float, bank := 0.0) -> void:
+## Pitches the torso. Positive is forward, over the ball. `twist` turns the
+## torso on the hips, positive toward the figure's left.
+static func _lean(node: Node3D, angle: float, bank := 0.0, twist := 0.0) -> void:
 	var spine := _joint(node, "Spine")
 	if spine != null:
-		spine.rotation = Vector3(angle, 0.0, bank)
+		spine.rotation = Vector3(angle, twist, bank)
 
 
 ## The whole figure's orientation, yaw included, for the same reason.

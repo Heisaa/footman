@@ -246,8 +246,9 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   2026-09-02: the decision plants him (`SimDecision.wind_up`) and the ball
   leaves at `SimPlayer.strike_at`, `SimTouch.windup_for` seconds later. That
   is one state on the body -- `strike_at` and `strike_act`, fired by
-  `tick_windups`, held through `commit_move`'s planted mode -- never a timer
-  per act, and nothing else may start a strike or decide again for a man in
+  `tick_windups`, held through `commit_move`'s planted mode, which runs a
+  tick past the strike so the strike tick's step is the plant's and `fire`
+  ends it -- never a timer per act, and nothing else may start a strike or decide again for a man in
   it. Inside the window the body runs to the spot, turns his hips onto the
   line by `SimTouch.windup_turn` and no other rate (`plant_face`,
   `plant_turn`, landed on the strike tick) and then stands

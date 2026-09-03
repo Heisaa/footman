@@ -6446,6 +6446,10 @@ static func strike(ctx: SimContext, player: SimPlayer, c: Dictionary) -> void:
 ## How far behind the ball the striker stands at the strike, along the line
 ## he is going to hit it: the plant foot beside it, the swing behind.
 const PLANT_BEHIND := 0.45
+## And beside it: the plant foot lands next to the ball, so the body stands
+## this far off the line on the standing foot's side and the kicking foot
+## swings through the ball.
+const PLANT_BESIDE := 0.2
 ## A wind-up at whose end the ball is further than this from him is a ball
 ## he has lost; the strike is cancelled and he goes after it.
 const PLANT_REACH := SimConsts.CONTROL_RANGE * 1.6
@@ -6518,7 +6522,16 @@ static func wind_up(ctx: SimContext, player: SimPlayer, c: Dictionary, seconds: 
 	var line := SimConsts.horizontal(_strike_target(c) - at)
 	if line.length_squared() < 1e-6:
 		line = SimConsts.horizontal(player.heading_dir())
-	var stand := SimConsts.horizontal(at) - line.normalized() * PLANT_BEHIND
+	var line_dir := line.normalized()
+	# The foot the strike will be on, read on the body after the run-up's
+	# turn -- the same line the strike reads. The backswing is posed on it.
+	var foot := SimTouch.striking_foot(player, SimTouch.faced_line(player, line, seconds))
+	player.anim_foot = foot
+	# +Z is his right when he faces +X (`SimTouch.lateral_of`); the plant
+	# foot is the other one, and he stands to its side.
+	var right := line_dir.cross(Vector3.UP)
+	var beside := right * (-PLANT_BESIDE if foot == SimAttributes.FOOT_RIGHT else PLANT_BESIDE)
+	var stand := SimConsts.horizontal(at) - line_dir * PLANT_BEHIND + beside
 	var disp := SimConsts.horizontal(stand - player.pos)
 	var dist := disp.length()
 	# He runs to the spot and stands there for the swing: at his pace or a
@@ -6545,7 +6558,10 @@ static func wind_up(ctx: SimContext, player: SimPlayer, c: Dictionary, seconds: 
 	# (`SimTouch.windup_turn`), spread over the wind-up and landed on the
 	# strike tick.
 	var turn := SimTouch.windup_turn(player, line, seconds)
-	player.commit_move(v, seconds, false, 0.0, true, plant_seconds)
+	# Committed a tick past the strike: the strike tick's own step is still
+	# his, and `fire` ends the commit. Uncommitted for that one step, the
+	# steer had him for a tick before the swing.
+	player.commit_move(v, seconds + SimConsts.DT, false, 0.0, true, plant_seconds + SimConsts.DT)
 	player.plant_face = player.facing + turn
 	player.plant_turn = turn / float(ticks)
 	var kind := _strike_kind(c)

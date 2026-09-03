@@ -37,7 +37,7 @@ re-watch of the attack (the order, below), expecting rework.
 | Receive on the half-turn — hips opened while the ball travels | built — a look the body holds while he walks onto the ball or waits for it, and a sprint onto it keeps the hips on the run; a tight receiver closes on the ball instead | `SimMovement._orient_receiver`, `SimPlayer.look_target` |
 | The layoff — first-time ball back to the man facing play | built | `SimTouch.redirect_share` |
 | A setting touch out of the feet before the long ball or the shot | built | `SimDecision._add_set_touch` |
-| The planted foot — a wind-up before the strike, the ball leaving at the strike tick (53) | built 2026-09-02 — a shot, a lofted ball, a cross, a pass to feet and every kicked restart are two-phase: the decision plants him and the ball leaves `SimTouch.windup_for` seconds later, about 0.45 s for a long ball or a hard shot, 0.15 for a rolled pass, none first-time. The body is committed on its feet for it, runs to where the ball will be, turns his hips onto the line as far as the wind-up lets him and stands on the plant foot for the swing; the strike is priced on the body the turn leaves him with; a challenge inside it rushes the strike or takes the ball; the block, the keeper and the lane read the real backlift; the kick is posed backswing then follow-through about the one tick | `SimDecision.wind_up`, `fire`, `SimPlayer.strike_at`, `SimTouch.windup_for` |
+| The planted foot — a wind-up before the strike, the ball leaving at the strike tick (53) | built 2026-09-02 — a shot, a lofted ball, a cross, a pass to feet and every kicked restart are two-phase: the decision plants him and the ball leaves `SimTouch.windup_for` seconds later, about 0.45 s for a long ball or a hard shot, 0.15 for a rolled pass, none first-time. The body is committed on its feet for it, runs to where the ball will be, turns his hips onto the line as far as the wind-up lets him and stands on the plant foot beside the ball for the swing; the strike is priced on the body the turn leaves him with; a challenge inside it rushes the strike or takes the ball; the block, the keeper and the lane read the real backlift; the kick is posed backswing then follow-through about the one tick | `SimDecision.wind_up`, `fire`, `SimPlayer.strike_at`, `SimTouch.windup_for` |
 | Body facing priced into the strike, and the turn before you can hit it | built | `SimTouch.facing_penalty` for the aim, `strike_scale` for the range |
 | A stronger foot, and a ball shown onto the weaker one | built — the other axis of the same body model, charged through the same two functions | `SimTouch.foot_cost`, `foot_choice` |
 | Bend on a struck ball, the way the foot that struck it sends it | built — signed by the foot on every solved ball, and since the bent lane (2026-09-01) *meant*: the driven pass and the shot price a bend round a defender, trivela included | `SimTouch.curl_for` |
@@ -2244,9 +2244,20 @@ facing by the same turn, and `expected_goals`, `_pass_success` and
 `_lofted_success` hand it to `strike_scale` and `execution_accuracy` in
 place of the raw line -- so the body priced and the body that strikes are
 one. A first-time strike turns nothing. The plant table at n=40 sits within
-its error of the second cut. Not tuned. Still off the table: the plant foot
-stands dead behind the ball rather than beside it, and the follow-through
-does not open the body.
+its error of the second cut. Not tuned.
+
+**Fourth cut, 2026-09-03: the plant foot beside the ball, the body opened
+on the follow-through** (owner: *looks a lot better, do 3 and 4 as well*).
+The stand point is `PLANT_BEHIND` back along the line and `PLANT_BESIDE`
+off it on the standing foot's side, the foot read on the body after the
+turn (`striking_foot` over `faced_line`, the same line the strike reads)
+and the backswing posed on it (`anim_foot` set at the plant). The commit
+runs a tick past the strike so the strike tick's own step is the plant's;
+uncommitted for that step, the steer turned him a tick before the swing.
+In the view the follow-through crosses the kicking leg over the body and
+twists the torso on the hips toward the standing foot's side (`_lean`'s
+`twist`), widest just after contact and easing out. The plant table at
+n=40 sits within its error again. Not tuned.
 
 **Where 5 leaves the corner count.** Still not back: 0-1 over twenty
 fragments, about 0.3 a team a match. The block gives the defence a way to put
