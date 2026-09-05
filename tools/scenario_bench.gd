@@ -132,9 +132,11 @@ static func _trace(list: Array[SimScenario], index: int, quality: float) -> void
 			for key in ["player", "target", "on_target", "goal", "blocked", "outcome", "reason", "ahead", "head", "chance", "hit"]:
 				if e.has(key):
 					extra.append("%s=%s" % [key, e[key]])
-			if e.has("from"):
+			if e.get("from") is Vector3:
 				var at: Vector3 = e["from"]
 				extra.append("from=(%.0f,%.0f)" % [at.x, at.z])
+			elif e.has("from"):
+				extra.append("from=%s" % e["from"])
 			print("  %5.2f  %-14s %-4s %s" % [entry[0], ev_name, who, " ".join(extra)])
 
 

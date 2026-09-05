@@ -36,6 +36,18 @@ var player_on_pitch := PackedInt32Array()
 ## winding up, his last footed strike's tick otherwise. The view phases the
 ## kick on it -- the backswing up to it, the follow-through after.
 var player_strike := PackedInt32Array()
+## The last supporting step and the forecast/actual contact of this strike.
+## -1/INF means there was no planned plant (including first-time touches).
+var player_plant := PackedInt32Array()
+var player_contact := PackedVector3Array()
+var player_strike_line := PackedVector3Array()
+var player_sidefoot := PackedByteArray()
+## Actual touch observations, separate from a queued kick's forecast contact.
+var player_touch_kind := PackedInt32Array()
+var player_touch_tick := PackedInt32Array()
+var player_touch_pos := PackedVector3Array()
+var player_touch_in := PackedVector3Array()
+var player_touch_out := PackedVector3Array()
 
 var score := PackedInt32Array([0, 0])
 ## Which way each team is attacking, so the presentation can label the ends.
@@ -66,6 +78,20 @@ func resize(n: int) -> void:
 	player_shielding.resize(n)
 	player_on_pitch.resize(n)
 	player_strike.resize(n)
+	player_plant.resize(n)
+	player_plant.fill(-1)
+	player_contact.resize(n)
+	player_contact.fill(Vector3.INF)
+	player_strike_line.resize(n)
+	player_sidefoot.resize(n)
+	player_touch_kind.resize(n)
+	player_touch_kind.fill(-1)
+	player_touch_tick.resize(n)
+	player_touch_tick.fill(-1)
+	player_touch_pos.resize(n)
+	player_touch_pos.fill(Vector3.INF)
+	player_touch_in.resize(n)
+	player_touch_out.resize(n)
 
 
 func copy_from(other: SimSnapshot) -> void:
@@ -89,6 +115,15 @@ func copy_from(other: SimSnapshot) -> void:
 	player_shielding = other.player_shielding.duplicate()
 	player_on_pitch = other.player_on_pitch.duplicate()
 	player_strike = other.player_strike.duplicate()
+	player_plant = other.player_plant.duplicate()
+	player_contact = other.player_contact.duplicate()
+	player_strike_line = other.player_strike_line.duplicate()
+	player_sidefoot = other.player_sidefoot.duplicate()
+	player_touch_kind = other.player_touch_kind.duplicate()
+	player_touch_tick = other.player_touch_tick.duplicate()
+	player_touch_pos = other.player_touch_pos.duplicate()
+	player_touch_in = other.player_touch_in.duplicate()
+	player_touch_out = other.player_touch_out.duplicate()
 	score = other.score.duplicate()
 	attack_x = other.attack_x.duplicate()
 	half_length = other.half_length

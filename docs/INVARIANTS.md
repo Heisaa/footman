@@ -251,9 +251,13 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   ends it -- never a timer per act, and nothing else may start a strike or decide again for a man in
   it. Inside the window the body runs to the spot, turns his hips onto the
   line by `SimTouch.windup_turn` and no other rate (`plant_face`,
-  `plant_turn`, landed on the strike tick) and then stands
-  (`plant_ticks`); the kick anim starts at the plant, not the decision, so
-  the backswing is posed over a still body. The strike is priced on the
+  `plant_turn`, landed on the strike tick) and brakes over the supporting
+  leg (`plant_ticks`). The approach keeps the incoming velocity and uses
+  bounded acceleration and braking; neither the plant nor the release may
+  replace it. Locomotion runs before contacts, so an expiring plant stays
+  committed until `fire` or cancellation releases it. The kick anim starts
+  at the plant, with the view blending the backswing over the approach.
+  The strike is priced on the
   body after that turn (`SimTouch.faced_line`) and struck with it: a price
   read on the hips he had at the decision was the ball going where the
   body did not say. Everything that used to pretend a backlift reads the real one: the
@@ -559,6 +563,13 @@ exactly. That constrains *where* scoring knobs live — one scalar derived from
   walks him upfield for as long as he holds it.
 
 ## Presentation
+
+- **Foot constraints follow the simulated strike.** The snapshot carries the
+  plant tick, contact position and strike direction through the follow-through.
+  A cancelled plant clears them; an instant touch has no planted-foot lock.
+  Solve the legs after posing, clamp their reach, and release the supporting
+  foot into the next step. Joint corrections never move the simulated player
+  or ball. Use the rig's own ankle height and scale when meeting the grass.
 
 - **Never set one component of a `Node3D.rotation`.** It is a read-modify-write,
   and Godot decomposes Euler angles with the pitch folded into ±90°, so the next

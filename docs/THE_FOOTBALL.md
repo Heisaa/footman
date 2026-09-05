@@ -2280,6 +2280,38 @@ away from the ball -- then the leg up across the body and the torso
 turning after contact, fading into the run on. The plant table at n=40
 sits within its error. Not tuned; the owner's eye is the judge of this one.
 
+**Sixth cut, 2026-09-05: braking into the plant and stepping through.**
+The approach now preserves incoming velocity and accelerates toward the strike
+spot within the body's limits. It brakes over the supporting leg instead of
+setting velocity to zero. The follow-through adds a short push through ordinary
+locomotion, preserving the remaining momentum. A queued plant remains committed
+through the contact stage of its strike tick; previously it could expire in
+locomotion just before `fire`, losing the follow-through.
+
+The snapshot carries the supporting-step tick and forecast contact, updated to
+the actual contact at the strike. The view locks the supporting ankle to the
+grass, softens the knee with a small body dip, and brings the kicking boot to
+the ball over a short contact window. Both leg chains solve within their own
+lengths; the support releases as the player steps through. This applies to
+planned footed strikes, not the ordinary running gait or volleys.
+
+`./run.sh view3d --scenario plant-pass` repeats a jog onto a rolling ball,
+a pass and the recovery step. The movement and wind-up tests check continuity,
+strike timing and the contact snapshot. The look still needs the owner's eye.
+
+`./run.sh study` shows the same sequence at quarter speed with a fixed closer
+camera holding the passer, ball and receiver. Each loop keeps the seed and
+starts with a one-second lead-in. Space pauses, brackets change speed, a full
+stop advances one tick, and R starts again. The pose clock follows simulated
+time, so slow motion and pause apply to the feet and follow-through as well as
+the ball and player positions.
+
+Standard ground passes now use the inside of the boot: the hip and toe open,
+the leg makes a short swing, and the follow-through stays low. The snapshot
+marks these passes before and after contact, and the foot solver uses the
+inside face of the boot as its contact point. The pose mirrors for either foot;
+outside-foot passes retain their existing pose. This changes presentation only.
+
 **Where 5 leaves the corner count.** Still not back: 0-1 over twenty
 fragments, about 0.3 a team a match. The block gives the defence a way to put
 the ball behind and it did once; the parry that goes wide is **3**, next, and

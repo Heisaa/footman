@@ -6541,25 +6541,15 @@ static func wind_up(ctx: SimContext, player: SimPlayer, c: Dictionary, seconds: 
 	var stand := SimConsts.horizontal(at) - line_dir * PLANT_BEHIND + beside
 	var disp := SimConsts.horizontal(stand - player.pos)
 	var dist := disp.length()
-	# He runs to the spot and the last stride lands on the plant foot: paced
-	# to arrive `PLANT_HOLD` before the strike, no slower than a step and no
-	# faster than he can, so a man close to it steps in late and stands for
-	# no longer than the hold; flat out if only that gets him there; carried
-	# the whole way as a strike on the run when nothing does.
+	# Schedule the last step before contact. Locomotion approaches this spot
+	# with the body's own acceleration and brakes; the deadline cannot snap
+	# him onto it or stop a runner who has no room to pull up.
 	var cap := player.max_speed()
 	var run_ticks := 0
-	var v := Vector3.ZERO
 	if dist > 0.01:
 		var window := maxf(seconds - PLANT_HOLD, SimConsts.DT)
 		var pace := clampf(dist / window, PLANT_PACE, cap)
-		run_ticks = int(ceil(dist / (pace * SimConsts.DT)))
-		if run_ticks >= ticks:
-			run_ticks = ticks
-			v = disp / seconds
-			if v.length() > cap:
-				v = v.normalized() * cap
-		else:
-			v = disp / (float(run_ticks) * SimConsts.DT)
+		run_ticks = mini(int(ceil(dist / (pace * SimConsts.DT))), ticks)
 	var plant_seconds := float(ticks - run_ticks) * SimConsts.DT
 	player.strike_act["plant_tick"] = ctx.tick_index + run_ticks
 	# The run-up turns the hips onto the line, by the turn the price read
@@ -6569,10 +6559,16 @@ static func wind_up(ctx: SimContext, player: SimPlayer, c: Dictionary, seconds: 
 	# Committed a tick past the strike: the strike tick's own step is still
 	# his, and `fire` ends the commit. Uncommitted for that one step, the
 	# steer had him for a tick before the swing.
-	player.commit_move(v, seconds + SimConsts.DT, false, 0.0, true, plant_seconds + SimConsts.DT)
+	player.commit_move(player.vel, seconds + SimConsts.DT, false, 0.0, true, plant_seconds + SimConsts.DT)
+	player.plant_target = stand
+	player.anim_plant_tick = int(player.strike_act["plant_tick"])
+	player.anim_contact = at
+	player.anim_strike_line = line_dir
 	player.plant_face = player.facing + turn
 	player.plant_turn = turn / float(ticks)
 	var kind := _strike_kind(c)
+	player.anim_sidefoot = kind in [SimTelemetry.Touch.GROUND_PASS, SimTelemetry.Touch.THROUGH_BALL] \
+		and not bool(c.get("trivela", false))
 	var distance := SimConsts.horizontal_length(_strike_target(c) - at)
 	if kind == SimTelemetry.Touch.SHOT:
 		# The bodies in front of the strike read the backlift and throw
@@ -6613,6 +6609,8 @@ static func cancel_windup(player: SimPlayer) -> void:
 		return
 	player.strike_at = -1
 	player.strike_act = {}
+	player.anim_plant_tick = -1
+	player.anim_contact = Vector3.INF
 	if player.commit_planted:
 		player.commit_ticks = 0
 		player.commit_planted = false
@@ -6654,7 +6652,8 @@ static func fire(ctx: SimContext, player: SimPlayer, rushed := 0.0) -> void:
 	# (`STRIKE_CARRY`), after the strike has read the body he struck with.
 	if stood and not player.down:
 		var carry := STRIKE_CARRY if int(act.get("anim", -1)) == SimConsts.Anim.KICK_HARD else STRIKE_CARRY * 0.5
-		player.vel = player.heading_dir() * carry * (1.0 - player.rushed)
+		player.follow_through_vel = player.vel + player.heading_dir() * carry * (1.0 - player.rushed)
+		player.follow_through_ticks = int(ceil(0.18 * SimConsts.TICK_HZ))
 	player.strike_at = -1
 	player.strike_act = {}
 	player.rushed = 0.0

@@ -306,6 +306,11 @@ static func playable_height(player: SimPlayer, ball_y: float) -> bool:
 ## action funnels through here.
 static func apply(ctx: SimContext, player: SimPlayer, kind: int, vel: Vector3, spin: Vector3, target_id: int = -1, extra: Dictionary = {}) -> void:
 	var before := ctx.ball.pos
+	player.anim_touch_kind = kind
+	player.anim_touch_tick = ctx.tick_index
+	player.anim_touch_pos = before
+	player.anim_touch_in = ctx.ball.vel
+	player.anim_touch_out = vel
 	# The pass has arrived. Read here, before the ball's own memory below is
 	# overwritten, because "it came straight from the passer" is the whole test:
 	# the man it was played to is touching it and nobody has touched it since it
@@ -329,11 +334,16 @@ static func apply(ctx: SimContext, player: SimPlayer, kind: int, vel: Vector3, s
 	# Counted before the launch, because it is a fact about the man striking it.
 	if is_footed(kind):
 		var line := SimConsts.horizontal(vel)
+		player.anim_sidefoot = kind in [SimTelemetry.Touch.GROUND_PASS, SimTelemetry.Touch.THROUGH_BALL]
 		# The strike's tick and the wind-up he swung before it, for the view's
 		# kick phase and the keeper. `SimDecision.fire` leaves `strike_act` set
 		# through the strike so the swing can be read here; an instant strike
 		# has none.
 		player.struck_tick = ctx.tick_index
+		player.anim_contact = ctx.ball.pos
+		player.anim_strike_line = line.normalized()
+		if player.strike_at < 0:
+			player.anim_plant_tick = -1
 		player.struck_windup = 0.0
 		if player.strike_at >= 0:
 			player.struck_windup = float(player.strike_act.get("seconds", 0.0)) * (1.0 - player.rushed)
@@ -1428,6 +1438,7 @@ static func ground_pass(ctx: SimContext, player: SimPlayer, target: Vector3, arr
 		* (roll_rate * SimBallistics.drive_backspin(drive)) + Vector3.UP * curl
 
 	apply(ctx, player, kind, vel, spin, target_id, {"dist": distance, "ft": first_time})
+	player.anim_sidefoot = player.anim_sidefoot and not trivela
 	_log_pass_attempt(ctx, player, kind, target, target_id, expected_value, distance, vel.length())
 
 

@@ -12,6 +12,46 @@ func run() -> void:
 	_a_challenge_inside_it_rushes_the_strike()
 	_the_readers_read_the_backlift()
 	_the_run_up_turns_the_hips_onto_the_line()
+	_the_plant_keeps_momentum_and_brakes_within_the_body_limit()
+	_touch_facts_survive_replay_copy()
+
+
+## The view must distinguish successive touches even when the pose name is
+## unchanged, and rewinding must keep the earlier contact's incoming ball.
+func _touch_facts_survive_replay_copy() -> void:
+	var m := SimRunner.build(SimRunner.Options.new())
+	var ctx := m.ctx
+	var p := ctx.players[9]
+	var at := Vector3(0.4, SimConsts.BALL_RADIUS, 0.0)
+	var incoming := Vector3(8.0, 0.0, 1.0)
+	var outgoing := Vector3(1.5, 0.0, 0.0)
+	ctx.ball.reset(at)
+	ctx.ball.vel = incoming
+	ctx.tick_index = 17
+	SimTouch.apply(ctx, p, SimTelemetry.Touch.FIRST_TOUCH, outgoing, Vector3.ZERO)
+	var live := SimSnapshot.new()
+	m.write_snapshot(live)
+	var recorded := SimSnapshot.new()
+	recorded.copy_from(live)
+	ctx.tick_index = 18
+	SimTouch.apply(ctx, p, SimTelemetry.Touch.FIRST_TOUCH, outgoing * 0.5, Vector3.ZERO)
+	m.write_snapshot(live)
+	check_equal(live.player_touch_tick[p.id], 18, "a repeated trap has its own contact tick")
+	check_equal(recorded.player_touch_tick[p.id], 17, "the replay keeps the earlier contact tick")
+	check_equal(recorded.player_touch_kind[p.id], SimTelemetry.Touch.FIRST_TOUCH,
+		"the touch kind survives the snapshot copy")
+	check_less(recorded.player_touch_pos[p.id].distance_to(at), 0.001, "replay keeps the contact point")
+	check_less(recorded.player_touch_in[p.id].distance_to(incoming), 0.001,
+		"incoming pace is captured before the impulse and survives later touches")
+	check_less(recorded.player_touch_out[p.id].distance_to(outgoing), 0.001,
+		"replay keeps the original outgoing ball")
+	ctx.tick_index = 19
+	ctx.ball.pos.y = 1.2
+	SimTouch.apply(ctx, p, SimTelemetry.Touch.CHEST, Vector3.ZERO, Vector3.ZERO)
+	m.write_snapshot(live)
+	check_equal(live.player_touch_tick[p.id], 19, "body contacts are observed too")
+	check_near(live.player_touch_pos[p.id].y, 1.2, 0.001, "the chest pose receives its actual height")
+	check_equal(live.player_strike[p.id], 18, "body contact does not overwrite the footed strike clock")
 
 
 static func _settled_match() -> SimMatch:
@@ -99,11 +139,18 @@ func _the_long_ball_waits_for_the_swing() -> void:
 	var seen := ctx.telemetry.events.size()
 	var struck_at := -1
 	var from := Vector3.INF
-	var stood := false
+	var loaded := false
+	var previous_velocity := holder.vel
+	var largest_change := 0.0
+	var largest_allowed := 0.0
 	for i in ticks + 5:
+		largest_allowed = maxf(largest_allowed,
+			maxf(holder.max_decel(), holder.accel_at(holder.vel.length())) * SimConsts.DT)
 		m.tick()
-		if holder.strike_at >= 0 and holder.commit_planted and holder.vel.length_squared() < 1e-6:
-			stood = true
+		largest_change = maxf(largest_change, holder.vel.distance_to(previous_velocity))
+		previous_velocity = holder.vel
+		if holder.strike_at >= 0 and ctx.tick_index >= holder.anim_plant_tick and holder.vel.length() < 2.0:
+			loaded = true
 		while seen < ctx.telemetry.events.size():
 			var e: Dictionary = ctx.telemetry.events[seen]
 			seen += 1
@@ -118,7 +165,37 @@ func _the_long_ball_waits_for_the_swing() -> void:
 	check_equal(holder.strike_at, -1, "the state is cleared after the strike")
 	check_less(holder.dist_to(from), SimConsts.CONTROL_RANGE + 0.1,
 		"the body was carried to the ball for the strike")
-	check(stood, "and stood still on the plant foot before it")
+	check(loaded, "the body sheds speed over its supporting leg before the strike")
+	check_less(largest_change, largest_allowed + 0.001,
+		"the approach, plant and release never replace the body's velocity")
+	check(holder.follow_through_ticks > 0, "the standing strike starts a push into the next step")
+	var snap := SimSnapshot.new()
+	m.write_snapshot(snap)
+	var copied := SimSnapshot.new()
+	copied.copy_from(snap)
+	check_equal(copied.player_plant[holder.id], holder.anim_plant_tick,
+		"the plant tick survives the strike and snapshot copy")
+	check_less(copied.player_contact[holder.id].distance_to(from), 0.001,
+		"the view receives the actual ball contact")
+
+
+func _the_plant_keeps_momentum_and_brakes_within_the_body_limit() -> void:
+	for speed in [0.0, 2.0, 7.0]:
+		var p := make_player()
+		p.vel = Vector3(speed, 0.0, 0.0)
+		var incoming := p.vel
+		p.commit_move(Vector3(-4.0, 0.0, 2.0), 0.4, false, 0.0, true, 0.15)
+		p.plant_target = p.pos + Vector3(0.5, 0.0, 0.2)
+		check_equal(p.vel, incoming, "committing to a plant preserves incoming velocity at %.1f m/s" % speed)
+		var bounded := true
+		while p.commit_ticks > 0:
+			var before := p.vel
+			var limit := maxf(p.max_decel(), p.accel_at(before.length())) * SimConsts.DT
+			p.locomote(SimConsts.DT)
+			bounded = bounded and p.vel.distance_to(before) <= limit + 1e-5
+		check(bounded, "every approach and braking step respects the body's force limit")
+		if speed == 7.0:
+			check_greater(p.vel.length(), 1.0, "a sprinter cannot stop in a short plant window")
 
 
 func _the_first_time_strike_goes_at_once() -> void:
@@ -139,6 +216,7 @@ func _the_first_time_strike_goes_at_once() -> void:
 	SimDecision._execute(ctx, holder, c, true)
 	check_equal(ctx.ball.last_touch_tick, ctx.tick_index, "and the ball leaves at once")
 	check_equal(holder.strike_at, -1, "with nothing queued")
+	check_equal(holder.anim_plant_tick, -1, "a first-time strike carries no stale support-foot lock")
 
 
 ## A challenge landing inside the wind-up (`SimDuel._resolve_contest`): the
@@ -188,6 +266,8 @@ func _a_challenge_inside_it_rushes_the_strike() -> void:
 	SimDecision.cancel_windup(holder)
 	check_equal(holder.strike_at, -1, "a challenge that takes the ball cancels the strike")
 	check_equal(holder.commit_ticks, 0, "and releases the body")
+	check_equal(holder.anim_plant_tick, -1, "cancellation releases the drawn supporting foot")
+	check_equal(holder.anim_contact, Vector3.INF, "and discards the predicted contact")
 
 
 ## The block's window is the wind-up plus the flight, and the lane charges

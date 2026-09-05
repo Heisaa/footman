@@ -187,11 +187,24 @@ var block_hit := false
 ## into `recovery_ticks`, the floor. `docs/THE_FOOTBALL.md` 52.
 var commit_ticks := 0
 var commit_airborne := false
-## And on his feet: the planted foot (`SimDecision.wind_up`). The body runs
-## at the velocity it was given until `plant_ticks` remain, then stands on
-## the plant foot for those, and it is not down.
+## On his feet: approach the strike spot, then brake over the supporting leg.
 var commit_planted := false
 var plant_ticks := 0
+var plant_target := Vector3.INF
+## A short push out of a standing strike, using ordinary acceleration.
+var follow_through_ticks := 0
+var follow_through_vel := Vector3.ZERO
+## Contact facts retained after the strike for the view's follow-through.
+var anim_plant_tick := -1
+var anim_contact := Vector3.INF
+var anim_strike_line := Vector3.ZERO
+var anim_sidefoot := false
+## Observations for animation only; every touch, including chest and hands.
+var anim_touch_kind := -1
+var anim_touch_tick := -1
+var anim_touch_pos := Vector3.INF
+var anim_touch_in := Vector3.ZERO
+var anim_touch_out := Vector3.ZERO
 ## And turned by the run-up: the facing he strikes with and the turn per tick
 ## that gets him there over the wind-up (`SimTouch.windup_turn`), INF for none.
 var plant_face := INF
@@ -409,10 +422,9 @@ func steer_to(target: Vector3, speed_cap: float = INF, deadband: float = 0.4) ->
 
 ## Throws the body: `v` for `seconds`, in the air or along the ground, and
 ## then `down_seconds` on the floor. No steering reaches him until he is up.
-## `planted` is the fourth mode: on his feet for the wind-up of a strike, run
-## at `v` to the spot and then stood on the plant foot for the last
-## `plant_seconds`, the hips turned onto the line by the caller's `plant_face`,
-## nothing on the floor after it and no recovery.
+## `planted` keeps the incoming velocity and approaches the caller's
+## `plant_target`, braking for the last `plant_seconds`. The hips turn onto
+## `plant_face`; there is no floor time or recovery afterwards.
 func commit_move(v: Vector3, seconds: float, airborne: bool, down_seconds: float, planted := false,
 		plant_seconds := 0.0) -> void:
 	commit_ticks = maxi(int(ceil(seconds * float(SimConsts.TICK_HZ))), 1)
@@ -421,8 +433,11 @@ func commit_move(v: Vector3, seconds: float, airborne: bool, down_seconds: float
 	plant_ticks = mini(int(round(plant_seconds * float(SimConsts.TICK_HZ))), commit_ticks) if planted else 0
 	plant_face = INF
 	plant_turn = 0.0
+	plant_target = Vector3.INF
+	follow_through_ticks = 0
 	down = not airborne and not planted
-	vel = Vector3(v.x, 0.0, v.z)
+	if not planted:
+		vel = Vector3(v.x, 0.0, v.z)
 	desired_vel = Vector3.ZERO
 	look_target = Vector3.INF
 	body_slaved = true
@@ -451,15 +466,17 @@ func locomote(dt: float) -> void:
 		if not commit_airborne and not commit_planted:
 			vel = vel.move_toward(Vector3.ZERO, SLIDE_DECEL * dt)
 		elif commit_planted:
-			if commit_ticks < plant_ticks:
-				# On the plant foot: he has run to the spot and stands to swing.
-				vel = Vector3.ZERO
+			_step_plant(dt)
 			# The run-up turns the hips onto the line, the turn the price read.
 			if plant_face != INF:
 				var owed: float = angle_difference(facing, plant_face)
 				facing = plant_face if absf(owed) <= absf(plant_turn) + 1e-6 else facing + plant_turn
 		pos += vel * dt
 		distance_run += vel.length() * dt
+		# Locomotion runs before contacts. Keep the plant through the strike
+		# tick itself; fire (or cancellation) is what releases a queued kick.
+		if commit_ticks == 0 and commit_planted and strike_at >= 0:
+			commit_ticks = 1
 		if commit_ticks == 0:
 			if commit_airborne:
 				vel *= LAND_KEEP
@@ -470,6 +487,9 @@ func locomote(dt: float) -> void:
 			# Landed on the floor if there is floor time left, on his feet if not.
 			down = recovery_ticks > 0
 		return
+	if follow_through_ticks > 0:
+		follow_through_ticks -= 1
+		desired_vel = follow_through_vel
 	if recovery_ticks > 0:
 		recovery_ticks -= 1
 		vel = vel.move_toward(Vector3.ZERO, max_decel() * RECOVERY_BRAKE * dt)
@@ -611,6 +631,24 @@ func _turn_body(cur_speed: float, dt: float) -> void:
 		return
 	var most: float = turn_rate(cur_speed) * dt
 	facing += clampf(angle_difference(facing, atan2(dz, dx)), -most, most)
+
+
+## The last steps keep their incoming momentum. Arrival speed is limited by
+## the ground left to brake in; an unreachable spot stays unreachable.
+func _step_plant(dt: float) -> void:
+	var wanted := Vector3.ZERO
+	if plant_target.is_finite() and commit_ticks >= plant_ticks:
+		var disp := SimConsts.horizontal(plant_target - pos)
+		var distance := disp.length()
+		if distance > 0.01:
+			var remaining := maxf(float(commit_ticks - plant_ticks) * dt, dt)
+			var pace := minf(max_speed(), distance / remaining)
+			pace = minf(pace, sqrt(2.0 * max_decel() * distance))
+			wanted = disp / distance * pace
+	var speed := vel.length()
+	var braking := wanted.dot(vel) < speed * speed
+	var rate := max_decel() if braking else accel_at(speed)
+	vel = vel.move_toward(wanted, rate * dt)
 
 
 func _update_stamina(dt: float, cur_speed: float) -> void:

@@ -1140,7 +1140,11 @@ static func deform_head(node: MeshInstance3D, head_r: float, chin_y: float, chin
 			if d != Vector3.ZERO:
 				verts[k] = node.transform.affine_inverse() * (v + d)
 		arrays[Mesh.ARRAY_VERTEX] = verts
-		out.add_surface_from_arrays(source.surface_get_primitive_type(i), arrays)
+		# Procedural heads are SphereMeshes: triangle arrays, without the
+		# ArrayMesh-only primitive query used by imported heads.
+		var primitive := (source as ArrayMesh).surface_get_primitive_type(i) \
+			if source is ArrayMesh else Mesh.PRIMITIVE_TRIANGLES
+		out.add_surface_from_arrays(primitive, arrays)
 		out.surface_set_material(i, source.surface_get_material(i))
 	node.mesh = out
 

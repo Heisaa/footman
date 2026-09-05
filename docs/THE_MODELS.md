@@ -3,6 +3,8 @@
 What a built figure has to look like from the game's side, so a model made in
 Blender can replace the procedural one without anything else changing.
 
+Animation improvements and session progress are tracked in [ANIMATIONS.md](ANIMATIONS.md).
+
 `presentation/character_model.gd` is the seam. It reads the man's body out of
 his `appearance_seed`, and either instantiates a model for that body or hands the
 job to `SimCharacterBuilder`, which is the primitives the game has always drawn.

@@ -172,6 +172,16 @@ var _accumulator := 0.0
 ## point of watching one is seeing the same moment many times, and five seconds
 ## of football followed by eighty-nine minutes of something else is not that.
 var _scenario: SimScenario = null
+## A fixed close view of the passer and receiver, repeated at quarter speed.
+var _study := false
+const AnimationStudy = preload("res://presentation/animation_study.gd")
+var _animation_study := false
+var _animation_group := 0
+var _animation_time := 0.0
+var _animation_clip := -1
+var _animation_label: Label
+var _study_aim := Vector3.ZERO
+var _study_ready_at := 0.0
 ## The tour: `--scenario all` starts at the first scenario and repeats it on a
 ## new seed each play-out, like the single-scenario watch; N steps to the next
 ## scenario in table order, wrapping, and R replays the same seed.
@@ -331,8 +341,27 @@ var _speed_step := 3
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
+	if args.has("--study"):
+		_study = true
+		_scenario = SimScenarios.plant_pass()
+		_speed = 0.25
+		_speed_given = true
+		_frame_width = 24.0
+		_elevation_deg = 22.0
+		_range = 40.0
+	if args.has("--animation-study"):
+		_animation_study = true
+		_study = true
+		_scenario = null
+		_speed = 0.25
+		_speed_given = true
+		_frame_width = 13.0
+		_elevation_deg = 24.0
+		_range = 20.0
 	for i in args.size():
-		if args[i] == "--shot" and i + 1 < args.size():
+		if args[i] == "--group" and i + 1 < args.size() and _animation_study:
+			_animation_group = clampi(int(args[i + 1]) - 1, 0, 4)
+		elif args[i] == "--shot" and i + 1 < args.size():
 			_shot_after = float(args[i + 1])
 		elif args[i] == "--shot-path" and i + 1 < args.size():
 			_shot_path = args[i + 1]
@@ -577,8 +606,23 @@ func _start_match(seed_value: int) -> void:
 	_scenario_end_tick = -1
 	_scenario_hold_end = -1
 	_scenario_started = false
+	_study_ready_at = _elapsed + 1.0
+	_study_aim = _curr.ball_pos
+	if _study:
+		for p in _match.ctx.players:
+			if p.strike_at >= 0:
+				var c: Dictionary = p.strike_act["c"]
+				_study_aim = p.pos.lerp(SimDecision._strike_target(c), 0.5)
+				break
+		_study_aim.y = 0.65
+	if _animation_study:
+		_animation_time = 0.0
+		_animation_clip = -1
+		_study_aim = Vector3(0.0, 0.65, 0.0)
+		AnimationStudy.sample(_curr, _animation_group, 0)
+		_prev.copy_from(_curr)
 	if _scenario != null:
-		_scenario_end_tick = int((_scenario.seconds + SCENARIO_HOLD) / SimConsts.DT)
+		_scenario_end_tick = int((_scenario.seconds + (0.0 if _study else SCENARIO_HOLD)) / SimConsts.DT)
 		var tour := (" (%d/%d, N next, R again)" % [_scenario_index + 1,
 			SimScenarios.all().size()]) if _scenario_cycle else ""
 		print("scenario %s%s, seed %d: %s" % [_scenario.name, tour, seed_value, _scenario.title])
@@ -598,6 +642,16 @@ func _start_match(seed_value: int) -> void:
 		_scoreboard.away_name = away.short_name
 		_scoreboard.home_kit = _kits[0][0]
 		_scoreboard.away_kit = _kits[1][0]
+	if _animation_study:
+		_scoreboard.hide()
+		if _animation_label == null:
+			_animation_label = Label.new()
+			_animation_label.position = Vector2(20.0, 18.0)
+			_animation_label.add_theme_font_size_override("font_size", 20)
+			_animation_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+			_animation_label.add_theme_constant_override("shadow_offset_x", 1)
+			_animation_label.add_theme_constant_override("shadow_offset_y", 2)
+			_scoreboard.get_parent().add_child(_animation_label)
 	# A new match kicks off from the centre spot, and the camera starts on it.
 	if _camera != null:
 		_place_camera()
@@ -1378,7 +1432,8 @@ func _build_players() -> void:
 	var kits := _kits
 	for p in _match.ctx.players:
 		var appearance := SimCharacterModel.appearance_for(p.appearance_seed)
-		var node := SimCharacterModel.build(p.appearance_seed, appearance, kits[p.team], p.shirt)
+		var team := p.id if _animation_study and p.id < 2 else p.team
+		var node := SimCharacterModel.build(p.appearance_seed, appearance, kits[team], p.shirt)
 		node.set_meta("appearance", appearance)
 		add_child(node)
 		_players.append(node)
@@ -1544,13 +1599,16 @@ func _process(delta: float) -> void:
 		return
 	if _match == null:
 		return
+	if _animation_study:
+		_process_animation_study(delta)
+		return
 	if _seek_target >= 0:
 		_run_seek()
 		_draw_frame(1.0, 0.0)
 		_update_debug(delta)
 		return
 	var stepped := 0
-	if not _paused and not _match.finished:
+	if not _paused and not _match.finished and (not _study or _elapsed >= _study_ready_at):
 		_accumulator += delta * _speed
 		var budget := 0
 		while _accumulator >= SimConsts.DT and budget < 2000:
@@ -1582,9 +1640,12 @@ func _process(delta: float) -> void:
 	if _scenario_end_tick >= 0 and _curr.tick >= _scenario_end_tick and not _paused:
 		# On the tour the repeat stays on this scenario, a new seed each time,
 		# like the single-scenario watch; only N steps to the next one.
-		_go_to_match(match_seed + 1)
+		_go_to_match(match_seed if _study else match_seed + 1)
 		return
 	_check_full_time()
+	if _study and _scoreboard != null:
+		_scoreboard.prompt = "PASS STUDY  %s%.2fx   SPACE pause   [ ] speed   . step   R replay" % [
+			"PAUSED  " if _paused else "", _speed]
 	if _debug:
 		_refresh_value_grid()
 	# How much simulated time this frame covered, which is what the ball's roll
@@ -1638,6 +1699,64 @@ func _maybe_shoot() -> void:
 
 
 # --- The debug overlay ------------------------------------------------------
+
+
+func _process_animation_study(delta: float) -> void:
+	if not _paused and _elapsed >= _study_ready_at:
+		_animation_time += delta * _speed
+		if _animation_time >= AnimationStudy.SECONDS:
+			_animation_time = fmod(_animation_time, AnimationStudy.SECONDS)
+			_animation_clip = -1
+	var tick := int(floor(_animation_time / SimConsts.DT))
+	var clip := int(_animation_time / 2.0) if _animation_group != 0 else 0
+	var old_tick := _curr.tick
+	var caption: String = AnimationStudy.sample(_curr, _animation_group, tick)
+	_prev.copy_from(_curr)
+	if clip != _animation_clip or tick < old_tick:
+		for node in _players:
+			for key in node.get_meta_list():
+				if String(key).begins_with("gait_") or String(key).begins_with("turn_") \
+						or String(key).begins_with("touch_support_") or key == &"contact_plant":
+					node.remove_meta(key)
+		_animation_clip = clip
+	# These samples have explicit action starts, so stepping backwards shows
+	# the same phase instead of restarting a pose when its enum changes.
+	for i in mini(_players.size(), _curr.player_count):
+		var anim: int = _curr.player_anim[i]
+		var start := float(clip) * 2.0 + 0.5
+		if anim == SimConsts.Anim.FALL:
+			start = float(clip) * 2.0
+		elif anim == SimConsts.Anim.GET_UP:
+			start = float(clip) * 2.0 + 1.2
+		_players[i].set_meta("anim", anim)
+		_players[i].set_meta("anim_started", start)
+		_players[i].set_meta("contact_y", _curr.player_touch_pos[i].y
+			if _curr.player_touch_pos[i].is_finite() else _curr.ball_pos.y)
+	_animation_label.text = "1 Movement   2 Ball control   3 Contact   4 Recovery   5 Keeper\n%s / 5  %s — %s\n%s%.2fx   SPACE pause   [ ] speed   , . step   N next   R replay\nControlled animation samples" % [
+		_animation_group + 1, AnimationStudy.TITLES[_animation_group], caption,
+		"PAUSED  " if _paused else "", _speed]
+	_draw_frame(1.0, maxf(float(tick - old_tick) * SimConsts.DT, 0.0))
+	_maybe_shoot()
+
+
+func _animation_study_key(key: int) -> bool:
+	if key >= KEY_1 and key <= KEY_5:
+		_animation_group = key - KEY_1
+		_go_to_match(match_seed)
+		return true
+	if key == KEY_N:
+		_animation_group = (_animation_group + 1) % 5
+		_go_to_match(match_seed)
+		return true
+	if key == KEY_PERIOD or key == KEY_COMMA:
+		_paused = true
+		var tick := int(floor(_animation_time / SimConsts.DT)) + (1 if key == KEY_PERIOD else -1)
+		_animation_time = clampf(float(tick) * SimConsts.DT, 0.0, AnimationStudy.SECONDS - SimConsts.DT)
+		_process_animation_study(0.0)
+		return true
+	# The football debugger reads a live simulation, which these pose samples
+	# deliberately do not run.
+	return key == KEY_F1
 
 
 func _update_debug(delta: float) -> void:
@@ -1773,6 +1892,10 @@ func _step_forward(samples := STEP_SAMPLES) -> void:
 	_prev.copy_from(_curr)
 	_match.tick()
 	_match.write_snapshot(_curr)
+	# A manual step displays the tick just taken, even when interpolation's
+	# accumulator was zero when playback was paused.
+	_prev.copy_from(_curr)
+	_accumulator = 0.0
 	_record_history()
 
 
@@ -2185,10 +2308,10 @@ const ANIM_SECONDS := {
 	SimConsts.Anim.KICK_HARD: 0.36,
 	SimConsts.Anim.VOLLEY: 0.4,
 	SimConsts.Anim.TRAP: 0.35,
-	SimConsts.Anim.JUMP: 0.5,
+	SimConsts.Anim.JUMP: 0.45,
 	SimConsts.Anim.STUMBLE: 0.45,
 	SimConsts.Anim.PROTEST: 1.2,
-	SimConsts.Anim.HEADER: 0.5,
+	SimConsts.Anim.HEADER: 0.45,
 	# As long as the ball takes to drop from his chest to his feet, near enough:
 	# the pose is the whole of that, not the instant of the contact.
 	SimConsts.Anim.CHEST: 0.5,
@@ -2223,8 +2346,22 @@ const THROW_RELEASE := 0.55
 ## people continuing to jog, which is the opposite of §9.5's "big, readable body
 ## language is how the player reads the match without reading numbers".
 func _pose(node: Node3D, index: int, clock: float) -> void:
+	_cache_feet(node)
+	var ground := _turf(node.position.x, node.position.z)
 	var anim: int = _curr.player_anim[index]
 	var t: float = _quantise(_anim_phase(node, anim))
+	var touch_kind: int = _curr.player_touch_kind[index]
+	var touch_age := (lerpf(float(_prev.tick), float(_curr.tick), _alpha)
+		- float(_curr.player_touch_tick[index])) * SimConsts.DT
+	# Repeated traps can keep the same anim enum. Time each real touch,
+	# including its contact height, rather than waiting for an enum change.
+	if (anim == SimConsts.Anim.TRAP and touch_kind == SimTelemetry.Touch.FIRST_TOUCH) \
+			or (anim == SimConsts.Anim.HEADER and touch_kind == SimTelemetry.Touch.HEADER) \
+			or (anim == SimConsts.Anim.CHEST and touch_kind == SimTelemetry.Touch.CHEST) \
+			or (anim == SimConsts.Anim.TACKLE and touch_kind == SimTelemetry.Touch.TACKLE) \
+			or (anim == SimConsts.Anim.KEEPER_CATCH and touch_kind == SimTelemetry.Touch.KEEPER_CATCH):
+		t = _quantise(maxf(touch_age, 0.0))
+		node.set_meta("contact_y", _curr.player_touch_pos[index].y)
 	var span: float = ANIM_SECONDS.get(anim, 1.0)
 	var u: float = clampf(t / span, 0.0, 1.0)
 	var kicking: bool = anim == SimConsts.Anim.KICK_LIGHT or anim == SimConsts.Anim.KICK_HARD \
@@ -2238,11 +2375,18 @@ func _pose(node: Node3D, index: int, clock: float) -> void:
 	# still shows him running, and fades out as he runs on after it.
 	var kick := _kick_window(index, anim, t, span)
 	var named := false
+	var dribbling := false
 	if kick.x > 0.0:
 		named = true
 		var foot: int = _curr.player_foot[index]
-		if anim == SimConsts.Anim.VOLLEY and kick.y <= 0.0:
+		if touch_kind == SimTelemetry.Touch.DRIBBLE and kick.y <= 0.0:
+			dribbling = true
+			var push := (_curr.player_touch_out[index] - _velocity(index)).length()
+			_pose_dribble(node, kick.z, foot, push)
+		elif anim == SimConsts.Anim.VOLLEY and kick.y <= 0.0:
 			_pose_volley(node, kick.z, foot)
+		elif _curr.player_sidefoot[index] == 1:
+			_pose_pass(node, kick.y, kick.z, foot, kick.x)
 		else:
 			_pose_kick(node, kick.y, kick.z, kick.w, foot, kick.x)
 	elif not kicking:
@@ -2250,11 +2394,318 @@ func _pose(node: Node3D, index: int, clock: float) -> void:
 		# which way the keeper faces.
 		named = pose_state(node, anim, u, t, yaw, cos(_facing(index)), _curr.player_foot[index])
 	if not named and _curr.player_shielding[index] == 1:
-		_pose_shield(node)
+		_pose_shield(node, _shield_side(node, index))
+	node.position.y += ground
+	if not named or dribbling:
+		_pose_gait_contacts(node, clock, _side(_curr.player_foot[index]) if dribbling else "")
+	else:
+		# A jump, fall or kick owns its feet. The next ordinary step starts
+		# fresh rather than reaching back to a plant from before the action.
+		node.set_meta("gait_contacts", {})
+	_pose_strike_contacts(node, index, clock, kick, anim)
+	_pose_touch_contacts(node, index, clock, anim, touch_age, dribbling)
 
 	SimCharacterModel.set_expression(
 		node, SimAppearance.face_for_anim(anim, _curr.player_stamina[index])
 	)
+
+
+## Cache the rig's own ankle height and boot tip before the first pose. Both
+## the imported toy and the procedural figure use the same named leg chain.
+static func _cache_feet(node: Node3D) -> void:
+	if node.has_meta("feet_rest"):
+		return
+	var feet := {}
+	for tag in ["L", "R"]:
+		var ankle := _joint(node, "Ankle" + tag)
+		if ankle == null:
+			continue
+		var tip := Vector3(0.0, 0.0, 0.1)
+		var low := Vector3.INF
+		var high := -Vector3.INF
+		for child in ankle.find_children("*", "MeshInstance3D", true, false):
+			var mesh := child as MeshInstance3D
+			var box := mesh.get_aabb()
+			for corner in 8:
+				var point := ankle.to_local(mesh.to_global(box.get_endpoint(corner)))
+				low = low.min(point)
+				high = high.max(point)
+				if point.z > tip.z:
+					tip.z = point.z
+		var inside := Vector3(0.045 if tag == "L" else -0.045, 0.0, 0.04)
+		if low.is_finite():
+			inside = (low + high) * 0.5
+			inside.x = high.x if tag == "L" else low.x
+		var sole_tip := Vector3(0.0, -node.to_local(ankle.global_position).y, tip.z)
+		if low.is_finite():
+			sole_tip = Vector3((low.x + high.x) * 0.5, low.y, high.z)
+		feet[tag] = {"ankle": node.to_local(ankle.global_position), "tip": tip,
+			"inside": inside, "sole_tip": sole_tip}
+	node.set_meta("feet_rest", feet)
+
+
+## Ground contact is solved after the gait and kick have been blended. It
+## changes joint rotations only; neither foot can pull the simulated body.
+func _pose_strike_contacts(node: Node3D, index: int, clock: float, kick: Vector4, anim: int) -> void:
+	var old_clock: float = node.get_meta("contact_clock", clock)
+	node.set_meta("contact_clock", clock)
+	var plant: int = _curr.player_plant[index]
+	var strike: int = _curr.player_strike[index]
+	var now := lerpf(float(_prev.tick), float(_curr.tick), _alpha)
+	var since_plant := (now - float(plant)) * SimConsts.DT
+	var since_strike := (now - float(strike)) * SimConsts.DT
+	var feet: Dictionary = node.get_meta("feet_rest", {})
+	var support := _side(SimAttributes.other_foot(_curr.player_foot[index]))
+	var kicking := _side(_curr.player_foot[index])
+	if clock < old_clock or clock - old_clock > 0.25 or kick.x <= 0.0 \
+			or plant < 0 or since_plant < 0.0 or anim == SimConsts.Anim.VOLLEY:
+		node.set_meta("contact_plant", -1)
+		return
+	if not feet.has(support) or not feet.has(kicking):
+		return
+	if int(node.get_meta("contact_plant", -1)) != plant \
+			or String(node.get_meta("contact_support", "")) != support:
+		var rest: Vector3 = feet[support]["ankle"]
+		var anchor := node.to_global(rest)
+		# Land ahead of the moving hips so they can pass over the foot.
+		var step := _velocity(index) * clampf(-since_strike * 0.5, 0.0, 0.08)
+		anchor += step.limit_length(0.15)
+		anchor.y = _turf(anchor.x, anchor.z) + (node.global_basis * rest).y
+		node.set_meta("contact_anchor", anchor)
+		node.set_meta("contact_basis", node.global_basis)
+		node.set_meta("contact_plant", plant)
+		node.set_meta("contact_support", support)
+	var weight := smoothstep(0.0, 0.05, since_plant) \
+		* (1.0 - smoothstep(0.04, 0.16, since_strike)) * kick.x
+	# Sink into the support knee, then rise into the recovery step.
+	node.position.y -= 0.035 * weight
+	_solve_leg(node, support, node.get_meta("contact_anchor"),
+		node.get_meta("contact_basis"), weight)
+	var contact: Vector3 = _curr.player_contact[index]
+	var line: Vector3 = _curr.player_strike_line[index]
+	if not contact.is_finite() or line.length_squared() < 0.01:
+		return
+	# Meet the back of the drawn ball with the boot tip at the strike. A
+	# short window preserves the authored backswing and follow-through.
+	var meet := (1.0 - smoothstep(0.0, 0.07, absf(since_strike))) * kick.x
+	contact.y += _turf(contact.x, contact.z)
+	contact.y = maxf(contact.y, _turf(contact.x, contact.z) + BALL_DRAW_RADIUS)
+	var tip: Vector3 = feet[kicking]["tip"]
+	var foot_basis := node.global_basis
+	var knee_direction := Vector3.ZERO
+	if _curr.player_sidefoot[index] == 1:
+		var m := _out(_curr.player_foot[index])
+		# Turn the toe out so the boot's inside faces along the pass. Meet
+		# the ball with the broad side of the shoe, not its old toe target.
+		var yaw := -atan2(line.z, line.x) + PI * 0.5 + m * PI * 0.5
+		foot_basis = Basis(Vector3.UP, yaw).scaled_local(node.global_basis.get_scale())
+		tip = feet[kicking]["inside"]
+		knee_direction = foot_basis.z
+	var target := contact - line * SimConsts.BALL_RADIUS * BALL_VISUAL_SCALE \
+		- foot_basis * tip
+	_solve_leg(node, kicking, target, foot_basis, meet, knee_direction)
+
+
+## Two rigid leg segments, with the knee bending toward the figure's front.
+## Clamp reach before solving so a distant ball cannot stretch the model.
+static func _solve_leg(node: Node3D, tag: String, target: Vector3, foot_basis: Basis, weight: float,
+		knee_direction := Vector3.ZERO) -> void:
+	if weight <= 0.0:
+		return
+	var hip := _joint(node, "Hip" + tag)
+	var knee := _joint(node, "Knee" + tag)
+	var ankle := _joint(node, "Ankle" + tag)
+	if hip == null or knee == null or ankle == null:
+		return
+	var origin := hip.global_position
+	var upper := origin.distance_to(knee.global_position)
+	var lower := knee.global_position.distance_to(ankle.global_position)
+	if minf(upper, lower) < 0.001:
+		return
+	var end := ankle.global_position.lerp(target, weight)
+	var axis := end - origin
+	var distance := clampf(axis.length(), absf(upper - lower) + 0.001, (upper + lower) * 0.995)
+	if axis.length_squared() < 1e-8:
+		return
+	axis = axis.normalized()
+	end = origin + axis * distance
+	var bend := node.global_basis.z.normalized() if knee_direction == Vector3.ZERO else knee_direction.normalized()
+	bend -= axis * bend.dot(axis)
+	if bend.length_squared() < 1e-6:
+		bend = node.global_basis.x.cross(axis)
+	bend = bend.normalized()
+	var along := (upper * upper + distance * distance - lower * lower) / (2.0 * distance)
+	var knee_at := origin + axis * along + bend * sqrt(maxf(upper * upper - along * along, 0.0))
+	var turn := Quaternion((knee.global_position - origin).normalized(), (knee_at - origin).normalized())
+	_set_joint_world_rotation(hip, turn * hip.global_basis.orthonormalized().get_rotation_quaternion())
+	turn = Quaternion((ankle.global_position - knee.global_position).normalized(),
+		(end - knee.global_position).normalized())
+	_set_joint_world_rotation(knee, turn * knee.global_basis.orthonormalized().get_rotation_quaternion())
+	var rotation := ankle.global_basis.orthonormalized().get_rotation_quaternion()
+	var goal := foot_basis.orthonormalized().get_rotation_quaternion()
+	_set_joint_world_rotation(ankle, rotation.slerp(goal, weight))
+
+
+## Contact changes rotation, never the model's proportions. Repeated global
+## basis writes introduced tiny scale errors through the parent transforms;
+## reading that scale back on the next frame eventually stretched the boots.
+static func _set_joint_world_rotation(joint: Node3D, rotation: Quaternion) -> void:
+	if not joint.has_meta("contact_rest_scale"):
+		joint.set_meta("contact_rest_scale", joint.scale)
+	var parent := joint.get_parent() as Node3D
+	var parent_rotation := parent.global_basis.orthonormalized().get_rotation_quaternion()
+	var local := (parent_rotation.inverse() * rotation).normalized()
+	var rest_scale: Vector3 = joint.get_meta("contact_rest_scale")
+	joint.basis = Basis(local).scaled_local(rest_scale)
+
+
+## Keep a supporting foot in world space from touchdown to toe-off. Swing
+## feet still follow the gait. Each foot samples its own patch of the turf.
+func _pose_gait_contacts(node: Node3D, clock: float, skip := "") -> void:
+	var feet: Dictionary = node.get_meta("feet_rest", {})
+	var contacts: Dictionary = node.get_meta("gait_contacts", {})
+	var previous: float = node.get_meta("gait_contact_clock", clock)
+	if clock < previous or clock - previous > 0.25:
+		contacts.clear()
+	node.set_meta("gait_contact_clock", clock)
+	var phase: float = node.get_meta("gait_phase", 0.0)
+	var speed: float = node.get_meta("gait_speed", 0.0)
+	for tag in ["L", "R"]:
+		if tag == skip:
+			contacts.erase(tag)
+			continue
+		if not feet.has(tag):
+			continue
+		var ankle := _joint(node, "Ankle" + tag)
+		if ankle == null:
+			continue
+		# Sprint support is shorter, leaving flight between footfalls. A
+		# half-cycle plant at full speed would outlast the leg's reach.
+		var half_stance := lerpf(PI * 0.5, 0.85, smoothstep(2.0, 6.5, speed))
+		var angle := wrapf(phase + (PI if tag == "R" else 0.0), -PI, PI)
+		var stance := (angle + half_stance) / (2.0 * half_stance)
+		var standing := speed < 0.08
+		if not standing and (stance < 0.0 or stance >= 1.0):
+			contacts.erase(tag)
+			continue
+		var rest: Vector3 = feet[tag]["ankle"]
+		var contact: Dictionary = contacts.get(tag, {})
+		# A stepped frame can skip the swing. A wrapping stance still means
+		# a new touchdown, even when both drawn frames show this foot down.
+		if not contact.is_empty() and not standing \
+				and stance < float(contact["phase"]):
+			contact.clear()
+		if contact.is_empty():
+			var anchor := ankle.global_position
+			anchor.y = _turf(anchor.x, anchor.z) + (node.global_basis * rest).y
+			contact = {"anchor": anchor, "basis": node.global_basis,
+				"phase": stance, "clock": clock}
+		contact["phase"] = stance
+		contacts[tag] = contact
+		var anchor: Vector3 = contact["anchor"]
+		var basis: Basis = contact["basis"]
+		# Once stopped, gather the feet under the hips one at a time. Keep
+		# the destination fixed for the step instead of chasing a moving root.
+		if standing:
+			var rest_at := node.to_global(rest)
+			rest_at.y = _turf(rest_at.x, rest_at.z) + (node.global_basis * rest).y
+			var other: Dictionary = contacts.get("R" if tag == "L" else "L", {})
+			var turning := basis.orthonormalized().get_rotation_quaternion().angle_to(
+				node.global_basis.orthonormalized().get_rotation_quaternion())
+			if not contact.has("settle_clock") and not other.has("settle_clock") \
+					and (anchor.distance_to(rest_at) > 0.08 or turning > 0.2):
+				contact["settle_clock"] = clock
+				contact["settle_target"] = rest_at
+				contact["settle_basis"] = node.global_basis
+			if contact.has("settle_clock"):
+				var u := clampf((clock - float(contact["settle_clock"])) / 0.2, 0.0, 1.0)
+				var target: Vector3 = contact["settle_target"]
+				var target_basis: Basis = contact["settle_basis"]
+				var step := anchor.lerp(target, smoothstep(0.0, 1.0, u))
+				step.y += sin(u * PI) * 0.055
+				var rotation := basis.orthonormalized().get_rotation_quaternion().slerp(
+					target_basis.orthonormalized().get_rotation_quaternion(), smoothstep(0.0, 1.0, u))
+				_solve_leg(node, tag, step, Basis(rotation).scaled_local(basis.get_scale()), 1.0)
+				if u >= 1.0:
+					contact["anchor"] = target
+					contact["basis"] = target_basis
+					contact.erase("settle_clock")
+				continue
+		else:
+			contact.erase("settle_clock")
+		var weight := smoothstep(0.0, 0.045, clock - float(contact["clock"]))
+		if not standing:
+			weight *= 1.0 - smoothstep(0.82, 1.0, stance)
+		# An interruption or sudden change of direction may leave an old
+		# plant behind. Release it before it could lock the knee straight.
+		var hip := _joint(node, "Hip" + tag)
+		var knee := _joint(node, "Knee" + tag)
+		if hip == null or knee == null:
+			continue
+		var reach := hip.global_position.distance_to(knee.global_position) \
+			+ knee.global_position.distance_to(ankle.global_position)
+		var distance := hip.global_position.distance_to(anchor)
+		weight *= 1.0 - smoothstep(reach * 0.94, reach * 1.04, distance)
+		# Roll off the toe while its contact point stays fixed. The ankle
+		# rises around that point, rather than dragging a flat boot away.
+		var push := 0.0 if standing else smoothstep(0.6, 0.94, stance) \
+			* 0.45 * clampf(speed / 4.0, 0.0, 1.0)
+		var pushed := (basis.orthonormalized() * Basis(Vector3.RIGHT, push)).scaled_local(basis.get_scale())
+		var toe: Vector3 = feet[tag]["sole_tip"]
+		anchor += basis * toe - pushed * toe
+		_solve_leg(node, tag, anchor, pushed, weight)
+	node.set_meta("gait_contacts", contacts)
+
+
+## Actual contacts for actions with no queued plant. Keep these separate from
+## the forecast used during a pass's wind-up. Never move the ball to the boot.
+func _pose_touch_contacts(node: Node3D, index: int, clock: float, anim: int, age: float, dribbling: bool) -> void:
+	var active := dribbling or anim in [SimConsts.Anim.TRAP, SimConsts.Anim.TACKLE, SimConsts.Anim.VOLLEY]
+	if not active or age < 0.0 or age > 0.3:
+		node.set_meta("touch_support_tick", -1)
+		return
+	var contact: Vector3 = _curr.player_touch_pos[index]
+	if not contact.is_finite():
+		return
+	var feet: Dictionary = node.get_meta("feet_rest", {})
+	var foot: int = _curr.player_foot[index]
+	var kicking := _side(foot)
+	var support := _side(SimAttributes.other_foot(foot))
+	if not feet.has(kicking) or not feet.has(support):
+		return
+	var previous: float = node.get_meta("touch_support_clock", clock)
+	node.set_meta("touch_support_clock", clock)
+	var tick: int = _curr.player_touch_tick[index]
+	if int(node.get_meta("touch_support_tick", -1)) != tick \
+			or clock < previous or clock - previous > 0.25:
+		var rest: Vector3 = feet[support]["ankle"]
+		var anchor := node.to_global(rest)
+		anchor.y = _turf(anchor.x, anchor.z) + (node.global_basis * rest).y
+		node.set_meta("touch_support_anchor", anchor)
+		node.set_meta("touch_support_basis", node.global_basis)
+		node.set_meta("touch_support_tick", tick)
+	if not dribbling:
+		_solve_leg(node, support, node.get_meta("touch_support_anchor"),
+			node.get_meta("touch_support_basis"), 1.0 - smoothstep(0.06, 0.22, age))
+	var line := SimConsts.horizontal(_curr.player_touch_out[index]).normalized()
+	var basis := node.global_basis
+	var point: Vector3 = feet[kicking]["tip"]
+	var meet := 1.0 - smoothstep(0.0, 0.09, age)
+	var knee_direction := Vector3.ZERO
+	if anim == SimConsts.Anim.TRAP:
+		# Present the inside to the arriving ball, then give in its direction.
+		var incoming := SimConsts.horizontal(_curr.player_touch_in[index]).normalized()
+		if incoming.length_squared() > 0.01:
+			line = -incoming
+			var yaw := -atan2(line.z, line.x) + PI * 0.5 + _out(foot) * PI * 0.5
+			basis = Basis(Vector3.UP, yaw).scaled_local(node.global_basis.get_scale())
+			point = feet[kicking]["inside"]
+			knee_direction = basis.z
+			contact += incoming * 0.12 * smoothstep(0.0, 0.16, age)
+		meet = 1.0 - smoothstep(0.08, 0.22, age)
+	contact.y = maxf(contact.y, BALL_DRAW_RADIUS) + _turf(contact.x, contact.z)
+	var target := contact - line * BALL_DRAW_RADIUS - basis * point
+	_solve_leg(node, kicking, target, basis, meet, knee_direction)
 
 
 ## The kick shape's window, timed by the strike tick the snapshot carries
@@ -2322,7 +2773,7 @@ static func pose_state(node: Node3D, anim: int, u: float, t: float, yaw: float, 
 		SimConsts.Anim.FALL:
 			_pose_fall(node, yaw, u)
 		SimConsts.Anim.GET_UP:
-			_pose_fall(node, yaw, 1.0 - u)
+			_pose_get_up(node, yaw, u)
 		SimConsts.Anim.DIVE_LEFT:
 			_pose_dive(node, yaw, u, -dive_roll)
 		SimConsts.Anim.DIVE_RIGHT:
@@ -2438,6 +2889,11 @@ func _gait_phase(node: Node3D, index: int, clock: float, speed: float, amplitude
 		node.set_meta("gait_phase", phase)
 		return phase
 	var dt: float = clock - float(node.get_meta("gait_clock", clock))
+	if dt < 0.0 or dt > 0.25:
+		phase = fposmod(float(index) * 1.29, TAU)
+		node.set_meta("gait_clock", clock)
+		node.set_meta("gait_phase", phase)
+		return phase
 	if dt <= 0.0:
 		return phase
 	node.set_meta("gait_clock", clock)
@@ -2521,7 +2977,11 @@ static func _pose_leg(node: Node3D, tag: String, phase: float, amplitude: float,
 		GAIT_ANKLE_PUSH * pow(maxf(sin(phase), 0.0), 2.0)
 		- GAIT_ANKLE_LIFT * maxf(-sin(phase), 0.0)
 	)
-	_rotate(node, "Hip" + tag, sin(phase) * amplitude * along, sin(phase) * amplitude * across)
+	var lateral := sin(phase) * amplitude * across
+	# A shuffle closes the feet and opens them again; it must not sweep a
+	# boot through the other shin on the inward half of the step.
+	lateral = minf(lateral, 0.1) if tag == "L" else maxf(lateral, -0.1)
+	_rotate(node, "Hip" + tag, sin(phase) * amplitude * along, lateral)
 	_rotate(node, "Knee" + tag, knee)
 	_rotate(node, "Ankle" + tag, ankle)
 
@@ -2529,19 +2989,65 @@ static func _pose_leg(node: Node3D, tag: String, phase: float, amplitude: float,
 func _pose_run(node: Node3D, index: int, clock: float) -> void:
 	var v := _velocity(index)
 	var speed: float = v.length()
-	var amplitude: float = gait_amplitude(speed)
-	var phase := _gait_phase(node, index, clock, speed, amplitude)
+	var turn := clampf(_turn_rate(node, index, clock), -1.0, 1.0)
+	var acceleration := _gait_acceleration(node, v, clock)
+	var f := _facing(index)
+	var forward := Vector3(cos(f), 0.0, sin(f))
+	var drive := clampf(acceleration.dot(forward) / 6.0, -1.0, 1.0)
+	var braking := clampf(-acceleration.dot(v.normalized()) / 6.0, 0.0, 1.0)
 	# The travel in the body frame. The hips may be held off the run
 	# (`SimPlayer.look_target`), and the legs go where the body goes, not
 	# where the hips point: sideways is a shuffle, backwards a backpedal.
 	var across := 0.0
 	var back := 0.0
-	if speed > 0.4:
-		var f := _facing(index)
+	if speed > 0.08:
 		var along: float = (v.x * cos(f) + v.z * sin(f)) / speed
 		across = (-v.x * sin(f) + v.z * cos(f)) / speed
 		back = maxf(-along, 0.0)
-	pose_gait(node, speed, phase, clampf(_turn_rate(node, index, clock), -1.0, 1.0), across, back)
+	# A stationary turn still needs steps. A small presentation-only cadence
+	# lifts and replants the feet while the simulation turns the body.
+	var pivot := smoothstep(0.04, 0.22, absf(turn)) * (1.0 - smoothstep(0.08, 0.6, speed))
+	speed = maxf(speed, pivot * 0.5)
+	across = lerpf(across, signf(turn) * 0.8, pivot)
+	var amplitude := _gait_swing(speed, across, back, braking)
+	var phase := _gait_phase(node, index, clock, speed, amplitude)
+	node.set_meta("gait_speed", speed)
+	pose_gait(node, speed, phase, turn, across, back, drive, braking)
+
+
+## Read acceleration over a short window, then smooth it. Differencing every
+## rendered frame would amplify the small corrections in player separation.
+static func _gait_acceleration(node: Node3D, velocity: Vector3, clock: float) -> Vector3:
+	var previous: float = node.get_meta("gait_motion_clock", -1.0)
+	var dt := clock - previous
+	if previous < 0.0 or dt < 0.0 or dt > 0.25:
+		node.set_meta("gait_motion_clock", clock)
+		node.set_meta("gait_velocity_clock", clock)
+		node.set_meta("gait_velocity", velocity)
+		node.set_meta("gait_acceleration", Vector3.ZERO)
+		node.set_meta("gait_acceleration_target", Vector3.ZERO)
+		return Vector3.ZERO
+	var acceleration: Vector3 = node.get_meta("gait_acceleration")
+	if dt <= 0.0:
+		return acceleration
+	var window: float = clock - float(node.get_meta("gait_velocity_clock"))
+	if window >= 0.1:
+		var old_velocity: Vector3 = node.get_meta("gait_velocity")
+		node.set_meta("gait_acceleration_target", ((velocity - old_velocity) / window).limit_length(8.0))
+		node.set_meta("gait_velocity", velocity)
+		node.set_meta("gait_velocity_clock", clock)
+	var toward: Vector3 = node.get_meta("gait_acceleration_target")
+	acceleration = acceleration.lerp(toward, 1.0 - exp(-dt / 0.12))
+	node.set_meta("gait_motion_clock", clock)
+	node.set_meta("gait_acceleration", acceleration)
+	return acceleration
+
+
+## Shorter steps for braking and lateral travel. Phase and pose must use the
+## same stride length or the feet slip as soon as the body changes direction.
+static func _gait_swing(speed: float, across: float, back: float, braking: float) -> float:
+	return gait_amplitude(speed) * (1.0 - back * GAIT_BACKPEDAL_SHORTEN) \
+		* (1.0 - absf(across) * 0.25) * (1.0 - braking * 0.25)
 
 
 ## How far the hips swing at this speed, and therefore how long a step is. Grows
@@ -2561,15 +3067,28 @@ static func gait_amplitude(speed: float) -> float:
 ## `across` is the share of the travel across the hips, signed, and `back` the
 ## share against them; both zero is the plain run, which is what the parade
 ## asks for.
-static func pose_gait(node: Node3D, speed: float, phase: float, turn: float, across := 0.0, back := 0.0) -> void:
+static func pose_gait(node: Node3D, speed: float, phase: float, turn: float, across := 0.0, back := 0.0,
+		drive := 0.0, braking := 0.0) -> void:
 	var effort: float = clampf(speed / GAIT_SATURATION_SPEED, 0.0, 1.0)
 	var along: float = sqrt(maxf(1.0 - across * across, 0.0))
-	var amplitude: float = gait_amplitude(speed) * (1.0 - back * GAIT_BACKPEDAL_SHORTEN)
+	if back > 0.0:
+		along = -along
+	var amplitude: float = _gait_swing(speed, across, back, braking)
 	var swing := sin(phase) * amplitude * along
 	var opposite := -swing
 
 	_pose_leg(node, "L", phase, amplitude, along, across)
 	_pose_leg(node, "R", phase + PI, amplitude, along, across)
+	# Braking lands the feet ahead of the hips. A lateral step keeps a wider
+	# base, so the feet open and close without scissoring through each other.
+	for tag in ["L", "R"]:
+		var hip := _joint(node, "Hip" + tag)
+		var knee := _joint(node, "Knee" + tag)
+		if hip != null:
+			hip.rotation.x -= braking * along * 0.16
+			hip.rotation.z += (-1.0 if tag == "L" else 1.0) * absf(across) * 0.12
+		if knee != null:
+			knee.rotation.x += braking * 0.18 + absf(across) * 0.1
 	# Arms swing against the legs — left arm forward with the right leg — and
 	# drive harder the faster the player runs. The elbow closes up with effort:
 	# a sprinter carries his hands high and his arms folded, a jogger does not.
@@ -2583,7 +3102,8 @@ static func pose_gait(node: Node3D, speed: float, phase: float, turn: float, acr
 
 	# Lean into the run, and bank into a turn. Positive x pitches the torso
 	# forward: this was negative, so runners leaned back as they accelerated.
-	_lean(node, effort * 0.22 * along - back * GAIT_BACKPEDAL_LEAN, turn * 0.25)
+	_lean(node, effort * 0.22 * maxf(along, 0.0) - back * GAIT_BACKPEDAL_LEAN + drive * 0.18,
+		turn * 0.25)
 	var spine := _joint(node, "Spine")
 	if spine != null:
 		spine.position.y = _spine_base(node) + absf(swing) * 0.02
@@ -2595,7 +3115,43 @@ static func pose_gait(node: Node3D, speed: float, phase: float, turn: float, acr
 	# The whole figure rides up and down as it runs: up between footfalls, down
 	# over the planted foot, twice a cycle.
 	var planted := cos(phase)
-	node.position.y = absf(swing) * GAIT_BOB - amplitude * planted * planted * GAIT_DIP
+	node.position.y = absf(swing) * GAIT_BOB - amplitude * planted * planted * GAIT_DIP \
+		- braking * 0.045 - absf(drive) * 0.02 - absf(across) * 0.025 \
+		- absf(turn) * minf(speed / 3.0, 1.0) * 0.035
+
+
+## A standard pass: open the hip and toe, a short swing through the inside
+## of the boot, then a low follow-through into the next step. Mirrored by foot.
+static func _pose_pass(node: Node3D, r: float, u: float, foot: int, w: float) -> void:
+	var k := _side(foot)
+	var s := _side(SimAttributes.other_foot(foot))
+	var m := _out(foot)
+	var hip := -0.32
+	var knee := 0.25
+	var opening := 1.0
+	if r > 0.0:
+		var draw := 1.0 - smoothstep(KICK_TOP, KICK_DRAW, r)
+		var through := 1.0 - smoothstep(0.0, KICK_TOP, r)
+		hip = lerpf(0.35 * draw, hip, through)
+		knee = lerpf(0.25 + 0.35 * draw, knee, through)
+		opening = 1.0 - smoothstep(KICK_TOP, KICK_LEAD, r)
+	else:
+		var rise := smoothstep(0.0, 0.25, u)
+		var recover := smoothstep(0.25, 1.0, u)
+		hip = lerpf(lerpf(-0.32, -0.65, rise), 0.0, recover)
+		knee = lerpf(0.25, 0.45, recover)
+		opening = 1.0 - smoothstep(0.25, 1.0, u)
+	_blend_rotation(node, "Hip" + k, Vector3(hip, m * 1.1 * opening, m * 0.12 * opening), w)
+	_blend(node, "Knee" + k, knee, 0.0, w)
+	_blend_rotation(node, "Ankle" + k,
+		Vector3(-hip - knee, m * (PI * 0.5 - 1.1) * opening, 0.0), w)
+	_blend(node, "Hip" + s, 0.08, 0.0, w)
+	_blend(node, "Knee" + s, 0.22, 0.0, w)
+	_blend(node, "Shoulder" + k, 0.2 * opening, m * 0.4, w)
+	_blend(node, "Shoulder" + s, -0.3 * opening, -m * 0.5, w)
+	_blend(node, "ElbowL", -0.4, 0.0, w)
+	_blend(node, "ElbowR", -0.4, 0.0, w)
+	_blend_lean(node, 0.08, -m * 0.10, -m * 0.12 * opening, w)
 
 
 ## The kick, timed to contact and laid over the gait by `w` (`_kick_window`).
@@ -2679,6 +3235,18 @@ static func _pose_kick(node: Node3D, r: float, u: float, force: float, foot: int
 	_blend_lean(node, -0.32 * swing, -0.2 * m * swing, m * 0.45 * open, w)
 
 
+## A compact push laid over the running stride, sized by pace relative to the man.
+static func _pose_dribble(node: Node3D, u: float, foot: int, push: float) -> void:
+	var w := 1.0 - smoothstep(0.2, 1.0, u)
+	var k := _side(foot)
+	var reach := lerpf(0.28, 0.6, clampf(push / 6.0, 0.0, 1.0))
+	# A nudge within the running stride: the other leg keeps carrying him.
+	_blend(node, "Hip" + k, -reach, _out(foot) * 0.08, w)
+	_blend(node, "Knee" + k, 0.35 + u * 0.4, 0.0, w)
+	_blend(node, "Ankle" + k, 0.12, 0.0, w)
+	_blend(node, "Shoulder" + _side(SimAttributes.other_foot(foot)), -0.3, 0.0, w * 0.4)
+
+
 ## The joint suffix for a foot.
 static func _side(foot: int) -> String:
 	return "L" if foot == SimAttributes.FOOT_LEFT else "R"
@@ -2756,6 +3324,7 @@ static func _pose_jump(node: Node3D, u: float) -> void:
 	_rotate(node, "HipR", 0.35 * arc)
 	_rotate(node, "KneeL", 1.1 * arc)
 	_rotate(node, "KneeR", 0.5 * arc)
+	_pose_landing(node, u)
 
 
 ## Knocked off the ball: rocked back and sideways, arms flung out, one leg
@@ -2793,12 +3362,34 @@ static func _pose_protest(node: Node3D, t: float) -> void:
 ## arm out behind him against the man, the other forward for balance, eyes
 ## down. Not a state of its own -- the sim flags it on the player -- so the
 ## legs go on doing whatever the shuffle or the hold has them doing.
-static func _pose_shield(node: Node3D) -> void:
-	_rotate(node, "ShoulderR", 0.8, 0.85)
-	_rotate(node, "ElbowR", -0.3)
-	_rotate(node, "ShoulderL", -0.4, -0.5)
-	_rotate(node, "ElbowL", -0.4)
-	_lean(node, 0.28)
+func _shield_side(node: Node3D, index: int) -> float:
+	var nearest := -1
+	var distance := 2.5 * 2.5
+	for j in _curr.player_count:
+		if _curr.player_on_pitch[j] == 0 or _curr.player_team[j] == _curr.player_team[index]:
+			continue
+		var d := _curr.player_pos[j].distance_squared_to(_curr.player_pos[index])
+		if d < distance:
+			distance = d
+			nearest = j
+	var side: float = node.get_meta("shield_side", 1.0)
+	if nearest >= 0:
+		var local := node.global_basis.inverse() * (_curr.player_pos[nearest] - _curr.player_pos[index])
+		# Keep the same arm when the opponent is almost directly behind him.
+		if absf(local.x) > 0.15:
+			side = signf(local.x)
+	node.set_meta("shield_side", side)
+	return side
+
+
+static func _pose_shield(node: Node3D, side := 1.0) -> void:
+	var near := "R" if side > 0.0 else "L"
+	var far := "L" if side > 0.0 else "R"
+	_rotate(node, "Shoulder" + near, 0.8, side * 0.85)
+	_rotate(node, "Elbow" + near, -0.3)
+	_rotate(node, "Shoulder" + far, -0.4, -side * 0.5)
+	_rotate(node, "Elbow" + far, -0.4)
+	_lean(node, 0.28, -side * 0.12)
 	_rotate(node, "Neck", 0.25)
 
 
@@ -2853,6 +3444,7 @@ static func _pose_punch(node: Node3D, u: float) -> void:
 	_rotate(node, "HipR", 0.3 * arc)
 	_rotate(node, "KneeL", 1.0 * arc)
 	_rotate(node, "KneeR", 0.5 * arc)
+	_pose_landing(node, u)
 
 
 ## The fist reaches about a head's height ahead of the face. Anything higher
@@ -2908,6 +3500,22 @@ static func _pose_header(node: Node3D, u: float) -> void:
 	_rotate(node, "HipR", -0.3 * arc)
 	_rotate(node, "KneeL", 1.3 * arc)
 	_rotate(node, "KneeR", 0.35 * arc)
+	_pose_landing(node, u)
+
+
+## Absorb the landing after the feet reach the turf, then rise out of it.
+## Jump height controls the compression; a standing nod needs no landing.
+static func _pose_landing(node: Node3D, u: float) -> void:
+	var landing := sin(clampf((u - HEADER_LAND) / (1.0 - HEADER_LAND), 0.0, 1.0) * PI)
+	landing *= clampf(_header_lift(node) / 0.3, 0.0, 1.0)
+	node.position.y -= landing * 0.07
+	for tag in ["L", "R"]:
+		var hip := _joint(node, "Hip" + tag)
+		var knee := _joint(node, "Knee" + tag)
+		if hip != null:
+			hip.rotation.x -= landing * 0.25
+		if knee != null:
+			knee.rotation.x += landing * 0.6
 
 
 ## How high he has to get to meet this particular ball: the gap between it and
@@ -3007,6 +3615,28 @@ static func _pose_fall(node: Node3D, yaw: float, u: float) -> void:
 ## How far over the fall goes, short of a right angle: the figure has thickness
 ## and a face, and at 1.5 rad both were in the grass.
 const FALL_PITCH := 1.38
+
+
+## Brace, bring one knee and then a foot underneath, and rise. The beginning
+## matches the prone fall pose; the two legs take different jobs on the way up.
+static func _pose_get_up(node: Node3D, yaw: float, u: float) -> void:
+	var gather := smoothstep(0.0, 0.45, u)
+	var stand := smoothstep(0.45, 1.0, u)
+	var down := 1.0 - stand
+	_orient(node, yaw, lerpf(FALL_PITCH, 0.3, gather) * down, 0.0)
+	node.position.y -= 0.24 * gather * down
+	_rotate(node, "ShoulderL", lerpf(2.5, -0.9, gather) * down, -0.75 * down)
+	_rotate(node, "ShoulderR", lerpf(2.5, -0.6, gather) * down, 0.75 * down)
+	_rotate(node, "ElbowL", -0.75 * gather * down)
+	_rotate(node, "ElbowR", -0.45 * gather * down)
+	_rotate(node, "HipL", lerpf(0.4, -0.8, gather) * down)
+	_rotate(node, "HipR", lerpf(0.25, 0.5, gather) * down)
+	_rotate(node, "KneeL", lerpf(0.7, 1.2, gather) * down)
+	_rotate(node, "KneeR", lerpf(0.5, 1.9, gather) * down)
+	_rotate(node, "AnkleL", -0.15 * gather * down)
+	_rotate(node, "AnkleR", 0.45 * gather * down)
+	_rotate(node, "Neck", -0.45 * down)
+	_lean(node, 0.2 * gather * down)
 
 
 ## Both hands over the head, arched back, then whipped forward over the top.
@@ -3216,26 +3846,37 @@ static func _pose_hold(node: Node3D, t: float, foot: int) -> void:
 
 
 static func _pose_catch(node: Node3D, u: float) -> void:
-	var arc := sin(u * PI)
-	node.position.y += arc * 0.12
-	# Arms forward and folded, gathering the ball in.
-	_rotate(node, "ShoulderL", -1.75, 0.3)
-	_rotate(node, "ShoulderR", -1.75, -0.3)
-	_rotate(node, "ElbowL", -0.85)
-	_rotate(node, "ElbowR", -0.85)
-	_lean(node, 0.25)
-	_rotate(node, "KneeL", 0.3 * arc)
-	_rotate(node, "KneeR", 0.3 * arc)
+	var gather := smoothstep(0.0, 0.85, u)
+	var height: float = node.get_meta("contact_y", 1.2)
+	var low := 1.0 - smoothstep(0.4, 1.1, height)
+	var high := smoothstep(1.3, 2.0, height)
+	var shoulder := lerpf(-1.25 + low * 0.7 - high * 1.0, -0.63, gather)
+	var elbow := lerpf(-0.3, -1.3, gather)
+	# Give through the elbows and knees, then finish in the carrying pose.
+	# A catch no longer adds an unrelated upward hop after contact.
+	var absorb := sin(u * PI)
+	node.position.y -= low * 0.16 * (1.0 - gather) + absorb * 0.045
+	_rotate(node, "ShoulderL", shoulder, 0.34)
+	_rotate(node, "ShoulderR", shoulder, -0.34)
+	_rotate(node, "ElbowL", elbow)
+	_rotate(node, "ElbowR", elbow)
+	_lean(node, lerpf(0.18 + low * 0.25, 0.1, gather))
+	_rotate(node, "HipL", -low * 0.25 * (1.0 - gather))
+	_rotate(node, "HipR", -low * 0.25 * (1.0 - gather))
+	_rotate(node, "KneeL", low * 0.65 * (1.0 - gather) + absorb * 0.2)
+	_rotate(node, "KneeR", low * 0.65 * (1.0 - gather) + absorb * 0.2)
 
 
 # --- Pose primitives ---------------------------------------------------------
 
 
 ## The clock the pose layer runs on, in seconds. Continuous unless `--step-fps`
-## asked for stepping, in which case it advances in jumps and every pose that
-## reads it steps with it.
+## asked for stepping. Read the interpolated simulation tick so slowing or
+## pausing playback also slows or pauses the gait and every one-shot pose.
 func _anim_clock() -> float:
-	return _quantise(_elapsed)
+	if _pose_sheet:
+		return _quantise(_elapsed)
+	return _quantise(lerpf(float(_prev.tick), float(_curr.tick), _alpha) * SimConsts.DT)
 
 
 func _quantise(t: float) -> float:
@@ -3264,16 +3905,17 @@ func _velocity(index: int) -> Vector3:
 ## Seconds since this player's current anim began. Presentation times it; the
 ## snapshot carries the state, not the clock.
 func _anim_phase(node: Node3D, anim: int) -> float:
+	var clock := _anim_clock()
 	if int(node.get_meta("anim", -1)) != anim:
 		node.set_meta("anim", anim)
-		node.set_meta("anim_started", _elapsed)
+		node.set_meta("anim_started", clock)
 		# Where the ball was when the act began, which for a one-shot is where it
 		# was struck. The header is the pose that needs it: how far a man has to
 		# leave the ground is the difference between the ball's height and his own
 		# head's, and it is the difference between a leap at a cross and a nod at
 		# one that was already on his forehead.
 		node.set_meta("contact_y", _curr.ball_pos.y)
-	return _elapsed - float(node.get_meta("anim_started", _elapsed))
+	return maxf(clock - float(node.get_meta("anim_started", clock)), 0.0)
 
 
 ## Swings a joint: `angle` about its own pitch axis, `lateral` away from the body.
@@ -3302,6 +3944,14 @@ static func _blend(node: Node3D, joint: String, angle: float, lateral: float, w:
 		return
 	var cur := j.rotation
 	j.rotation = Vector3(lerpf(cur.x, angle, w), 0.0, lerpf(cur.z, lateral, w))
+
+
+## Hip opening needs all three axes. Blend the rotation as a whole so its
+## yaw survives the leg swing and does not depend on Euler decomposition.
+static func _blend_rotation(node: Node3D, joint: String, rotation: Vector3, w: float) -> void:
+	var j := _joint(node, joint)
+	if j != null:
+		j.quaternion = j.quaternion.slerp(Quaternion.from_euler(rotation), w)
 
 
 ## Pitches the torso. Positive is forward, over the ball. `twist` turns the
@@ -3390,7 +4040,8 @@ const TURN_SMOOTHING_TAU := 0.2
 
 func _turn_rate(node: Node3D, index: int, clock: float) -> float:
 	var facing: float = _curr.player_facing[index]
-	if not node.has_meta("turn_facing"):
+	var previous: float = node.get_meta("turn_smooth_clock", clock)
+	if not node.has_meta("turn_facing") or clock < previous or clock - previous > 0.25:
 		node.set_meta("turn_facing", facing)
 		node.set_meta("turn_clock", clock)
 		node.set_meta("turn_smooth_clock", clock)
@@ -3426,7 +4077,8 @@ func _bob_crowd() -> void:
 
 ## One frame of camerawork: pan toward the ball.
 func _work_camera(ball_pos: Vector3, sim_dt: float) -> void:
-	_pan_to(ball_pos, sim_dt)
+	if not _study:
+		_pan_to(ball_pos, sim_dt)
 	_apply_camera()
 
 
@@ -3435,9 +4087,11 @@ func _work_camera(ball_pos: Vector3, sim_dt: float) -> void:
 ## it was last pointed would spend the first second looking at the wrong part of
 ## the pitch.
 func _place_camera() -> void:
-	_camera_aim = _aim_for(_curr.ball_pos)
+	_camera_aim = _study_aim if _study else _aim_for(_curr.ball_pos)
 	var elevation := deg_to_rad(_elevation_deg)
 	_camera.position = Vector3(0.0, _range * sin(elevation), _range * cos(elevation))
+	if _study:
+		_camera.position += _camera_aim
 
 
 ## Chases the aim point toward the ball with a time constant rather than
@@ -3494,7 +4148,8 @@ func _aim_for(ball_pos: Vector3) -> Vector3:
 ## a jump to full screen is already handled.
 func _apply_camera() -> void:
 	_camera.look_at(_camera_aim, Vector3.UP)
-	_camera.rotate_object_local(Vector3.RIGHT, -deg_to_rad(CAMERA_TILT_DOWN_DEG))
+	if not _study:
+		_camera.rotate_object_local(Vector3.RIGHT, -deg_to_rad(CAMERA_TILT_DOWN_DEG))
 	var size := get_viewport().get_visible_rect().size
 	var aspect: float = size.x / size.y if size.y > 0.0 else 16.0 / 9.0
 	var box_edge := _pitch.half_length - _pitch.penalty_depth
@@ -3506,6 +4161,9 @@ func _apply_camera() -> void:
 	var range_to_aim := maxf(_camera.position.distance_to(_camera_aim), 1.0)
 	var range_to_centre := maxf(_camera.position.length(), 1.0)
 	var solved_range := lerpf(range_to_centre, range_to_aim, CAMERA_ZOOM_FOLLOW)
+	if _study:
+		vertical = _frame_width / aspect
+		solved_range = range_to_aim
 	var fov := rad_to_deg(2.0 * atan(vertical * 0.5 / solved_range))
 	_camera.fov = clampf(fov, CAMERA_FOV_MIN, CAMERA_FOV_MAX)
 
@@ -3518,6 +4176,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if not (event is InputEventKey) or not event.pressed:
 		return
+	if _animation_study and _animation_study_key((event as InputEventKey).keycode):
+		return
 	# A held key repeats for the transport alone. Scrubbing back through a move a
 	# sample at a time is otherwise a press per twentieth of a second, and every
 	# other key here does something that should happen once.
@@ -3526,6 +4186,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _debug and _debug_key(event as InputEventKey):
 		return
 	match (event as InputEventKey).keycode:
+		KEY_BRACKETLEFT:
+			_set_speed(_speed_step - 1)
+		KEY_BRACKETRIGHT:
+			_set_speed(_speed_step + 1)
+		KEY_PERIOD:
+			_step_forward(STEP_SAMPLES)
 		KEY_SPACE:
 			_paused = not _paused
 		KEY_1:

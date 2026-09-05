@@ -53,6 +53,7 @@ const CROSS_FOLLOW_THROUGH := 0.3
 
 static func all() -> Array[SimScenario]:
 	return [
+		plant_pass(),
 		one_v_one_clear(),
 		one_v_one_onrushing(),
 		one_v_one_angle(),
@@ -101,6 +102,32 @@ static func names() -> PackedStringArray:
 	for s in all():
 		out.append(s.name)
 	return out
+
+
+## A fixed action for judging the approach, contact and recovery together.
+static func plant_pass() -> SimScenario:
+	return _make("plant-pass", "jog onto a rolling ball, pass and run on",
+		"He brakes into his supporting leg, meets the ball and steps through the pass.", 3.0,
+		func(sc: SimScenario, ctx: SimContext) -> void:
+			var team := sc.attacking_team
+			var dir := ctx.pitch.attack_dir(team)
+			var passer := _one(ctx, team, [SimRole.CM, SimRole.DM, SimRole.AM])
+			var mate := ctx.players[ctx.teammate_ids(team)[_SUPPORT]]
+			var at := Vector3(-8.0 * dir, 0.0, 8.0)
+			sc.settle(ctx, at + Vector3(0.6 * dir, 0.0, 0.0), passer)
+			for p in ctx.players:
+				if p != passer and p != mate and not p.is_keeper:
+					p.pos = Vector3((-30.0 if p.team == team else 24.0) * dir,
+						0.0, -20.0 + float(p.id))
+			passer.pos = at
+			passer.vel = Vector3(2.0 * dir, 0.0, 0.0)
+			passer.facing = 0.0 if dir > 0.0 else PI
+			mate.pos = at + Vector3(18.0 * dir, 0.0, 3.0)
+			ctx.ball.vel = passer.vel
+			ctx.update_possession()
+			var c := {"action": SimDecision.Action.GROUND_PASS, "point": mate.pos,
+				"target": mate.id, "pace": 0.55, "first_time": false}
+			SimDecision.wind_up(ctx, passer, c, SimDecision.windup_of(ctx, passer, c)))
 
 
 # --- The one-on-one ---------------------------------------------------------

@@ -84,6 +84,11 @@ usage: ./run.sh <command> [args]
   determinism [--seed N]    run one seed twice and compare the event logs
   view                      open the 2D debug view (needs a display)
   view3d [--seed N]         open the 3D match view (needs a display).
+  study [--seed N]          repeat the pass at quarter speed, framed with its
+                            receiver; space pause, [ ] speed, . step, R replay.
+  animation-study          close-up loops for the five animation groups.
+      [--group 1-5]        1-5 select, N next, R replay, space pause,
+                            [ ] speed, comma/period step back/forward.
       [--world N]           two generated clubs of the league at world seed N
       [--home-club K]       instead of SimSquadGen squads: the clubs parade
       [--away-club J]       --world shows. match and diagnose take the same.
@@ -379,6 +384,8 @@ case "$cmd" in
 	record-golden) exec "$GODOT" --headless --script res://tests/record_golden.gd ;;
 	view)          exec "$GODOT" res://presentation/debug_match.tscn ;;
 	view3d)        exec "$GODOT" res://presentation/match_3d.tscn -- "$@" ;;
+	study)         exec "$GODOT" res://presentation/match_3d.tscn -- --study "$@" ;;
+	animation-study) exec "$GODOT" res://presentation/match_3d.tscn -- --animation-study "$@" ;;
 	demo)
 		# Six a side, for comparison against the eleven-a-side compressed match
 		# the view now opens by default. Kept because it is the other answer to
